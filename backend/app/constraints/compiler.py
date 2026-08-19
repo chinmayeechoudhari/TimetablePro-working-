@@ -4,7 +4,7 @@ from typing import Any
 
 from ortools.sat.python import cp_model
 
-from app.constraints.schemas import GeneratedConstraint, Expression, Condition
+from app.constraints.schemas import GeneratedConstraint, Condition
 from app.constraints.resolver import (
     resolve_teacher,
     resolve_subject,
@@ -16,8 +16,6 @@ from app.constraints.resolver import (
 
 
 def compile_constraint(model: cp_model.CpModel, assign: dict, constraint: GeneratedConstraint, data: dict) -> list:
-    """Convert a validated GeneratedConstraint into CP-SAT constraints."""
-
     penalties = []
     expression = constraint.expression
 
@@ -65,19 +63,54 @@ def _matching_variables(assign: dict, condition: Condition, data: dict) -> list:
 
 
 def _matching_atomic_variables(assign: dict, field: str, operator: str, value: Any, data: dict) -> list:
+    expected = _resolve_expected_value(field, value, data)
     result = []
+
     for (class_id, subject_id, teacher_id, slot_id, room_id), variable in assign.items():
-        actual_value = _get_field_value(
-            field, class_id, subject_id, teacher_id, slot_id, room_id, data
-        )
-        if _compare(actual_value, operator, value):
+        actual = _get_field_value(field, class_id, subject_id, teacher_id, slot_id, room_id, data)
+        if _compare(actual, operator, expected):
             result.append(variable)
+
     return result
 
 
-def _get_field_value(field: str, class_id: int, subject_id: int, teacher_id: int, slot_id: int, room_id: int, data: dict):
-    """Return the solver-side ID/value corresponding to an atomic field."""
+def _resolve_expected_value(field: str, value: Any, data: dict) -> Any:
+    """Translate Gemini's human-readable entity values into solver IDs."""
 
+    db = data.get("db")
+
+    # Existing unit tests use integer IDs directly and don't provide a DB.
+    if db is None:
+        if field == "period":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+        return value
+
+    if field == "teacher":
+        return resolve_teacher(db, str(value)).teacher_id
+    if field == "subject":
+        return resolve_subject(db, str(value)).subject_id
+    if field == "class":
+        return resolve_class(db, str(value)).class_id
+    if field == "room":
+        return resolve_room(db, str(value)).room_id
+    if field == "day":
+        return str(value).strip()
+    if field == "period":
+        return int(value)
+    if field == "slot":
+        day, period = parse_slot_value(value)
+        return resolve_slot(db, day, period).slot_id
+    if field == "room_type":
+        return str(value).strip().lower()
+    if field == "subject_type":
+        return str(value).strip().lower()
+    return value
+
+
+def _get_field_value(field: str, class_id: int, subject_id: int, teacher_id: int, slot_id: int, room_id: int, data: dict):
     if field == "teacher":
         return teacher_id
     if field == "subject":
@@ -97,29 +130,6 @@ def _get_field_value(field: str, class_id: int, subject_id: int, teacher_id: int
     if field == "subject_type":
         return data["subject_types"][subject_id]
     raise ValueError(f"Unsupported condition field: {field}")
-
-
-def _resolve_compiler_value(field: str, value: Any, data: dict) -> Any:
-    """Map human-readable generated values to solver IDs."""
-
-    if field == "teacher":
-        return resolve_teacher(data["db"], str(value)).teacher_id
-    if field == "subject":
-        return resolve_subject(data["db"], str(value)).subject_id
-    if field == "class":
-        return resolve_class(data["db"], str(value)).class_id
-    if field == "room":
-        return resolve_room(data["db"], str(value)).room_id
-    if field == "day":
-        return str(value).strip()
-    if field == "period":
-        return int(value)
-    if field == "slot":
-        day, period = parse_slot_value(value)
-        return resolve_slot(data["db"], day, period).slot_id
-    if field in ("room_type", "subject_type"):
-        return str(value).strip().lower()
-    return value
 
 
 def _compile_comparison(model, assign, expression, constraint_type, data):
@@ -220,22 +230,10 @@ def _compile_no_adjacent(model, assign, expression, constraint_type, data):
 
 
 def _compare(actual, operator, expected):
-    """Compare solver values with generated human-readable values."""
-
-    if operator in ("eq", "neq", "lt", "lte", "gt", "gte"):
-        # The actual value is already in solver representation, while Gemini
-        # normally emits human-readable names. Resolve those before comparing.
-        # The fallback keeps existing tests that use integer IDs working.
-        if isinstance(actual, int) and isinstance(expected, str):
-            # Name resolution is performed by _matching_atomic_variables via
-            # _get_field_value only when the generated value is an ID. This
-            # branch is intentionally conservative and returns False rather
-            # than guessing.
-            return False
-        if operator == "eq": return actual == expected
-        if operator == "neq": return actual != expected
-        if operator == "lt": return actual < expected
-        if operator == "lte": return actual <= expected
-        if operator == "gt": return actual > expected
-        if operator == "gte": return actual >= expected
+    if operator == "eq": return actual == expected
+    if operator == "neq": return actual != expected
+    if operator == "lt": return actual < expected
+    if operator == "lte": return actual <= expected
+    if operator == "gt": return actual > expected
+    if operator == "gte": return actual >= expected
     raise ValueError(f"Unsupported operator: {operator}")
