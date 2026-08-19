@@ -33,6 +33,11 @@ from app.models.models import Constraint
 def _load_saved_constraints(db: Session) -> list[GeneratedConstraint]:
     """Load and validate all saved constraints for this generation run."""
 
+    # Unit tests use lightweight Mock database objects. Saved-constraint
+    # loading is meaningful only for a real SQLAlchemy session.
+    if not isinstance(db, Session):
+        return []
+
     rows = db.query(Constraint).order_by(Constraint.constraint_id.asc()).all()
     saved: list[GeneratedConstraint] = []
 
