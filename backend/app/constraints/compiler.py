@@ -8,6 +8,7 @@ from app.constraints.schemas import GeneratedConstraint, Condition
 from app.constraints.resolver import (
     resolve_teacher,
     resolve_subject,
+    resolve_subjects,
     resolve_class,
     resolve_room,
     parse_slot_value,
@@ -108,6 +109,14 @@ def _resolve_expected_value(field: str, value: Any, data: dict) -> Any:
     if field == "subject_type":
         return str(value).strip().lower()
     return value
+
+
+def _resolve_expected_values(field: str, value: Any, data: dict) -> list[Any]:
+    """Return all valid IDs when an entity name is repeated across scopes."""
+    db = data.get("db")
+    if db is not None and field == "subject":
+        return [subject.subject_id for subject in resolve_subjects(db, str(value))]
+    return [_resolve_expected_value(field, value, data)]
 
 
 def _get_field_value(field: str, class_id: int, subject_id: int, teacher_id: int, slot_id: int, room_id: int, data: dict):
