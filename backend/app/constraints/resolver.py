@@ -71,20 +71,23 @@ def _resolve_entity(values: list, query: str, *, label: str, display_attr: str, 
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}'.")
+        names = ", ".join(name_of(item) for item in matches[:5])
+        raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}': {names}.")
 
     matches = [item for item in values if _compact(name_of(item)) == query_compact]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}'.")
+        names = ", ".join(name_of(item) for item in matches[:5])
+        raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}': {names}.")
 
     if teacher:
         matches = [item for item in values if _teacher_normalize(name_of(item)) == query_teacher]
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}'.")
+            names = ", ".join(name_of(item) for item in matches[:5])
+            raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}': {names}.")
 
     query_tokens = set(query_teacher.split() if teacher else query_normalized.split())
     token_matches = []
@@ -133,6 +136,34 @@ def resolve_teacher(db: Session, name: str) -> Teacher:
 
 def resolve_subject(db: Session, name: str) -> Subject:
     return _resolve_entity(db.query(Subject).all(), name, label="Subject", display_attr="subject_name")
+
+
+def resolve_subjects(db: Session, name: str) -> list[Subject]:
+    """Resolve all subjects with an exact/normalized name match.
+
+    Subject names are scoped by class in the data model, so it is valid for
+    the same subject name (for example, DBMS) to occur more than once. A
+    natural-language rule such as "DBMS cannot occur on Friday" should apply
+    to every exact subject-name match rather than failing as ambiguous.
+    """
+    values = db.query(Subject).all()
+    query_normalized = _normalize(name)
+    query_compact = _compact(name)
+
+    if not query_normalized:
+        raise EntityResolutionError(f"Subject '{name}' was not found.")
+
+    exact = [item for item in values if _normalize(item.subject_name) == query_normalized]
+    if exact:
+        return exact
+
+    compact = [item for item in values if _compact(item.subject_name) == query_compact]
+    if compact:
+        return compact
+
+    # Preserve the existing conservative fuzzy behavior when there is no
+    # deterministic match.
+    return [_resolve_entity(values, name, label="Subject", display_attr="subject_name")]
 
 
 def resolve_class(db: Session, name: str) -> Class:
