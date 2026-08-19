@@ -23,6 +23,14 @@ def _normalize(value: str) -> str:
     return " ".join(value.split())
 
 
+def _preserve_words(value: str) -> str:
+    """Normalize spacing/punctuation while preserving the original word casing."""
+    value = unicodedata.normalize("NFKC", str(value)).strip()
+    value = re.sub(r"[\u2010-\u2015\-_/]+", " ", value)
+    value = re.sub(r"[^\w\s]", " ", value, flags=re.UNICODE)
+    return " ".join(value.split())
+
+
 def _compact(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", _normalize(value))
 
@@ -91,8 +99,6 @@ def _resolve_entity(values: list, query: str, *, label: str, display_attr: str, 
         names = ", ".join(name_of(item) for item in token_matches[:5])
         raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}': {names}.")
 
-    # Acronyms are intentionally unique. This also accepts common forms such as
-    # DBMS for Database Management Systems, whose literal initials are DMS.
     acronym_matches = []
     for item in values:
         candidate = _compact(name_of(item))
@@ -179,12 +185,12 @@ def parse_slot_value(value) -> tuple[str, int]:
         if day is None or period is None:
             raise EntityResolutionError(f"Slot '{value}' must contain day and period.")
         try:
-            return str(day), int(period)
+            return _preserve_words(day), int(period)
         except (TypeError, ValueError) as exc:
             raise EntityResolutionError(f"Slot '{value}' has an invalid period.") from exc
 
-    text = _normalize(str(value))
-    match = re.fullmatch(r"(.+?)\s+(?:p|period)\s*(\d+)", text)
+    text = _preserve_words(str(value))
+    match = re.fullmatch(r"(.+?)\s+(?:p|P|period|Period)\s*(\d+)", text, flags=re.IGNORECASE)
     if not match:
         raise EntityResolutionError(
             f"Could not understand slot '{value}'. Use a form such as 'Monday Period 3'."
