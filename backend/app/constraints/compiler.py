@@ -64,12 +64,12 @@ def _matching_variables(assign: dict, condition: Condition, data: dict) -> list:
 
 
 def _matching_atomic_variables(assign: dict, field: str, operator: str, value: Any, data: dict) -> list:
-    expected = _resolve_expected_value(field, value, data)
+    expected_values = _resolve_expected_values(field, value, data)
     result = []
 
     for (class_id, subject_id, teacher_id, slot_id, room_id), variable in assign.items():
         actual = _get_field_value(field, class_id, subject_id, teacher_id, slot_id, room_id, data)
-        if _compare(actual, operator, expected):
+        if any(_compare(actual, operator, expected) for expected in expected_values):
             result.append(variable)
 
     return result
