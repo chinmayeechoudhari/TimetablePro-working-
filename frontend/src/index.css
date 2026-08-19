@@ -1,0 +1,1172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg-page);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+body {
+  margin: 0;
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-main);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+
+/* ─── Light Mode (default) ─── */
+:root {
+  /* Page & Cards */
+  --bg-page:         #f8fafc;
+  --bg-card:         #ffffff;
+  --text-main:       #1e293b;
+  --text-muted:      #64748b;
+  --border-color:    #e2e8f0;
+  --input-bg:        #f8fafc;
+  --input-border:    #cbd5e1;
+  --table-th-bg:     #f8fafc;
+
+  /* Badge icon backgrounds */
+  --badge-teacher:   #eff6ff;
+  --badge-classroom: #ecfdf5;
+  --badge-lab:       #f3e8ff;
+  --badge-class:     #fff7ed;
+  --badge-subject:   #fdf2f8;
+
+  --badge-val-bg:    #f0fdf4;
+  --badge-val-text:  #1e293b;
+
+  /* Sidebar */
+  --sidebar-bg:           #ffffff;
+  --sidebar-border:       #e2e8f0;
+  --sidebar-text:         #1e293b;
+  --sidebar-muted:        #94a3b8;
+  --sidebar-section:      #94a3b8;
+  --sidebar-hover-bg:     #f8fafc;
+  --sidebar-hover-text:   #1e293b;
+  --nav-active-bg:        #eff6ff;
+  --nav-active-text:      #2563eb;
+  --nav-active-border:    #2563eb;
+  --nav-active-dot:       #2563eb;
+  --nav-inactive-text:    #64748b;
+  --status-card-bg:       #f8fafc;
+  --status-card-border:   #e2e8f0;
+  --status-text:          #1e293b;
+  --status-sub:           #94a3b8;
+  --live-bg:              #dcfce7;
+  --live-text:            #16a34a;
+}
+
+/* ─── Dark Mode (matches reference images) ─── */
+[data-theme='dark'] {
+  color-scheme: dark;
+  /* Page & Cards */
+  --bg-page:         #090d16;
+  --bg-card:         #0d1322;
+  --text-main:       #ffffff;
+  --text-muted:      #8a99ad;
+  --border-color:    #1a2338;
+  --input-bg:        #090d16;
+  --input-border:    #1f2b45;
+  --table-th-bg:     #090d16;
+
+  /* Badge icon backgrounds */
+  --badge-teacher:   #141d33;
+  --badge-classroom: #0d2820;
+  --badge-lab:       #23173a;
+  --badge-class:     #2b1b14;
+  --badge-subject:   #2c1425;
+
+  --badge-val-bg:    #142324;
+  --badge-val-text:  #e2e8f0;
+
+  /* Sidebar */
+  --sidebar-bg:           #080b13;
+  --sidebar-border:       #151b2b;
+  --sidebar-text:         #ffffff;
+  --sidebar-muted:        #6b7a90;
+  --sidebar-section:      #4b5768;
+  --sidebar-hover-bg:     rgba(255,255,255,0.05);
+  --sidebar-hover-text:   #ffffff;
+  --nav-active-bg:        linear-gradient(135deg, #2563eb, #1d4ed8);
+  --nav-active-text:      #ffffff;
+  --nav-active-border:    transparent;
+  --nav-active-dot:       #ffffff;
+  --nav-inactive-text:    #8a99ad;
+  --status-card-bg:       rgba(255,255,255,0.03);
+  --status-card-border:   rgba(255,255,255,0.07);
+  --status-text:          #ffffff;
+  --status-sub:           #6b7a90;
+  --live-bg:              rgba(34,197,94,0.15);
+  --live-text:            #4ade80;
+}
+
+/* Theme Switch */
+.switch {
+  font-size: 14px;
+  position: relative;
+  display: inline-block;
+  width: 4em;
+  height: 2.2em;
+  border-radius: 30px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #2a2a2a;
+  transition: 0.4s;
+  border-radius: 30px;
+  overflow: hidden;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 1.2em;
+  width: 1.2em;
+  border-radius: 20px;
+  left: 0.5em;
+  bottom: 0.5em;
+  transition: 0.4s;
+  transition-timing-function: cubic-bezier(0.81, -0.04, 0.38, 1.5);
+  box-shadow: inset 8px -4px 0px 0px #fff;
+}
+
+.switch input:checked + .slider {
+  background-color: #00a6ff;
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(1.8em);
+  box-shadow: inset 15px -4px 0px 15px #ffcf48;
+}
+
+.star {
+  background-color: #fff;
+  border-radius: 50%;
+  position: absolute;
+  width: 5px;
+  transition: all 0.4s;
+  height: 5px;
+}
+
+.star_1 {
+  left: 2.5em;
+  top: 0.5em;
+}
+
+.star_2 {
+  left: 2.2em;
+  top: 1.2em;
+}
+
+.star_3 {
+  left: 3em;
+  top: 0.9em;
+}
+
+.switch input:checked ~ .slider .star {
+  opacity: 0;
+}
+
+.cloud {
+  width: 3.5em;
+  position: absolute;
+  bottom: -1.4em;
+  left: -1.1em;
+  opacity: 0;
+  transition: all 0.4s;
+}
+
+.switch input:checked ~ .slider .cloud {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   GLOBAL DARK THEME OVERRIDES (MATCHING REFERENCE IMAGES)
+   ========================================================================== */
+
+[data-theme='dark'] html,
+[data-theme='dark'] body,
+[data-theme='dark'] #root,
+[data-theme='dark'] main {
+  background-color: var(--bg-page) !important;
+  color: var(--text-main) !important;
+}
+
+/* 1. HERO BANNERS Across Teachers, Rooms, Classes, Time Slots, Subjects */
+[data-theme='dark'] .teachers-hero,
+[data-theme='dark'] .rooms-hero,
+[data-theme='dark'] .classes-hero,
+[data-theme='dark'] .subjects-hero,
+[data-theme='dark'] .timeslots-hero,
+[data-theme='dark'] .availability-hero,
+[data-theme='dark'] .ts-hero {
+  background: #0d1322 !important;
+  border: 1px solid #1a2338 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme='dark'] .teachers-hero h1,
+[data-theme='dark'] .rooms-hero h1,
+[data-theme='dark'] .classes-hero h1,
+[data-theme='dark'] .subjects-hero h1,
+[data-theme='dark'] .timeslots-hero h1,
+[data-theme='dark'] .ts-hero h1 {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .hero-subtitle {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .hero-icon {
+  background: #141d33 !important;
+  border: 1px solid #1e2f57 !important;
+  color: #3b82f6 !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme='dark'] .eyebrow {
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .hero-left p,
+[data-theme='dark'] .hero p {
+  color: #8a99ad !important;
+}
+
+/* 2. STAT CARDS Across All Pages */
+[data-theme='dark'] .stat-card,
+[data-theme='dark'] .ts-stat-card,
+[data-theme='dark'] .room-stat-card {
+  background: #0d1322 !important;
+  border: 1px solid #1a2338 !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-theme='dark'] .stat-label,
+[data-theme='dark'] .ts-stat-label {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .stat-number,
+[data-theme='dark'] .ts-stat-value {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .stat-blue .stat-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .stat-purple .stat-icon {
+  background: #23173a !important;
+  color: #a855f7 !important;
+}
+
+[data-theme='dark'] .stat-green .stat-icon {
+  background: #0d2820 !important;
+  color: #22c55e !important;
+}
+
+[data-theme='dark'] .stat-decoration {
+  opacity: 0.15 !important;
+}
+
+/* 3. DIRECTORY & FORM CARDS Across All Pages */
+[data-theme='dark'] .directory-card,
+[data-theme='dark'] .form-card,
+[data-theme='dark'] .section-card,
+[data-theme='dark'] .preview-card,
+[data-theme='dark'] .ts-card,
+[data-theme='dark'] .table-card {
+  background: #0d1322 !important;
+  border: 1px solid #1a2338 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme='dark'] .directory-header,
+[data-theme='dark'] .directory-title-row {
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] .directory-title-row h2,
+[data-theme='dark'] .directory-title-row h3,
+[data-theme='dark'] .card-title {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .directory-title-row p,
+[data-theme='dark'] .card-subtitle {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .directory-main-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+/* 4. SEARCH INPUTS Across All Pages */
+[data-theme='dark'] .search-bar,
+[data-theme='dark'] .search-input-wrapper,
+[data-theme='dark'] input[type="text"],
+[data-theme='dark'] input[type="search"],
+[data-theme='dark'] input[type="number"],
+[data-theme='dark'] select {
+  background: #090d16 !important;
+  border: 1px solid #1f2b45 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .search-bar input,
+[data-theme='dark'] .search-bar input::placeholder {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .search-bar svg {
+  color: #8a99ad !important;
+}
+
+/* 5. TABLES Across Teachers, Rooms, Classes, Subjects */
+[data-theme='dark'] table {
+  background: #0d1322 !important;
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] thead th {
+  background: #090d16 !important;
+  color: #8a99ad !important;
+  border-bottom: 1px solid #1f2b45 !important;
+}
+
+[data-theme='dark'] tbody tr {
+  background: #0d1322 !important;
+  border-bottom: 1px solid #161e30 !important;
+}
+
+[data-theme='dark'] tbody tr:hover {
+  background: #111827 !important;
+}
+
+[data-theme='dark'] td {
+  color: #ffffff !important;
+  border-color: #161e30 !important;
+}
+
+/* Row numbers */
+[data-theme='dark'] .row-num,
+[data-theme='dark'] .col-id {
+  color: #3b82f6 !important;
+  font-weight: 700 !important;
+}
+
+/* Avatars (e.g. SS, DP, RR, SB, CA, CB) */
+[data-theme='dark'] .avatar,
+[data-theme='dark'] .teacher-avatar,
+[data-theme='dark'] .class-avatar,
+[data-theme='dark'] .room-avatar {
+  background: #1a2540 !important;
+  color: #3b82f6 !important;
+  border: 1px solid #233763 !important;
+}
+
+/* Name & subtitle in table cells */
+[data-theme='dark'] .entity-name,
+[data-theme='dark'] .teacher-name,
+[data-theme='dark'] .class-name,
+[data-theme='dark'] .room-name {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .entity-sub,
+[data-theme='dark'] .teacher-sub,
+[data-theme='dark'] .class-sub,
+[data-theme='dark'] .room-sub {
+  color: #8a99ad !important;
+}
+
+/* 6. ACTION BUTTONS & BADGES Across Tables */
+[data-theme='dark'] .btn-edit,
+[data-theme='dark'] .action-edit {
+  background: #16223d !important;
+  color: #3b82f6 !important;
+  border: 1px solid #233763 !important;
+}
+
+[data-theme='dark'] .btn-edit:hover,
+[data-theme='dark'] .action-edit:hover {
+  background: #1c2b4d !important;
+}
+
+[data-theme='dark'] .btn-delete,
+[data-theme='dark'] .action-delete {
+  background: #2b141d !important;
+  color: #f43f5e !important;
+  border: 1px solid #4a1c29 !important;
+}
+
+[data-theme='dark'] .btn-delete:hover,
+[data-theme='dark'] .action-delete:hover {
+  background: #381825 !important;
+}
+
+[data-theme='dark'] .badge-capacity,
+[data-theme='dark'] .badge-role,
+[data-theme='dark'] .badge-group {
+  background: #121b2d !important;
+  color: #3b82f6 !important;
+  border: 1px solid #1e2f4a !important;
+}
+
+/* 7. TIME SLOTS PAGE SPECIFICS */
+[data-theme='dark'] .day-pill,
+[data-theme='dark'] .period-pill {
+  background: #141d33 !important;
+  color: #8a99ad !important;
+  border: 1px solid #1e2f4a !important;
+}
+
+[data-theme='dark'] .day-pill.active,
+[data-theme='dark'] .period-pill.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme='dark'] .slot-preview-card,
+[data-theme='dark'] .grid-cell {
+  background: #111827 !important;
+  border: 1px solid #1e293b !important;
+  color: #ffffff !important;
+}
+
+/* 8. SUBJECTS PAGE SPECIFICS */
+[data-theme='dark'] .class-tab {
+  background: #121b2d !important;
+  color: #8a99ad !important;
+  border: 1px solid #1e2f4a !important;
+}
+
+[data-theme='dark'] .class-tab.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme='dark'] .subject-type-btn {
+  background: #090d16 !important;
+  border: 1px solid #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .subject-type-btn.active {
+  background: #141d33 !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+/* Result count pills */
+[data-theme='dark'] .result-count,
+[data-theme='dark'] .count-badge {
+  background: #121b2d !important;
+  color: #3b82f6 !important;
+  border: 1px solid #1e2f4a !important;
+}
+
+/* ==========================================================================
+   COMPREHENSIVE DARK THEME FIXES — MODALS, FORMS, INNER ELEMENTS
+   ========================================================================== */
+
+/* ── MODALS ── */
+[data-theme='dark'] .teacher-modal,
+[data-theme='dark'] .room-modal,
+[data-theme='dark'] .teacher-modal-backdrop > div,
+[data-theme='dark'] .room-modal-backdrop > div {
+  background: #0d1322 !important;
+  border-color: #1a2338 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .modal-header {
+  background: #090d16 !important;
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] .modal-header h2,
+[data-theme='dark'] .modal-header h3 {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .modal-header p {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .modal-eyebrow {
+  color: #6b7a90 !important;
+}
+
+[data-theme='dark'] .modal-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .modal-close {
+  background: #111827 !important;
+  border-color: #1a2338 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .modal-close:hover {
+  background: #1a2338 !important;
+}
+
+[data-theme='dark'] .modal-body {
+  background: #0d1322 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .modal-footer {
+  background: #090d16 !important;
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] .modal-error {
+  background: #2b141d !important;
+  border-color: #4a1c29 !important;
+  color: #f87171 !important;
+}
+
+/* ── SECONDARY BUTTON ── */
+[data-theme='dark'] .secondary-button {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .secondary-button:hover {
+  background: #1a2338 !important;
+}
+
+/* ── FORM FIELDS (inside modals/cards) ── */
+[data-theme='dark'] .form-field > input,
+[data-theme='dark'] .form-field > select,
+[data-theme='dark'] .form-field > textarea {
+  background: #090d16 !important;
+  border-color: #1f2b45 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .form-field > input:focus,
+[data-theme='dark'] .form-field > select:focus {
+  background: #0d1322 !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme='dark'] .form-field > input::placeholder {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .form-field > label {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .form-field > span {
+  color: #6b7a90 !important;
+}
+
+[data-theme='dark'] .form-heading {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .form-sub {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .form-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+/* ── AVAILABILITY PAGE SPECIFIC ── */
+[data-theme='dark'] .teacher-switcher {
+  background: #0d1322 !important;
+  border-color: #1a2338 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .switcher-label {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .switcher-avatar {
+  background: linear-gradient(135deg, #141d33, #1a2540) !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .switcher-avatar-empty {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #6b7a90 !important;
+}
+
+[data-theme='dark'] .select-shell select {
+  background: #090d16 !important;
+  border-color: #1f2b45 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .badge-blue {
+  background: #141d33 !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .badge-neutral {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .badge-red {
+  background: #2b141d !important;
+  border-color: #4a1c29 !important;
+  color: #f87171 !important;
+}
+
+[data-theme='dark'] .picker-legend {
+  background: #090d16 !important;
+  border-color: #1f2b45 !important;
+}
+
+[data-theme='dark'] .legend-item {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .removal-hint {
+  background: #141d33 !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .day-toggle {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .day-toggle.day-toggle-active {
+  background: #2b141d !important;
+  border-color: #dc2626 !important;
+  color: #f87171 !important;
+}
+
+[data-theme='dark'] .period-toggle {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #6b7a90 !important;
+}
+
+[data-theme='dark'] .period-toggle.period-assigned {
+  background: #141d33 !important;
+  border-color: #2563eb !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .period-toggle.period-unavailable {
+  background: #2b141d !important;
+  border-color: #dc2626 !important;
+  color: #f87171 !important;
+}
+
+[data-theme='dark'] .period-toggle.period-conflict {
+  background: #2b1e0a !important;
+  border-color: #d97706 !important;
+  color: #fbbf24 !important;
+}
+
+[data-theme='dark'] .picker-day-title {
+  color: #6b7a90 !important;
+}
+
+/* ── REGENERATE BANNER ── */
+[data-theme='dark'] .regen-banner {
+  background: linear-gradient(135deg, #1a140a 0%, #221b08 100%) !important;
+  border-color: #4a3a10 !important;
+  border-left-color: #d97706 !important;
+  box-shadow: none !important;
+}
+
+[data-theme='dark'] .regen-banner.regen-urgent {
+  background: linear-gradient(135deg, #2b1018 0%, #1f0d12 100%) !important;
+  border-color: #4a1c29 !important;
+  border-left-color: #dc2626 !important;
+}
+
+[data-theme='dark'] .regen-icon {
+  background: #2b1e0a !important;
+  border-color: #4a3a10 !important;
+  color: #fbbf24 !important;
+}
+
+[data-theme='dark'] .regen-urgent .regen-icon {
+  background: #2b141d !important;
+  border-color: #4a1c29 !important;
+  color: #f87171 !important;
+}
+
+[data-theme='dark'] .regen-text {
+  color: #fbbf24 !important;
+}
+
+[data-theme='dark'] .regen-urgent .regen-text {
+  color: #f87171 !important;
+}
+
+[data-theme='dark'] .regen-text a {
+  color: #60a5fa !important;
+}
+
+/* ── LECTURE TABLE (Availability page) ── */
+[data-theme='dark'] .lecture-table-wrapper {
+  border-color: #1a2338 !important;
+  background: #0d1322 !important;
+}
+
+[data-theme='dark'] .lecture-table th {
+  background: #090d16 !important;
+  color: #8a99ad !important;
+  border-color: #1f2b45 !important;
+}
+
+[data-theme='dark'] .lecture-table td {
+  background: #0d1322 !important;
+  border-color: #161e30 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .lecture-table tbody tr:hover td {
+  background: #111827 !important;
+}
+
+[data-theme='dark'] .day-cell {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .period-pill {
+  background: #141d33 !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .subject-name-cell {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .subject-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .type-badge-theory {
+  background: #0d2820 !important;
+  border-color: #1a5c45 !important;
+  color: #4ade80 !important;
+}
+
+[data-theme='dark'] .type-badge-lab {
+  background: #2b1e0a !important;
+  border-color: #4a3a10 !important;
+  color: #fbbf24 !important;
+}
+
+/* ── EMPTY STATE ── */
+[data-theme='dark'] .empty-state {
+  background: linear-gradient(180deg, #0d1322, #090d16) !important;
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] .empty-state h3 {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .empty-state p {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .empty-icon {
+  background: #141d33 !important;
+  color: #3b82f6 !important;
+}
+
+/* ── TABLE FOOTER ── */
+[data-theme='dark'] .table-footer {
+  background: #090d16 !important;
+  border-color: #1a2338 !important;
+  color: #8a99ad !important;
+}
+
+/* ── TIMESLOT PAGE SPECIFIC ── */
+[data-theme='dark'] .form-card {
+  background: #0d1322 !important;
+  border-color: #1a2338 !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .day-chip {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .day-chip:hover {
+  background: #141d33 !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme='dark'] .day-chip.active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .period-number {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .period-number.active {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .warning-box {
+  background: #1a140a !important;
+  border-color: #4a3a10 !important;
+  border-left-color: #d97706 !important;
+  color: #fbbf24 !important;
+}
+
+[data-theme='dark'] .preview-day-card {
+  background: #111827 !important;
+  border-color: #1a2338 !important;
+}
+
+[data-theme='dark'] .preview-day-title {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .preview-period-pill {
+  background: #141d33 !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .field-wrap label {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .field-hint {
+  color: #6b7a90 !important;
+}
+
+[data-theme='dark'] .summary-strip {
+  color: #8a99ad !important;
+}
+
+/* ── ROOM FORM TYPE SELECTOR ── */
+[data-theme='dark'] .type-option {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .type-option:hover {
+  background: #141d33 !important;
+}
+
+[data-theme='dark'] .type-option strong {
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .classroom-option.selected {
+  background: #141d33 !important;
+  border-color: #2563eb !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .lab-option.selected {
+  background: #23173a !important;
+  border-color: #7c3aed !important;
+  color: #a78bfa !important;
+}
+
+[data-theme='dark'] .type-option-icon {
+  background: rgba(255,255,255,0.05) !important;
+}
+
+/* ── PAGINATION ── */
+[data-theme='dark'] .pagination-bar {
+  border-color: #1a2338 !important;
+  background: #090d16 !important;
+}
+
+[data-theme='dark'] .pagination-info {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .pagination-nav button {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .pagination-nav button:hover:not(:disabled) {
+  background: #141d33 !important;
+  color: #ffffff !important;
+}
+
+/* ── CATEGORY TABS (Rooms) ── */
+[data-theme='dark'] .category-tab {
+  background: #111827 !important;
+  border-color: #1f2b45 !important;
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .category-tab.active {
+  background: #141d33 !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme='dark'] .tab-icon {
+  background: rgba(255,255,255,0.05) !important;
+}
+
+[data-theme='dark'] .tab-content strong {
+  color: #ffffff !important;
+}
+
+/* ── SUBJECT FORM SPECIFIC ── */
+[data-theme='dark'] .subject-meta {
+  color: #8a99ad !important;
+}
+
+[data-theme='dark'] .period-badge {
+  background: #141d33 !important;
+  border-color: #233763 !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme='dark'] .period-badge-lab {
+  background: #23173a !important;
+  border-color: #4b2fa0 !important;
+  color: #a78bfa !important;
+}
+
+[data-theme='dark'] .subject-icon-lab {
+  background: #23173a !important;
+  color: #a78bfa !important;
+}
+
+/* ── MESSAGE BOXES ── */
+[data-theme='dark'] .success-message {
+  background: #0d2820 !important;
+  border-color: #1a5c45 !important;
+  color: #4ade80 !important;
+}
+
+[data-theme='dark'] .error-message {
+  background: #2b141d !important;
+  border-color: #4a1c29 !important;
+  color: #f87171 !important;
+}
+
+/* ── MODAL INLINE STYLES (ClassForm, SubjectForm use JS style objects) ── */
+[data-theme='dark'] [class*="modal"],
+[data-theme='dark'] [class*="-modal"] {
+  color: #ffffff !important;
+}
+
+/* Target white/light modal backgrounds injected as inline styles */
+[data-theme='dark'] .teacher-modal-backdrop,
+[data-theme='dark'] .room-modal-backdrop {
+  background: rgba(0, 5, 15, 0.75) !important;
+}
+
+/* ── DIRECTORY EYEBROW ── */
+[data-theme='dark'] .directory-eyebrow {
+  color: #6b7a90 !important;
+}
+
+/* ── SMALL ADD BUTTON ── */
+[data-theme='dark'] .small-add-button {
+  background: #121b2d !important;
+  color: #3b82f6 !important;
+  border-color: #1e2f4a !important;
+}
+
+/* ── INFO / STATUS CARDS ── */
+[data-theme='dark'] .info-card {
+  background: #0d1322 !important;
+  border-color: #1a2338 !important;
+  color: #ffffff !important;
+}
+
+/* ── SYNC BADGES ── */
+[data-theme='dark'] .sync-badge.synced {
+  background: #0d2820 !important;
+  border-color: #1a5c45 !important;
+  color: #4ade80 !important;
+}
+
+[data-theme='dark'] .sync-badge.unsynced {
+  background: #2b1e0a !important;
+  border-color: #4a3a10 !important;
+  color: #fbbf24 !important;
+}
+
+/* ── LOAD / ROLE / CAPACITY BADGES ── */
+[data-theme='dark'] .load-badge,
+[data-theme='dark'] .role-badge,
+[data-theme='dark'] .capacity-text {
+  background: #121b2d !important;
+  color: #3b82f6 !important;
+  border-color: #1e2f4a !important;
+}
+
+/* ── TEACHER/SUBJECT FORM GRID ── */
+[data-theme='dark'] .form-grid {
+  color: #ffffff !important;
+}
+
+/* ── GENERAL CATCH-ALL for any remaining light backgrounds ── */
+[data-theme='dark'] input[type="text"]:focus,
+[data-theme='dark'] input[type="number"]:focus,
+[data-theme='dark'] input[type="email"]:focus,
+[data-theme='dark'] textarea:focus {
+  background: #0d1322 !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder {
+  color: #6b7a90 !important;
+}
+
+/* ── MODAL ACCENT BAR ── */
+[data-theme='dark'] .modal-accent {
+  background: linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa) !important;
+}
+
+/* ── CLASSES PAGE MODAL (inline JS styles - target by structure) ── */
+[data-theme='dark'] .teacher-modal-backdrop ~ div,
+[data-theme='dark'] .room-modal-backdrop ~ div {
+  background: #0d1322 !important;
+}
