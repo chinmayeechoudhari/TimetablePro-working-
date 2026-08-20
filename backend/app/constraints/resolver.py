@@ -24,7 +24,6 @@ def _normalize(value: str) -> str:
 
 
 def _preserve_words(value: str) -> str:
-    """Normalize spacing/punctuation while preserving the original word casing."""
     value = unicodedata.normalize("NFKC", str(value)).strip()
     value = re.sub(r"[\u2010-\u2015\-_/]+", " ", value)
     value = re.sub(r"[^\w\s]", " ", value, flags=re.UNICODE)
@@ -56,7 +55,6 @@ def _similarity(left: str, right: str) -> float:
 
 
 def _resolve_entity(values: list, query: str, *, label: str, display_attr: str, teacher: bool = False):
-    """Resolve an entity using deterministic matching before conservative fuzzy matching."""
     query_normalized = _normalize(query)
     query_compact = _compact(query)
     query_teacher = _teacher_normalize(query) if teacher else query_normalized
@@ -106,9 +104,7 @@ def _resolve_entity(values: list, query: str, *, label: str, display_attr: str, 
     for item in values:
         candidate = _compact(name_of(item))
         acronym = _acronym(name_of(item))
-        if query_compact == acronym or (
-            len(query_compact) >= 3 and _is_subsequence(query_compact, candidate)
-        ):
+        if query_compact == acronym or (len(query_compact) >= 3 and _is_subsequence(query_compact, candidate)):
             acronym_matches.append(item)
     if len(acronym_matches) == 1:
         return acronym_matches[0]
@@ -116,11 +112,7 @@ def _resolve_entity(values: list, query: str, *, label: str, display_attr: str, 
         names = ", ".join(name_of(item) for item in acronym_matches[:5])
         raise EntityResolutionError(f"Multiple {label.lower()}s matched '{query}': {names}.")
 
-    scored = sorted(
-        ((_similarity(query, name_of(item)), item) for item in values),
-        key=lambda pair: pair[0],
-        reverse=True,
-    )
+    scored = sorted(((_similarity(query, name_of(item)), item) for item in values), key=lambda pair: pair[0], reverse=True)
     if scored and scored[0][0] >= 0.86:
         best_score = scored[0][0]
         close = [item for score, item in scored if best_score - score < 0.015]
@@ -135,43 +127,35 @@ def resolve_teacher(db: Session, name: str) -> Teacher:
 
 
 def resolve_subject(db: Session, name: str) -> Subject:
-    """Resolve a subject only when its name maps to one registration."""
     return _resolve_entity(db.query(Subject).all(), name, label="Subject", display_attr="subject_name")
 
 
 def resolve_subject_candidates(db: Session, name: str) -> list[Subject]:
-    """Return every deterministic subject registration matching a name.
-
-    A subject name is not globally unique because the same subject can be
-    registered for several classes and/or as theory and lab. Callers that
-    need a unique registration should filter these candidates using class and
-    subject_type before resolving the rule.
-    """
     values = db.query(Subject).all()
     query_normalized = _normalize(name)
     query_compact = _compact(name)
     if not query_normalized:
         raise EntityResolutionError(f"Subject '{name}' was not found.")
-
     exact = [item for item in values if _normalize(item.subject_name) == query_normalized]
     if exact:
         return exact
-
     compact = [item for item in values if _compact(item.subject_name) == query_compact]
     if compact:
         return compact
-
-    # Preserve the existing conservative fuzzy behavior for non-exact names.
     return [_resolve_entity(values, name, label="Subject", display_attr="subject_name")]
 
 
 def resolve_subjects(db: Session, name: str) -> list[Subject]:
-    """Resolve all subjects with an exact/normalized name match."""
     return resolve_subject_candidates(db, name)
 
 
 def resolve_class(db: Session, name: str) -> Class:
-    return _resolve_entity(db.query(Class).all(), name, label="Class", display_attr="class_name")
+    text = str(name).strip()
+    if text.isdigit():
+        item = db.query(Class).filter(Class.class_id == int(text)).first()
+        if item is not None:
+            return item
+    return _resolve_entity(db.query(Class).all(), text, label="Class", display_attr="class_name")
 
 
 def resolve_room(db: Session, room_number: str) -> Room:
@@ -195,10 +179,7 @@ def resolve_day_slots(db: Session, day: str) -> list[TimeSlot]:
 
 def resolve_slot(db: Session, day: str, period: int) -> TimeSlot:
     normalized = _normalize(day)
-    matches = [
-        slot for slot in db.query(TimeSlot).all()
-        if _normalize(slot.day) == normalized and slot.period_number == period
-    ]
+    matches = [slot for slot in db.query(TimeSlot).all() if _normalize(slot.day) == normalized and slot.period_number == period]
     if not matches:
         raise EntityResolutionError(f"No slot found for {day}, period {period}.")
     if len(matches) > 1:
@@ -227,7 +208,5 @@ def parse_slot_value(value) -> tuple[str, int]:
     text = _preserve_words(str(value))
     match = re.fullmatch(r"(.+?)\s+(?:p|P|period|Period)\s*(\d+)", text, flags=re.IGNORECASE)
     if not match:
-        raise EntityResolutionError(
-            f"Could not understand slot '{value}'. Use a form such as 'Monday Period 3'."
-        )
+        raise EntityResolutionError(f"Could not understand slot '{value}'. Use a form such as 'Monday Period 3'.")
     return match.group(1), int(match.group(2))
