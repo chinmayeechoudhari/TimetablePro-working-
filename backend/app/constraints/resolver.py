@@ -135,21 +135,21 @@ def resolve_teacher(db: Session, name: str) -> Teacher:
 
 
 def resolve_subject(db: Session, name: str) -> Subject:
+    """Resolve a subject only when its name maps to one registration."""
     return _resolve_entity(db.query(Subject).all(), name, label="Subject", display_attr="subject_name")
 
 
-def resolve_subjects(db: Session, name: str) -> list[Subject]:
-    """Resolve all subjects with an exact/normalized name match.
+def resolve_subject_candidates(db: Session, name: str) -> list[Subject]:
+    """Return every deterministic subject registration matching a name.
 
-    Subject names are scoped by class in the data model, so it is valid for
-    the same subject name (for example, DBMS) to occur more than once. A
-    natural-language rule such as "DBMS cannot occur on Friday" should apply
-    to every exact subject-name match rather than failing as ambiguous.
+    A subject name is not globally unique because the same subject can be
+    registered for several classes and/or as theory and lab. Callers that
+    need a unique registration should filter these candidates using class and
+    subject_type before resolving the rule.
     """
     values = db.query(Subject).all()
     query_normalized = _normalize(name)
     query_compact = _compact(name)
-
     if not query_normalized:
         raise EntityResolutionError(f"Subject '{name}' was not found.")
 
@@ -161,9 +161,13 @@ def resolve_subjects(db: Session, name: str) -> list[Subject]:
     if compact:
         return compact
 
-    # Preserve the existing conservative fuzzy behavior when there is no
-    # deterministic match.
+    # Preserve the existing conservative fuzzy behavior for non-exact names.
     return [_resolve_entity(values, name, label="Subject", display_attr="subject_name")]
+
+
+def resolve_subjects(db: Session, name: str) -> list[Subject]:
+    """Resolve all subjects with an exact/normalized name match."""
+    return resolve_subject_candidates(db, name)
 
 
 def resolve_class(db: Session, name: str) -> Class:
