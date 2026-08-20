@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,12 +40,7 @@ def _serialize(row: Constraint) -> dict:
         payload = json.loads(row.parameters_json or "{}")
     except json.JSONDecodeError:
         payload = {}
-    return {
-        "constraint_id": row.constraint_id,
-        "constraint_name": row.constraint_name,
-        "constraint_type": row.constraint_type,
-        "constraint": payload,
-    }
+    return {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
 
 
 def _walk_conditions(condition: Any):
@@ -93,6 +89,26 @@ def _context_from_atoms(atoms):
     return result
 
 
+def _global_no_class_day_constraint(text: str) -> GeneratedConstraint | None:
+    """Recognize unambiguous global no-class day rules without relying on the LLM."""
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    match = re.fullmatch(
+        r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\.?",
+        normalized,
+    )
+    if not match:
+        return None
+    day = match.group(1).capitalize()
+    from app.constraints.schemas import AtomicCondition, ForbidExpression
+    return GeneratedConstraint(
+        constraint_type="hard",
+        weight=None,
+        expression=ForbidExpression(filter=AtomicCondition(field="day", operator="eq", value=day)),
+        explanation=f"No classes may be scheduled on {day}.",
+        assumptions=[],
+    )
+
+
 def _append_atomic_to_condition(condition, atom):
     if condition.kind == "and":
         condition.conditions.append(atom)
@@ -103,7 +119,6 @@ def _append_atomic_to_condition(condition, atom):
 
 def _apply_selection(constraint: GeneratedConstraint, selection: ConstraintSelection) -> GeneratedConstraint:
     from app.constraints.schemas import AtomicCondition
-
     def bind_expression(expression):
         if expression.kind in ("forbid", "exists", "no_adjacent"):
             expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
@@ -119,7 +134,6 @@ def _apply_selection(constraint: GeneratedConstraint, selection: ConstraintSelec
             expression.expression = bind_expression(expression.expression)
             return expression
         return expression
-
     return constraint.model_copy(update={"expression": bind_expression(constraint.expression)})
 
 
@@ -128,11 +142,9 @@ def _subject_clarification(db: Session, constraint: GeneratedConstraint):
     subject_name = context.get("subject")
     if not subject_name:
         return None
-
     candidates = resolve_subject_candidates(db, subject_name)
     if len(candidates) <= 1:
         return None
-
     requested_class = context.get("class")
     requested_type = context.get("subject_type")
     if requested_class:
@@ -142,30 +154,22 @@ def _subject_clarification(db: Session, constraint: GeneratedConstraint):
         candidates = [s for s in candidates if str(s.subject_type).strip().lower() == requested_type.strip().lower()]
     if len(candidates) <= 1:
         return None
-
     return {
         "status": "needs_clarification",
         "message": f"'{subject_name}' is registered for multiple classes or subject types. Please select the exact class and type before applying this rule.",
         "subject": subject_name,
-        "options": [
-            {"subject_id": s.subject_id, "subject_name": s.subject_name, "class_id": s.class_id, "class_name": s.class_.class_name, "subject_type": s.subject_type or "theory"}
-            for s in candidates
-        ],
+        "options": [{"subject_id": s.subject_id, "subject_name": s.subject_name, "class_id": s.class_id, "class_name": s.class_.class_name, "subject_type": s.subject_type or "theory"} for s in candidates],
         "constraint": constraint.model_dump(mode="json"),
     }
 
 
 def _validate_for_constraint_studio(db: Session, constraint: GeneratedConstraint) -> None:
-    """Validate normally, but allow a repeated subject when it is explicitly bound to class/type."""
     try:
         validate_constraint(db, constraint)
         return
     except EntityResolutionError as exc:
-        message = str(exc)
         context = _subject_context(constraint)
-        if "Multiple subjects matched" in message and context.get("subject") and context.get("class") and context.get("subject_type"):
-            # The compiler resolves repeated subject names to all IDs and the
-            # class/type filters restrict them to the selected registration.
+        if "Multiple subjects matched" in str(exc) and context.get("subject") and context.get("class") and context.get("subject_type"):
             resolve_subject_candidates(db, context["subject"])
             return
         raise
@@ -177,7 +181,7 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
     if not text:
         raise HTTPException(status_code=400, detail="Constraint text cannot be empty")
     try:
-        constraint = service.generator.generate(text)
+        constraint = _global_no_class_day_constraint(text) or service.generator.generate(text)
         if request.selection is not None:
             constraint = _apply_selection(constraint, request.selection)
         else:
@@ -203,13 +207,11 @@ def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_
         _validate_for_constraint_studio(db, constraint)
     except (EntityResolutionError, ConstraintValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     payload = constraint.model_dump(mode="json")
     parameters_json = json.dumps(payload, sort_keys=True)
     duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
     if duplicate is not None:
         raise HTTPException(status_code=409, detail="This constraint is already active.")
-
     row = Constraint(constraint_name=constraint.explanation, constraint_type=constraint.constraint_type, parameters_json=parameters_json)
     db.add(row)
     db.commit()
