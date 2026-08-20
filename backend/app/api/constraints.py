@@ -1,25 +1,35 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from app.constraints.resolver import EntityResolutionError
+from app.constraints.resolver import EntityResolutionError, resolve_subject_candidates
 from app.constraints.schemas import GeneratedConstraint
 from app.constraints.service import ConstraintService
 from app.constraints.validator import ConstraintValidationError, validate_constraint
 from app.core.config import get_db
-from app.models.models import Constraint
+from app.models.models import Constraint, Class, Subject
 
 
 router = APIRouter(prefix="/constraints", tags=["constraints"])
 service = ConstraintService()
 
 
+class ConstraintSelection(BaseModel):
+    """A user's choice when a natural-language subject is ambiguous."""
+
+    subject_id: int
+    class_id: int
+    subject_type: str
+
+
 class ConstraintRequest(BaseModel):
     text: str
+    selection: ConstraintSelection | None = None
 
 
 class SaveConstraintRequest(BaseModel):
@@ -39,15 +49,163 @@ def _serialize(row: Constraint) -> dict:
     }
 
 
+def _walk_conditions(condition: Any):
+    """Yield every atomic condition inside a nested constraint condition."""
+    if condition.kind == "atomic":
+        yield condition
+    elif condition.kind in ("and", "or"):
+        for child in condition.conditions:
+            yield from _walk_conditions(child)
+    elif condition.kind == "not":
+        yield from _walk_conditions(condition.condition)
+
+
+def _subject_context(constraint: GeneratedConstraint):
+    """Return subject/class/type atoms that Gemini extracted from the rule."""
+    expression = constraint.expression
+    conditions = []
+    if expression.kind in ("forbid", "exists", "no_adjacent", "count"):
+        conditions = list(_walk_conditions(expression.filter))
+    elif expression.kind == "comparison":
+        for side in (expression.left, expression.right):
+            if side.kind == "count":
+                conditions.extend(_walk_conditions(side.filter))
+    elif expression.kind == "for_each":
+        return _subject_context_from_expression(expression.expression)
+    return _context_from_atoms(conditions)
+
+
+def _subject_context_from_expression(expression):
+    if expression.kind in ("forbid", "exists", "no_adjacent", "count"):
+        return _context_from_atoms(list(_walk_conditions(expression.filter)))
+    if expression.kind == "comparison":
+        atoms = []
+        for side in (expression.left, expression.right):
+            if side.kind == "count":
+                atoms.extend(_walk_conditions(side.filter))
+        return _context_from_atoms(atoms)
+    if expression.kind == "for_each":
+        return _subject_context_from_expression(expression.expression)
+    return {"subject": None, "class": None, "subject_type": None}
+
+
+def _context_from_atoms(atoms):
+    result = {"subject": None, "class": None, "subject_type": None}
+    for atom in atoms:
+        if atom.field in result and result[atom.field] is None and atom.operator == "eq":
+            result[atom.field] = str(atom.value)
+    return result
+
+
+def _append_atomic_to_condition(condition, atom):
+    if condition.kind == "and":
+        condition.conditions.append(atom)
+        return condition
+    from app.constraints.schemas import AndCondition
+    return AndCondition(conditions=[condition, atom])
+
+
+def _apply_selection(constraint: GeneratedConstraint, selection: ConstraintSelection) -> GeneratedConstraint:
+    """Bind an ambiguous subject to the exact class/type chosen by the user."""
+    from app.constraints.schemas import AtomicCondition
+
+    def bind_expression(expression):
+        if expression.kind in ("forbid", "exists", "no_adjacent"):
+            expression.filter = _append_atomic_to_condition(
+                expression.filter,
+                AtomicCondition(field="class", operator="eq", value=str(selection.class_id)),
+            )
+            expression.filter = _append_atomic_to_condition(
+                expression.filter,
+                AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type),
+            )
+            return expression
+        if expression.kind == "comparison":
+            for side in (expression.left, expression.right):
+                if side.kind == "count":
+                    side.filter = _append_atomic_to_condition(
+                        side.filter,
+                        AtomicCondition(field="class", operator="eq", value=str(selection.class_id)),
+                    )
+                    side.filter = _append_atomic_to_condition(
+                        side.filter,
+                        AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type),
+                    )
+            return expression
+        if expression.kind == "for_each":
+            expression.expression = bind_expression(expression.expression)
+            return expression
+        return expression
+
+    return constraint.model_copy(update={"expression": bind_expression(constraint.expression)})
+
+
+def _subject_clarification(db: Session, constraint: GeneratedConstraint):
+    context = _subject_context(constraint)
+    subject_name = context.get("subject")
+    if not subject_name:
+        return None
+
+    candidates = resolve_subject_candidates(db, subject_name)
+    if len(candidates) <= 1:
+        return None
+
+    requested_class = context.get("class")
+    requested_type = context.get("subject_type")
+
+    if requested_class:
+        normalized = requested_class.strip().lower()
+        candidates = [
+            subject for subject in candidates
+            if str(subject.class_id) == requested_class
+            or str(subject.class_.class_name).strip().lower() == normalized
+        ]
+    if requested_type:
+        candidates = [
+            subject for subject in candidates
+            if str(subject.subject_type).strip().lower() == requested_type.strip().lower()
+        ]
+
+    if len(candidates) <= 1:
+        return None
+
+    return {
+        "status": "needs_clarification",
+        "message": (
+            f"'{subject_name}' is registered for multiple classes or subject types. "
+            "Please select the exact class and type before applying this rule."
+        ),
+        "subject": subject_name,
+        "options": [
+            {
+                "subject_id": subject.subject_id,
+                "subject_name": subject.subject_name,
+                "class_id": subject.class_id,
+                "class_name": subject.class_.class_name,
+                "subject_type": subject.subject_type or "theory",
+            }
+            for subject in candidates
+        ],
+        "constraint": constraint.model_dump(mode="json"),
+    }
+
+
 @router.post("/preview")
 def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)):
-    """Interpret and validate a natural-language rule without saving it."""
+    """Interpret, resolve, and validate a natural-language rule without saving it."""
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Constraint text cannot be empty")
 
     try:
-        constraint = service.generate_and_validate(db, text)
+        constraint = service.generator.generate(text)
+        if request.selection is not None:
+            constraint = _apply_selection(constraint, request.selection)
+        else:
+            clarification = _subject_clarification(db, constraint)
+            if clarification is not None:
+                return clarification
+        validate_constraint(db, constraint)
     except (EntityResolutionError, ConstraintValidationError, ValueError, ValidationError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
