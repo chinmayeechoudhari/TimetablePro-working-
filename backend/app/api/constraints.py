@@ -89,24 +89,26 @@ def _context_from_atoms(atoms):
     return result
 
 
+def _bound_subject_candidates(db: Session, context: dict):
+    candidates = resolve_subject_candidates(db, context["subject"])
+    requested_class = context.get("class")
+    requested_type = context.get("subject_type")
+    if requested_class:
+        normalized = requested_class.strip().lower()
+        candidates = [s for s in candidates if str(s.class_id) == requested_class or str(s.class_.class_name).strip().lower() == normalized]
+    if requested_type:
+        candidates = [s for s in candidates if str(s.subject_type).strip().lower() == requested_type.strip().lower()]
+    return candidates
+
+
 def _global_no_class_day_constraint(text: str) -> GeneratedConstraint | None:
-    """Recognize unambiguous global no-class day rules without relying on the LLM."""
     normalized = re.sub(r"\s+", " ", text.strip().lower())
-    match = re.fullmatch(
-        r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\.?",
-        normalized,
-    )
+    match = re.fullmatch(r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\.?", normalized)
     if not match:
         return None
     day = match.group(1).capitalize()
     from app.constraints.schemas import AtomicCondition, ForbidExpression
-    return GeneratedConstraint(
-        constraint_type="hard",
-        weight=None,
-        expression=ForbidExpression(filter=AtomicCondition(field="day", operator="eq", value=day)),
-        explanation=f"No classes may be scheduled on {day}.",
-        assumptions=[],
-    )
+    return GeneratedConstraint(constraint_type="hard", weight=None, expression=ForbidExpression(filter=AtomicCondition(field="day", operator="eq", value=day)), explanation=f"No classes may be scheduled on {day}.", assumptions=[])
 
 
 def _append_atomic_to_condition(condition, atom):
@@ -142,17 +144,9 @@ def _subject_clarification(db: Session, constraint: GeneratedConstraint):
     subject_name = context.get("subject")
     if not subject_name:
         return None
-    candidates = resolve_subject_candidates(db, subject_name)
-    if len(candidates) <= 1:
-        return None
-    requested_class = context.get("class")
-    requested_type = context.get("subject_type")
-    if requested_class:
-        normalized = requested_class.strip().lower()
-        candidates = [s for s in candidates if str(s.class_id) == requested_class or str(s.class_.class_name).strip().lower() == normalized]
-    if requested_type:
-        candidates = [s for s in candidates if str(s.subject_type).strip().lower() == requested_type.strip().lower()]
-    if len(candidates) <= 1:
+    candidates = _bound_subject_candidates(db, context)
+    all_candidates = resolve_subject_candidates(db, subject_name)
+    if len(all_candidates) <= 1 or len(candidates) <= 1:
         return None
     return {
         "status": "needs_clarification",
@@ -169,8 +163,7 @@ def _validate_for_constraint_studio(db: Session, constraint: GeneratedConstraint
         return
     except EntityResolutionError as exc:
         context = _subject_context(constraint)
-        if "Multiple subjects matched" in str(exc) and context.get("subject") and context.get("class") and context.get("subject_type"):
-            resolve_subject_candidates(db, context["subject"])
+        if "Multiple subjects matched" in str(exc) and context.get("subject") and len(_bound_subject_candidates(db, context)) == 1:
             return
         raise
 
