@@ -25,10 +25,25 @@ class ConstraintService:
             constraint=constraint,
             data=data,
         )
-        # The compiler produces a unit violation penalty. Apply the declared
-        # soft-constraint weight here so the objective respects user intent.
-        if constraint.constraint_type == "soft" and constraint.weight not in (None, 1):
-            return [penalty * constraint.weight for penalty in penalties]
+
+        # For soft constraints with a user-specified weight > 1, scale the penalty
+        # by creating a new IntVar and adding the relationship via CP-SAT constraints
+        # (IntVar objects cannot be multiplied by Python scalars directly).
+        weight = constraint.weight if constraint.constraint_type == "soft" else None
+        if weight is not None and weight != 1 and penalties:
+            scaled = []
+            for i, penalty in enumerate(penalties):
+                if isinstance(penalty, (int, float)):
+                    # Already a plain number (e.g. from tests) — just scale normally
+                    scaled.append(int(penalty * weight))
+                else:
+                    # OR-Tools IntVar — must create a new var and link via model.Add
+                    ub = penalty.Proto().domain[-1] * int(weight)
+                    scaled_var = model.NewIntVar(0, max(ub, 0), f"scaled_penalty_{i}")
+                    model.Add(scaled_var == penalty * int(weight))
+                    scaled.append(scaled_var)
+            return scaled
+
         return penalties
 
     def generate_validate_and_compile(

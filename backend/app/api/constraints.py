@@ -13,7 +13,7 @@ from app.constraints.schemas import GeneratedConstraint
 from app.constraints.service import ConstraintService
 from app.constraints.validator import ConstraintValidationError, validate_constraint
 from app.core.config import get_db
-from app.models.models import Constraint
+from app.models.models import Constraint, Teacher, Subject, Class
 
 
 router = APIRouter(prefix="/constraints", tags=["constraints"])
@@ -168,6 +168,22 @@ def _validate_for_constraint_studio(db: Session, constraint: GeneratedConstraint
         raise
 
 
+@router.get("/suggestions")
+def get_suggestions(db: Session = Depends(get_db)):
+    teachers = [t.teacher_name for t in db.query(Teacher).limit(3).all()]
+    subjects = [s.subject_name for s in db.query(Subject).limit(4).all()]
+    classes = [c.class_name for c in db.query(Class).limit(3).all()]
+
+    suggestions = ["No classes on Tuesday."]
+    if subjects:
+        suggestions.append(f"No {subjects[0]} Lab on Tuesday.")
+        if len(subjects) > 1:
+            suggestions.append(f"{subjects[1]} cannot occur on Tuesday.")
+    if teachers:
+        suggestions.append(f"{teachers[0]} cannot teach Monday period 3.")
+    return suggestions[:4]
+
+
 @router.post("/preview")
 def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)):
     text = request.text.strip()
@@ -184,7 +200,20 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
         _validate_for_constraint_studio(db, constraint)
     except (EntityResolutionError, ConstraintValidationError, ValueError, ValidationError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "valid", "constraint": constraint.model_dump(mode="json")}
+
+    # Smart warnings
+    warnings = []
+    payload = constraint.model_dump(mode="json")
+    parameters_json = json.dumps(payload, sort_keys=True)
+    duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
+    if duplicate is not None:
+        warnings.append("Note: An identical constraint is already active in your system.")
+
+    return {
+        "status": "valid",
+        "constraint": payload,
+        "warnings": warnings,
+    }
 
 
 @router.get("")
