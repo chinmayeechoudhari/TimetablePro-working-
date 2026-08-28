@@ -21,9 +21,9 @@ service = ConstraintService()
 
 
 class ConstraintSelection(BaseModel):
-    subject_id: int
-    class_id: int
-    subject_type: str
+    subject_id: int | None = None
+    class_id: int | None = None
+    subject_type: str | None = None
 
 
 class ConstraintRequest(BaseModel):
@@ -123,14 +123,18 @@ def _apply_selection(constraint: GeneratedConstraint, selection: ConstraintSelec
     from app.constraints.schemas import AtomicCondition
     def bind_expression(expression):
         if expression.kind in ("forbid", "exists", "no_adjacent"):
-            expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
-            expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
+            if selection.class_id is not None:
+                expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
+            if selection.subject_type is not None:
+                expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
             return expression
         if expression.kind == "comparison":
             for side in (expression.left, expression.right):
                 if side.kind == "count":
-                    side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
-                    side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
+                    if selection.class_id is not None:
+                        side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
+                    if selection.subject_type is not None:
+                        side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
             return expression
         if expression.kind == "for_each":
             expression.expression = bind_expression(expression.expression)
@@ -144,13 +148,24 @@ def _subject_clarification(db: Session, constraint: GeneratedConstraint):
     subject_name = context.get("subject")
     if not subject_name:
         return None
-    candidates = _bound_subject_candidates(db, context)
-    all_candidates = resolve_subject_candidates(db, subject_name)
-    if len(all_candidates) <= 1 or len(candidates) <= 1:
+    # Skip if the constraint already has a class explicitly specified
+    if context.get("class"):
         return None
+    try:
+        candidates = _bound_subject_candidates(db, context)
+    except Exception:
+        return None
+    # Always ask which class (or All Classes) whenever the subject is found at all
+    if not candidates:
+        return None
+    message = (
+        f"'{subject_name}' is registered for multiple classes or subject types. Which should this rule apply to?"
+        if len(candidates) > 1
+        else f"'{subject_name}' is found in your timetable. Should this rule apply to a specific class or all classes?"
+    )
     return {
         "status": "needs_clarification",
-        "message": f"'{subject_name}' is registered for multiple classes or subject types. Please select the exact class and type before applying this rule.",
+        "message": message,
         "subject": subject_name,
         "options": [{"subject_id": s.subject_id, "subject_name": s.subject_name, "class_id": s.class_id, "class_name": s.class_.class_name, "subject_type": s.subject_type or "theory"} for s in candidates],
         "constraint": constraint.model_dump(mode="json"),
