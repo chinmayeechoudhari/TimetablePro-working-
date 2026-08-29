@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ValidationError
+from sqlalchemy.orm import Session
+
+from app.constraints.resolver import EntityResolutionError, resolve_subject_candidates
+from app.constraints.schemas import GeneratedConstraint
+from app.constraints.service import ConstraintService
+from app.constraints.validator import ConstraintValidationError, validate_constraint
+from app.core.config import get_db
+from app.models.models import Constraint, Teacher, Subject, Class
+
+
+router = APIRouter(prefix="/constraints", tags=["constraints"])
+service = ConstraintService()
+
+
+class ConstraintSelection(BaseModel):
+    subject_id: int | None = None
+    class_id: int | None = None
+    subject_type: str | None = None
+
+
+class ConstraintRequest(BaseModel):
+    text: str
+    selection: ConstraintSelection | None = None
+
+
+class SaveConstraintRequest(BaseModel):
+    constraint: GeneratedConstraint
+
+
+class UpdateConstraintRequest(BaseModel):
+    weight: int
+
+
+def _serialize(row: Constraint) -> dict:
+    try:
+        payload = json.loads(row.parameters_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    if row.constraint_type == "soft":
+        weight = payload.get("weight")
+        if weight not in (1, 2, 3):
+            payload["weight"] = 3
+    return {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
+
+
+def _walk_conditions(condition: Any):
+    if condition.kind == "atomic":
+        yield condition
+    elif condition.kind in ("and", "or"):
+        for child in condition.conditions:
+            yield from _walk_conditions(child)
+    elif condition.kind == "not":
+        yield from _walk_conditions(condition.condition)
+
+
+def _subject_context(constraint: GeneratedConstraint):
+    expression = constraint.expression
+    conditions = []
+    if expression.kind in ("forbid", "exists", "no_adjacent", "count"):
+        conditions = list(_walk_conditions(expression.filter))
+    elif expression.kind == "comparison":
+        for side in (expression.left, expression.right):
+            if side.kind == "count":
+                conditions.extend(_walk_conditions(side.filter))
+    elif expression.kind == "for_each":
+        return _subject_context_from_expression(expression.expression)
+    return _context_from_atoms(conditions)
+
+
+def _subject_context_from_expression(expression):
+    if expression.kind in ("forbid", "exists", "no_adjacent", "count"):
+        return _context_from_atoms(list(_walk_conditions(expression.filter)))
+    if expression.kind == "comparison":
+        atoms = []
+        for side in (expression.left, expression.right):
+            if side.kind == "count":
+                atoms.extend(_walk_conditions(side.filter))
+        return _context_from_atoms(atoms)
+    if expression.kind == "for_each":
+        return _subject_context_from_expression(expression.expression)
+    return {"subject": None, "class": None, "subject_type": None}
+
+
+def _context_from_atoms(atoms):
+    result = {"subject": None, "class": None, "subject_type": None}
+    for atom in atoms:
+        if atom.field in result and result[atom.field] is None and atom.operator == "eq":
+            result[atom.field] = str(atom.value)
+    return result
+
+
+def _bound_subject_candidates(db: Session, context: dict):
+    candidates = resolve_subject_candidates(db, context["subject"])
+    requested_class = context.get("class")
+    requested_type = context.get("subject_type")
+    if requested_class:
+        normalized = requested_class.strip().lower()
+        candidates = [s for s in candidates if str(s.class_id) == requested_class or str(s.class_.class_name).strip().lower() == normalized]
+    if requested_type:
+        candidates = [s for s in candidates if str(s.subject_type).strip().lower() == requested_type.strip().lower()]
+    return candidates
+
+
+def _global_no_class_day_constraint(text: str) -> GeneratedConstraint | None:
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    match = re.fullmatch(r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\.?", normalized)
+    if not match:
+        return None
+    day = match.group(1).capitalize()
+    from app.constraints.schemas import AtomicCondition, ForbidExpression
+    return GeneratedConstraint(constraint_type="hard", weight=None, expression=ForbidExpression(filter=AtomicCondition(field="day", operator="eq", value=day)), explanation=f"No classes may be scheduled on {day}.", assumptions=[])
+
+
+def _append_atomic_to_condition(condition, atom):
+    if condition.kind == "and":
+        condition.conditions.append(atom)
+        return condition
+    from app.constraints.schemas import AndCondition
+    return AndCondition(conditions=[condition, atom])
+
+
+def _apply_selection(constraint: GeneratedConstraint, selection: ConstraintSelection) -> GeneratedConstraint:
+    from app.constraints.schemas import AtomicCondition
+    def bind_expression(expression):
+        if expression.kind in ("forbid", "exists", "no_adjacent"):
+            if selection.class_id is not None:
+                expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
+            if selection.subject_type is not None:
+                expression.filter = _append_atomic_to_condition(expression.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
+            return expression
+        if expression.kind == "comparison":
+            for side in (expression.left, expression.right):
+                if side.kind == "count":
+                    if selection.class_id is not None:
+                        side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="class", operator="eq", value=str(selection.class_id)))
+                    if selection.subject_type is not None:
+                        side.filter = _append_atomic_to_condition(side.filter, AtomicCondition(field="subject_type", operator="eq", value=selection.subject_type))
+            return expression
+        if expression.kind == "for_each":
+            expression.expression = bind_expression(expression.expression)
+            return expression
+        return expression
+    return constraint.model_copy(update={"expression": bind_expression(constraint.expression)})
+
+
+def _subject_clarification(db: Session, constraint: GeneratedConstraint):
+    context = _subject_context(constraint)
+    subject_name = context.get("subject")
+    if not subject_name:
+        return None
+    # Skip if the constraint already has a class explicitly specified
+    if context.get("class"):
+        return None
+    try:
+        candidates = _bound_subject_candidates(db, context)
+    except Exception:
+        return None
+    # Always ask which class (or All Classes) whenever the subject is found at all
+    if not candidates:
+        return None
+    message = (
+        f"'{subject_name}' is registered for multiple classes or subject types. Which should this rule apply to?"
+        if len(candidates) > 1
+        else f"'{subject_name}' is found in your timetable. Should this rule apply to a specific class or all classes?"
+    )
+    return {
+        "status": "needs_clarification",
+        "message": message,
+        "subject": subject_name,
+        "options": [{"subject_id": s.subject_id, "subject_name": s.subject_name, "class_id": s.class_id, "class_name": s.class_.class_name, "subject_type": s.subject_type or "theory"} for s in candidates],
+        "constraint": constraint.model_dump(mode="json"),
+    }
+
+
+def _validate_for_constraint_studio(db: Session, constraint: GeneratedConstraint) -> None:
+    try:
+        validate_constraint(db, constraint)
+        return
+    except EntityResolutionError as exc:
+        context = _subject_context(constraint)
+        if "Multiple subjects matched" in str(exc) and context.get("subject") and len(_bound_subject_candidates(db, context)) == 1:
+            return
+        raise
+
+
+@router.get("/suggestions")
+def get_suggestions(db: Session = Depends(get_db)):
+    teachers = [t.teacher_name for t in db.query(Teacher).limit(3).all()]
+    subjects = [s.subject_name for s in db.query(Subject).limit(4).all()]
+    classes = [c.class_name for c in db.query(Class).limit(3).all()]
+
+    suggestions = ["No classes on Tuesday."]
+    if subjects:
+        suggestions.append(f"No {subjects[0]} Lab on Tuesday.")
+        if len(subjects) > 1:
+            suggestions.append(f"{subjects[1]} cannot occur on Tuesday.")
+    if teachers:
+        suggestions.append(f"{teachers[0]} cannot teach Monday period 3.")
+    return suggestions[:4]
+
+
+@router.post("/preview")
+def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)):
+    text = request.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Constraint text cannot be empty")
+    try:
+        constraint = _global_no_class_day_constraint(text) or service.generator.generate(text)
+        if request.selection is not None:
+            constraint = _apply_selection(constraint, request.selection)
+        else:
+            clarification = _subject_clarification(db, constraint)
+            if clarification is not None:
+                return clarification
+        _validate_for_constraint_studio(db, constraint)
+    except (EntityResolutionError, ConstraintValidationError, ValueError, ValidationError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if constraint.constraint_type == "soft" and constraint.weight not in (1, 2, 3):
+        constraint = constraint.model_copy(update={"weight": 3})
+
+    # Smart warnings
+    warnings = []
+    payload = constraint.model_dump(mode="json")
+    parameters_json = json.dumps(payload, sort_keys=True)
+    duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
+    if duplicate is not None:
+        warnings.append("Note: An identical constraint is already active in your system.")
+
+    return {
+        "status": "valid",
+        "constraint": payload,
+        "warnings": warnings,
+    }
+
+
+@router.get("")
+def list_constraints(db: Session = Depends(get_db)):
+    rows = db.query(Constraint).order_by(Constraint.constraint_id.desc()).all()
+    return [_serialize(row) for row in rows]
+
+
+@router.post("")
+def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_db)):
+    constraint = request.constraint
+    if constraint.constraint_type == "soft" and constraint.weight not in (1, 2, 3):
+        constraint = constraint.model_copy(update={"weight": 3})
+    try:
+        _validate_for_constraint_studio(db, constraint)
+    except (EntityResolutionError, ConstraintValidationError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = constraint.model_dump(mode="json")
+    parameters_json = json.dumps(payload, sort_keys=True)
+    duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="This constraint is already active.")
+    row = Constraint(constraint_name=constraint.explanation, constraint_type=constraint.constraint_type, parameters_json=parameters_json)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize(row)
+
+
+@router.patch("/{constraint_id}")
+@router.put("/{constraint_id}")
+@router.post("/{constraint_id}/priority")
+def update_constraint_priority(constraint_id: int, request: UpdateConstraintRequest, db: Session = Depends(get_db)):
+    row = db.query(Constraint).filter(Constraint.constraint_id == constraint_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Constraint not found")
+    if row.constraint_type != "soft":
+        raise HTTPException(status_code=400, detail="Cannot change priority of hard constraints")
+    if request.weight not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="Priority weight must be 1 (Low), 2 (Medium), or 3 (High)")
+    try:
+        payload = json.loads(row.parameters_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    payload["weight"] = request.weight
+    row.parameters_json = json.dumps(payload, sort_keys=True)
+    db.commit()
+    db.refresh(row)
+    return _serialize(row)
+
+
+@router.delete("/{constraint_id}")
+def delete_constraint(constraint_id: int, db: Session = Depends(get_db)):
+    row = db.query(Constraint).filter(Constraint.constraint_id == constraint_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Constraint not found")
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted", "constraint_id": constraint_id}

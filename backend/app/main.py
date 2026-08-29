@@ -13,8 +13,7 @@ from app.api.teacher_subjects import (
     router as teacher_subjects_router,
 )
 from app.api.generate import router as generate_router
-
-
+from app.api.constraints import router as constraints_router
 
 from app.core.config import Base, engine
 from app.models import models  # Ensure models are loaded
@@ -27,9 +26,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 @app.get("/")
 def health_check():
@@ -44,3 +44,4 @@ app.include_router(timeslots_router)
 app.include_router(teacher_availabilities_router)
 app.include_router(teacher_subjects_router)
 app.include_router(generate_router)
+app.include_router(constraints_router)
