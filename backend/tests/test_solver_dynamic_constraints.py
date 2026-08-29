@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 from app.constraints.schemas import GeneratedConstraint
 
 import pytest
@@ -511,3 +511,72 @@ def test_dynamic_soft_constraint_penalty_reaches_objective(
 
     assert result["status"] == "success"
     assert result["constraints"]
+
+
+def test_soft_constraint_priority_weights(monkeypatch):
+    """
+    Verify soft constraints are weighted according to priority:
+    1. Teacher max periods/day -> Weight 3
+    2. No consecutive periods -> Weight 2
+    3. Even subject distribution -> Weight 1
+    """
+    import app.solver.solver as solver_module
+    from ortools.sat.python import cp_model
+
+    db = Mock()
+    fake_data = make_fake_data()
+
+    monkeypatch.setattr(
+        solver_module,
+        "load_solver_data",
+        lambda db: fake_data,
+    )
+    patch_base_constraints(monkeypatch)
+    patch_successful_solver(monkeypatch)
+
+    max_p_var = None
+    consec_p_var = None
+    even_p_var = None
+
+    def fake_max_periods(model, assign, teacher_max, slots_by_day):
+        nonlocal max_p_var
+        max_p_var = model.NewIntVar(0, 5, "p_max")
+        return [max_p_var]
+
+    def fake_consecutive(model, assign, teacher_ids, slots_by_day):
+        nonlocal consec_p_var
+        consec_p_var = model.NewIntVar(0, 5, "p_consec")
+        return [consec_p_var]
+
+    def fake_even_dist(model, assign, subject_periods, subject_map, slots_by_day):
+        nonlocal even_p_var
+        even_p_var = model.NewIntVar(0, 5, "p_even")
+        return [even_p_var]
+
+    monkeypatch.setattr(solver_module, "add_soft_max_periods_per_day", fake_max_periods)
+    monkeypatch.setattr(solver_module, "add_soft_no_consecutive_periods", fake_consecutive)
+    monkeypatch.setattr(solver_module, "add_soft_even_distribution", fake_even_dist)
+
+    minimized_expr = None
+    orig_minimize = cp_model.CpModel.minimize
+
+    def capture_minimize(self, expr):
+        nonlocal minimized_expr
+        minimized_expr = expr
+        return orig_minimize(self, expr)
+
+    monkeypatch.setattr(cp_model.CpModel, "minimize", capture_minimize)
+    monkeypatch.setattr(cp_model.CpModel, "Minimize", capture_minimize, raising=False)
+
+    result = solver_module.build_and_solve(db)
+
+    assert result["status"] == "success"
+    assert minimized_expr is not None
+
+    flat = cp_model.cmh.FlatIntExpr(minimized_expr)
+    var_map = {v.index: c for v, c in zip(flat.vars, flat.coeffs)}
+
+    assert var_map[max_p_var.index] == 3
+    assert var_map[consec_p_var.index] == 2
+    assert var_map[even_p_var.index] == 1
+

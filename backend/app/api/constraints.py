@@ -35,11 +35,19 @@ class SaveConstraintRequest(BaseModel):
     constraint: GeneratedConstraint
 
 
+class UpdateConstraintRequest(BaseModel):
+    weight: int
+
+
 def _serialize(row: Constraint) -> dict:
     try:
         payload = json.loads(row.parameters_json or "{}")
     except json.JSONDecodeError:
         payload = {}
+    if row.constraint_type == "soft":
+        weight = payload.get("weight")
+        if weight not in (1, 2, 3):
+            payload["weight"] = 3
     return {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
 
 
@@ -216,6 +224,9 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
     except (EntityResolutionError, ConstraintValidationError, ValueError, ValidationError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if constraint.constraint_type == "soft" and constraint.weight not in (1, 2, 3):
+        constraint = constraint.model_copy(update={"weight": 3})
+
     # Smart warnings
     warnings = []
     payload = constraint.model_dump(mode="json")
@@ -240,6 +251,8 @@ def list_constraints(db: Session = Depends(get_db)):
 @router.post("")
 def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_db)):
     constraint = request.constraint
+    if constraint.constraint_type == "soft" and constraint.weight not in (1, 2, 3):
+        constraint = constraint.model_copy(update={"weight": 3})
     try:
         _validate_for_constraint_studio(db, constraint)
     except (EntityResolutionError, ConstraintValidationError, ValueError) as exc:
@@ -251,6 +264,28 @@ def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_
         raise HTTPException(status_code=409, detail="This constraint is already active.")
     row = Constraint(constraint_name=constraint.explanation, constraint_type=constraint.constraint_type, parameters_json=parameters_json)
     db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize(row)
+
+
+@router.patch("/{constraint_id}")
+@router.put("/{constraint_id}")
+@router.post("/{constraint_id}/priority")
+def update_constraint_priority(constraint_id: int, request: UpdateConstraintRequest, db: Session = Depends(get_db)):
+    row = db.query(Constraint).filter(Constraint.constraint_id == constraint_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Constraint not found")
+    if row.constraint_type != "soft":
+        raise HTTPException(status_code=400, detail="Cannot change priority of hard constraints")
+    if request.weight not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="Priority weight must be 1 (Low), 2 (Medium), or 3 (High)")
+    try:
+        payload = json.loads(row.parameters_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    payload["weight"] = request.weight
+    row.parameters_json = json.dumps(payload, sort_keys=True)
     db.commit()
     db.refresh(row)
     return _serialize(row)

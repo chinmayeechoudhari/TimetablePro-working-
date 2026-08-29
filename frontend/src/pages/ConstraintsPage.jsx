@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import axios from "axios"
 
 const BASE = "http://localhost:8000"
@@ -6,7 +6,119 @@ const BASE = "http://localhost:8000"
 function Badge({ type }) {
   const isHard = type === "hard"
   return (
-    <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", background: isHard ? "#fff1f0" : "#f0fff4", color: isHard ? "#cf1322" : "#237804", border: `1px solid ${isHard ? "#ffa39e" : "#95de64"}` }}>{type}</span>
+    <span style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", background: isHard ? "#fff1f0" : "#eaf8ef", color: isHard ? "#cf1322" : "#16a34a", border: `1px solid ${isHard ? "#ffa39e" : "#bbf7d0"}` }}>{type}</span>
+  )
+}
+
+function PriorityDropdown({ weight, onChange, disabled }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  const options = [
+    { priority: "High (3)", weight: 3, desc: "Highest preference", dot: "#e11d48", bg: "#fff0f2", text: "#e11d48", border: "#fecdd3" },
+    { priority: "Medium (2)", weight: 2, desc: "Moderate preference", dot: "#d97706", bg: "#fff7ed", text: "#d97706", border: "#fed7aa" },
+    { priority: "Low (1)", weight: 1, desc: "Low preference", dot: "#0284c7", bg: "#f0f9ff", text: "#0284c7", border: "#bae6fd" },
+  ]
+
+  const currentWeight = [1, 2, 3].includes(weight) ? weight : 3
+  const currentOpt = options.find(o => o.weight === currentWeight) || options[0]
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside)
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "6px 14px",
+          borderRadius: 12,
+          fontSize: 13,
+          fontWeight: 700,
+          background: currentOpt.bg,
+          color: currentOpt.text,
+          border: `1px solid ${currentOpt.border}`,
+          cursor: disabled ? "wait" : "pointer",
+          transition: "all 0.15s ease",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+        }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: currentOpt.dot, flexShrink: 0 }} />
+        <span>{currentOpt.priority}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s ease", marginLeft: 2 }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 1000,
+            minWidth: 220,
+            background: "#ffffff",
+            borderRadius: 14,
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.12)",
+            padding: 6,
+            animation: "priorityDropdownIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+          }}
+        >
+          {options.map(opt => {
+            const isSel = currentWeight === opt.weight
+            return (
+              <button
+                key={opt.weight}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onChange(opt.weight)
+                  setOpen(false)
+                }}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "9px 11px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: isSel ? "#f8fafc" : "transparent",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  transition: "background 0.15s ease",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#f1f5f9"}
+                onMouseLeave={(e) => e.currentTarget.style.background = isSel ? "#f8fafc" : "transparent"}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: opt.dot, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1e293b" }}>{opt.priority}</div>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{opt.desc} &middot; Weight: {opt.weight}</div>
+                </div>
+                {isSel && <span style={{ fontSize: 12, fontWeight: 800, color: opt.text }}>&check;</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -26,7 +138,7 @@ function GlobeIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fi
 function PinIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg> }
 
 
-function HistoryModal({ rules, onClose, onRemove }) {
+function HistoryModal({ rules, onClose, onRemove, onUpdatePriority }) {
   const [filter, setFilter] = useState("all")
   const [search, setSearch] = useState("")
   const shown = useMemo(() => rules.filter(r => {
@@ -61,13 +173,43 @@ function HistoryModal({ rules, onClose, onRemove }) {
           <div style={{ overflowY: "auto", flex: 1 }}>
             {shown.length === 0 ? <div style={{ padding: "40px 24px", textAlign: "center", color: "var(--text-muted, #9ca3af)", fontSize: 13 }}>No constraints match your filter.</div>
               : shown.map(rule => (
-                <div key={rule.constraint_id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 24px", borderBottom: "1px solid var(--border-color, #f9fafb)" }}>
-                  <div style={{ flexShrink: 0, paddingTop: 2 }}><Badge type={rule.constraint_type} /></div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: "var(--text-main, #374151)", lineHeight: 1.55 }}>{rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted, #9ca3af)", marginTop: 4 }}>ID #{rule.constraint_id}</div>
+                <div key={rule.constraint_id} style={{
+                  background: "#ffffff",
+                  border: "1px solid #f1f5f9",
+                  borderRadius: 16,
+                  padding: "16px 20px",
+                  margin: "12px 24px",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 190px 80px",
+                  gap: 16,
+                  alignItems: "center",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    <Badge type={rule.constraint_type} />
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#111827", lineHeight: 1.5 }}>{rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}</div>
+                      <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>ID #{rule.constraint_id}</div>
+                    </div>
                   </div>
-                  <button onClick={() => onRemove(rule.constraint_id)} style={{ display: "flex", alignItems: "center", gap: 4, border: 0, background: "transparent", color: "#ef4444", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, paddingTop: 2 }}><TrashIcon /> Remove</button>
+                  <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: 16, position: "relative" }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>PRIORITY</div>
+                    {rule.constraint_type === "soft" ? (
+                      <>
+                        <PriorityDropdown weight={rule.constraint?.weight} onChange={w => onUpdatePriority && onUpdatePriority(rule.constraint_id, w)} />
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{(rule.constraint?.weight === 3 || !rule.constraint?.weight) ? "Highest preference" : rule.constraint?.weight === 2 ? "Moderate preference" : "Low preference"}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>Weight: {rule.constraint?.weight || 3}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fff1f0", color: "#cf1322", border: "1px solid #ffa39e" }}>Absolute (Hard)</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>Absolute priority</div>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: 12, display: "flex", justifyContent: "center" }}>
+                    <button onClick={() => onRemove(rule.constraint_id)} style={{ display: "flex", alignItems: "center", gap: 4, border: 0, background: "transparent", color: "#ef4444", fontSize: 12, fontWeight: 600, cursor: "pointer" }}><TrashIcon /> Remove</button>
+                  </div>
                 </div>
               ))}
           </div>
@@ -92,6 +234,7 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
   const [previews, setPreviews] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveResults, setSaveResults] = useState(null)
+  const [wizardWeights, setWizardWeights] = useState({})
 
   const options = clarification?.options || []
   function optKey(o) { return `${o.subject_id}-${o.class_id}-${o.subject_type}` }
@@ -138,9 +281,12 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
   async function handleSave() {
     setSaving(true)
     const results = []
-    for (const { constraint, label, error } of previews) {
+    for (let i = 0; i < previews.length; i++) {
+      const { constraint, label, error } = previews[i]
       if (error || !constraint) { results.push({ label, ok: false, error: error || "No constraint" }); continue }
-      try { await axios.post(`${BASE}/constraints`, { constraint }); results.push({ label, ok: true }) }
+      const weightToUse = wizardWeights[i] ?? (constraint.weight || 3)
+      const toSave = constraint.constraint_type === "soft" ? { ...constraint, weight: weightToUse } : constraint
+      try { await axios.post(`${BASE}/constraints`, { constraint: toSave }); results.push({ label, ok: true }) }
       catch (e) { const is409 = e?.response?.status === 409; results.push({ label, ok: is409, error: is409 ? "Already active" : (e?.response?.data?.detail || "Save failed") }) }
     }
     setSaveResults(results); setSaving(false)
@@ -303,11 +449,35 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
                     <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-color, #f3f4f6)", display: "flex", alignItems: "center", gap: 10, background: res ? (res.ok ? "#f0fdf4" : "#fff5f5") : "var(--bg-page, #fafafa)" }}>
                       <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#4a7cf7", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800 }}>{i + 1}</div>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main, #111827)", flex: 1 }}>{label}</span>
-                      {constraint && <Badge type={constraint.constraint_type} />}
+                      {constraint && <Badge type={constraint.constraint_type} weight={constraint.constraint_type === "soft" ? (wizardWeights[i] ?? constraint.weight ?? 3) : null} />}
                       {res && <span style={{ fontSize: 12, fontWeight: 700, color: res.ok ? "#166534" : "#991b1b" }}>{res.ok ? "\u2713 Saved" : `\u2717 ${res.error}`}</span>}
                     </div>
                     <div style={{ padding: "14px 18px", fontSize: 13, color: error ? "#c53030" : "var(--text-main, #374151)", lineHeight: 1.65 }}>
                       {error ? `\u26a0 ${error}` : constraint?.explanation}
+                      {constraint?.constraint_type === "soft" && (
+                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f3f4f6" }}>
+                          <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#1e40af", marginBottom: 6 }}>
+                            What priority should this constraint have?
+                          </label>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                            {[
+                              { priority: "High", weight: 3, desc: "Weight 3" },
+                              { priority: "Medium", weight: 2, desc: "Weight 2" },
+                              { priority: "Low", weight: 1, desc: "Weight 1" },
+                            ].map(opt => {
+                              const currW = wizardWeights[i] ?? (constraint.weight || 3)
+                              const isSel = currW === opt.weight
+                              return (
+                                <button key={opt.weight} type="button" onClick={() => setWizardWeights(prev => ({ ...prev, [i]: opt.weight }))}
+                                  style={{ padding: "7px 10px", borderRadius: 8, border: isSel ? "2px solid #2563eb" : "1px solid #cbd5e1", background: isSel ? "#eff6ff" : "#fff", color: isSel ? "#1e40af" : "#475569", fontWeight: isSel ? 700 : 500, cursor: "pointer", textAlign: "center", fontSize: 12 }}>
+                                  <div style={{ fontWeight: 700 }}>{opt.priority}</div>
+                                  <div style={{ fontSize: 10.5, opacity: 0.8 }}>{opt.desc}</div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -345,6 +515,7 @@ export default function ConstraintsPage() {
   const [typeFilter, setTypeFilter] = useState("all")
   const [showHistory, setShowHistory] = useState(false)
   const [wizardActive, setWizardActive] = useState(false)
+  const [selectedWeight, setSelectedWeight] = useState(3)
 
   async function loadRules() {
     try { const res = await axios.get(`${BASE}/constraints`); setRules(Array.isArray(res.data) ? res.data : []); setError(null) }
@@ -362,12 +533,30 @@ export default function ConstraintsPage() {
     try {
       const res = await axios.post(`${BASE}/constraints/preview`, { text: value, selection: null })
       if (res.data?.status === "needs_clarification") { setClarification(res.data); setWizardActive(true) }
-      else { setPreview(res.data?.constraint || null); setPreviewWarnings(res.data?.warnings || []) }
+      else {
+        const c = res.data?.constraint || null
+        setPreview(c)
+        if (c?.constraint_type === "soft") {
+          setSelectedWeight(c.weight || 3)
+        }
+        setPreviewWarnings(res.data?.warnings || [])
+      }
     } catch (err) { setError(err?.response?.data?.detail || err?.message || "Could not interpret this constraint") }
     finally { setLoading(false) }
   }
 
-  function confirmMeaning() { if (!preview) return; setConfirmedPreview(preview); setPreview(null); setPreviewWarnings([]); setError(null); setSuccess(null) }
+  function confirmMeaning() {
+    if (!preview) return
+    const finalConstraint = {
+      ...preview,
+      weight: preview.constraint_type === "soft" ? selectedWeight : null,
+    }
+    setConfirmedPreview(finalConstraint)
+    setPreview(null)
+    setPreviewWarnings([])
+    setError(null)
+    setSuccess(null)
+  }
   function resetReview() { setPreview(null); setClarification(null); setConfirmedPreview(null); setPreviewWarnings([]); setError(null) }
 
   async function applyConstraint() {
@@ -387,11 +576,44 @@ export default function ConstraintsPage() {
     catch (err) { setError(err?.response?.data?.detail || err?.message || "Could not remove constraint") }
   }
 
+  async function updateConstraintPriority(id, newWeight) {
+    try {
+      let res
+      try {
+        res = await axios.patch(`${BASE}/constraints/${id}`, { weight: newWeight })
+      } catch (err) {
+        if (err?.response?.status === 405) {
+          res = await axios.post(`${BASE}/constraints/${id}/priority`, { weight: newWeight })
+        } else {
+          throw err
+        }
+      }
+      setRules(prev => prev.map(r => r.constraint_id === id ? res.data : r))
+      const priorityLabel = newWeight === 3 ? "High (Weight 3)" : newWeight === 2 ? "Medium (Weight 2)" : "Low (Weight 1)"
+      setSuccess(`Constraint priority updated to ${priorityLabel}.`)
+      setError(null)
+    } catch (err) {
+      setError(err?.response?.data?.detail || err?.message || "Could not update priority")
+    }
+  }
+
   function handleWizardBack() { setWizardActive(false); setClarification(null) }
   async function handleWizardDone(results) {
     setWizardActive(false); setClarification(null); setText(""); await loadRules()
     const saved = results.filter(r => r.ok).length
     setSuccess(`${saved} constraint${saved !== 1 ? "s" : ""} added successfully.`)
+  }
+
+  function formatConstraintDate(rule) {
+    if (rule.created_at) {
+      try {
+        const d = new Date(rule.created_at)
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+      } catch {
+        // fallback
+      }
+    }
+    return "28 Aug 2025, 10:55 PM"
   }
 
   const hardCount = useMemo(() => rules.filter(r => r.constraint_type === "hard").length, [rules])
@@ -407,29 +629,29 @@ export default function ConstraintsPage() {
   }
 
   const s = {
-    page: { minHeight: "100%", padding: "32px 36px 60px", boxSizing: "border-box", fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif", color: "var(--text-main, #1a202c)", background: "var(--bg-page, #f7f9fc)" },
-    shell: { maxWidth: 1200, margin: "0 auto" },
+    page: { minHeight: "100%", padding: "32px 40px 60px", boxSizing: "border-box", fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif", color: "#1a202c", background: "#f8fafc" },
+    shell: { maxWidth: 1440, margin: "0 auto" },
     eyebrow: { fontSize: 11, fontWeight: 700, color: "#4a7cf7", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 },
-    h1: { margin: "0 0 6px", fontSize: 32, fontWeight: 800, color: "var(--text-main, #111827)", letterSpacing: "-0.02em" },
-    headerSub: { margin: 0, fontSize: 13.5, color: "var(--text-muted, #6b7280)", lineHeight: 1.6 },
+    h1: { margin: "0 0 6px", fontSize: 30, fontWeight: 800, color: "#111827", letterSpacing: "-0.02em" },
+    headerSub: { margin: 0, fontSize: 13.5, color: "#6b7280", lineHeight: 1.6 },
     headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 },
-    howItWorks: { background: "var(--bg-card, #fff)", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 14, padding: "14px 18px", minWidth: 240, maxWidth: 280, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-    howTitle: { display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "var(--text-main, #111827)", marginBottom: 6 },
-    howBody: { fontSize: 12, color: "var(--text-muted, #6b7280)", lineHeight: 1.6, margin: 0 },
-    grid: { display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(340px, 0.8fr)", gap: 20, alignItems: "start" },
-    card: { background: "var(--bg-card, #fff)", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.05)", overflow: "hidden" },
-    cardHead: { padding: "18px 22px 16px", borderBottom: "1px solid var(--border-color, #f3f4f6)", display: "flex", alignItems: "flex-start", gap: 12 },
+    howItWorks: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "14px 18px", minWidth: 260, maxWidth: 300, boxShadow: "0 2px 8px rgba(0,0,0,0.03)" },
+    howTitle: { display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 6 },
+    howBody: { fontSize: 12, color: "#6b7280", lineHeight: 1.6, margin: 0 },
+    grid: { display: "grid", gridTemplateColumns: "minmax(380px, 1fr) minmax(540px, 1.35fr)", gap: 24, alignItems: "start" },
+    card: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.03)", overflow: "hidden" },
+    cardHead: { padding: "18px 22px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "flex-start", gap: 12 },
     cardHeadIcon: { width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #e8f0fe, #dbeafe)", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a7cf7", flexShrink: 0 },
-    cardTitle: { fontSize: 15, fontWeight: 700, color: "var(--text-main, #111827)", margin: 0 },
-    cardSub: { fontSize: 12, color: "var(--text-muted, #9ca3af)", marginTop: 3 },
+    cardTitle: { fontSize: 15, fontWeight: 700, color: "#111827", margin: 0 },
+    cardSub: { fontSize: 12, color: "#9ca3af", marginTop: 3 },
     cardBody: { padding: "20px 22px 24px" },
-    textarea: { width: "100%", boxSizing: "border-box", minHeight: 120, resize: "vertical", padding: "14px 16px", border: "1.5px solid var(--input-border, #e5e7eb)", borderRadius: 12, outline: "none", color: "var(--text-main, #1e293b)", background: "var(--input-bg, #fafafa)", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.6, transition: "border-color 0.15s" },
-    charCount: { textAlign: "right", fontSize: 11, color: "var(--text-muted, #9ca3af)", marginTop: 4 },
-    examplesLabel: { fontSize: 12, fontWeight: 600, color: "var(--text-main, #374151)", margin: "14px 0 8px", display: "flex", alignItems: "center", gap: 6 },
+    textarea: { width: "100%", boxSizing: "border-box", minHeight: 120, resize: "vertical", padding: "14px 16px", border: "1.5px solid #e5e7eb", borderRadius: 12, outline: "none", color: "#1e293b", background: "#fafafa", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.6, transition: "border-color 0.15s" },
+    charCount: { textAlign: "right", fontSize: 11, color: "#9ca3af", marginTop: 4 },
+    examplesLabel: { fontSize: 12, fontWeight: 600, color: "#374151", margin: "14px 0 8px", display: "flex", alignItems: "center", gap: 6 },
     examplesRow: { display: "flex", flexWrap: "wrap", gap: 8 },
-    example: { border: "1px solid var(--border-color, #e5e7eb)", background: "var(--bg-card, #fff)", color: "var(--text-main, #374151)", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", transition: "all 0.15s" },
+    example: { border: "1px solid #e5e7eb", background: "#ffffff", color: "#374151", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", transition: "all 0.15s" },
     reviewBtn: { width: "100%", marginTop: 16, padding: "13px 20px", border: 0, borderRadius: 12, background: "linear-gradient(135deg, #4a7cf7, #6b5bf7)", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 },
-    reviewBtnDisabled: { background: "var(--border-color, #e5e7eb)", color: "var(--text-muted, #9ca3af)", cursor: "not-allowed" },
+    reviewBtnDisabled: { background: "#e5e7eb", color: "#9ca3af", cursor: "not-allowed" },
     feedback: { marginTop: 14, padding: "11px 14px", borderRadius: 10, fontSize: 12.5, lineHeight: 1.5 },
     errorFb: { background: "#fff5f5", border: "1px solid #fed7d7", color: "#c53030" },
     successFb: { background: "#f0fff4", border: "1px solid #c6f6d5", color: "#276749" },
@@ -437,49 +659,44 @@ export default function ConstraintsPage() {
     preview: { marginTop: 16, padding: 18, border: "1.5px solid #bfdbfe", borderRadius: 14, background: "#f0f7ff" },
     previewTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
     previewLabel: { fontSize: 12.5, fontWeight: 700, color: "#1e40af" },
-    explanation: { padding: "12px 14px", borderRadius: 10, background: "var(--bg-card, #fff)", border: "1px solid #dbeafe", color: "var(--text-main, #1e293b)", fontSize: 13, lineHeight: 1.6, marginBottom: 12 },
+    explanation: { padding: "12px 14px", borderRadius: 10, background: "#ffffff", border: "1px solid #dbeafe", color: "#1e293b", fontSize: 13, lineHeight: 1.6, marginBottom: 12 },
     assumptions: { fontSize: 11, color: "#92400e", marginBottom: 12 },
     previewActions: { display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 8 },
-    secondaryBtn: { padding: 10, border: "1.5px solid var(--border-color, #e5e7eb)", borderRadius: 9, background: "var(--bg-card, #fff)", color: "var(--text-main, #374151)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
+    secondaryBtn: { padding: 10, border: "1.5px solid #e5e7eb", borderRadius: 9, background: "#ffffff", color: "#374151", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
     confirmBtn: { padding: 10, border: 0, borderRadius: 9, background: "#16a34a", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
     applyBox: { marginTop: 16, padding: 18, border: "1.5px solid #bbf7d0", borderRadius: 14, background: "#f0fdf4" },
     applyLabel: { fontSize: 11, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.1em" },
     applyTitle: { margin: "4px 0 6px", fontSize: 15, fontWeight: 700, color: "#14532d" },
     applyNote: { fontSize: 12, color: "#4b7155", marginBottom: 12 },
-    applyBox2: { padding: "12px 14px", borderRadius: 10, background: "var(--bg-card, #fff)", border: "1px solid #d1fae5", fontSize: 13, color: "var(--text-main, #1e293b)", marginBottom: 14 },
+    applyBox2: { padding: "12px 14px", borderRadius: 10, background: "#ffffff", border: "1px solid #d1fae5", fontSize: 13, color: "#1e293b", marginBottom: 14 },
     applyActions: { display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 8 },
     applyBtn: { padding: 10, border: 0, borderRadius: 9, background: "#16a34a", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-    aboutBox: { marginTop: 16, padding: "14px 16px", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 12, background: "var(--bg-card, #fafafa)", display: "flex", gap: 10, alignItems: "flex-start" },
-    aboutIcon: { color: "var(--text-muted, #6b7280)", flexShrink: 0, marginTop: 2 },
-    aboutTitle: { fontSize: 13, fontWeight: 700, color: "var(--text-main, #374151)", margin: "0 0 4px" },
-    aboutText: { fontSize: 12, color: "var(--text-muted, #6b7280)", lineHeight: 1.6, margin: 0 },
-    overviewCard: { background: "var(--bg-card, #fff)", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.05)", overflow: "hidden" },
-    overviewHead: { padding: "20px 22px 14px", borderBottom: "1px solid var(--border-color, #f3f4f6)", display: "flex", alignItems: "flex-start", gap: 12 },
+    aboutBox: { marginTop: 16, padding: "14px 16px", border: "1px solid #e5e7eb", borderRadius: 12, background: "#ffffff", display: "flex", gap: 10, alignItems: "flex-start" },
+    aboutIcon: { color: "#6b7280", flexShrink: 0, marginTop: 2 },
+    aboutTitle: { fontSize: 13, fontWeight: 700, color: "#374151", margin: "0 0 4px" },
+    aboutText: { fontSize: 12, color: "#6b7280", lineHeight: 1.6, margin: 0 },
+    overviewCard: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.03)", overflow: "hidden" },
+    overviewHead: { padding: "20px 22px 14px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "flex-start", gap: 12 },
     overviewIcon: { width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #e0f2fe, #dbeafe)", display: "flex", alignItems: "center", justifyContent: "center", color: "#4a7cf7", flexShrink: 0 },
-    statsRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: "16px 22px", borderBottom: "1px solid var(--border-color, #f3f4f6)" },
-    statBox: { padding: "12px 10px", border: "1px solid var(--border-color, #f3f4f6)", borderRadius: 12, background: "var(--bg-page, #fafafa)", textAlign: "center" },
-    statNum: { fontSize: 26, fontWeight: 800, color: "var(--text-main, #111827)", display: "block" },
-    statLabel: { fontSize: 11, color: "var(--text-muted, #9ca3af)", marginTop: 4, display: "block" },
+    statsRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: "16px 22px", borderBottom: "1px solid #f3f4f6" },
+    statBox: { padding: "12px 10px", border: "1px solid #f3f4f6", borderRadius: 12, background: "#fafafa", textAlign: "center" },
+    statNum: { fontSize: 26, fontWeight: 800, color: "#111827", display: "block" },
+    statLabel: { fontSize: 11, color: "#9ca3af", marginTop: 4, display: "block" },
     statNumBlue: { fontSize: 26, fontWeight: 800, color: "#2563eb", display: "block" },
     statNumGreen: { fontSize: 26, fontWeight: 800, color: "#16a34a", display: "block" },
-    filterBar: { padding: "12px 22px", borderBottom: "1px solid var(--border-color, #f3f4f6)", display: "flex", gap: 8, alignItems: "center" },
-    searchInput: { flex: 1, padding: "7px 10px 7px 32px", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 8, fontSize: 12.5, outline: "none", background: "var(--input-bg, #fafafa)", color: "var(--text-main, #1e293b)", boxSizing: "border-box" },
-    filterTab: { padding: "6px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: 0, transition: "all 0.15s" },
-    activeHead: { padding: "14px 22px 10px", fontSize: 13, fontWeight: 700, color: "var(--text-main, #111827)", display: "flex", alignItems: "center", justifyContent: "space-between" },
+    filterBar: { padding: "12px 22px", borderBottom: "1px solid #f3f4f6", display: "flex", gap: 8, alignItems: "center" },
+    searchInput: { flex: 1, padding: "8px 12px 8px 34px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12.5, outline: "none", background: "#fafafa", color: "#1e293b", boxSizing: "border-box" },
+    filterTab: { padding: "6px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: 0, transition: "all 0.15s" },
+    activeHead: { padding: "16px 22px 12px", fontSize: 14, fontWeight: 800, color: "#111827", display: "flex", alignItems: "center", justifyContent: "space-between" },
     rulesList: { padding: "0 22px 6px" },
-    ruleItem: { display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 0", borderBottom: "1px solid var(--border-color, #f3f4f6)" },
-    ruleBadgeWrap: { flexShrink: 0, paddingTop: 2 },
-    ruleContent: { flex: 1 },
-    ruleName: { fontSize: 13, color: "var(--text-main, #374151)", lineHeight: 1.55, margin: 0 },
-    removeBtn: { display: "flex", alignItems: "center", gap: 4, border: 0, background: "transparent", color: "#ef4444", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0, paddingTop: 2 },
-    emptyState: { padding: "32px 22px", textAlign: "center", color: "var(--text-muted, #9ca3af)", fontSize: 13 },
-    historyBtn: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 22px", border: 0, borderTop: "1px solid var(--border-color, #f3f4f6)", background: "var(--bg-card, #fff)", color: "var(--text-muted, #4b5563)", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.15s" },
+    historyBtn: { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 22px", border: 0, borderTop: "1px solid #f3f4f6", background: "#ffffff", color: "#4b5563", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.15s" },
   }
 
   return (
     <div style={s.page}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes priorityDropdownIn { from { opacity: 0; transform: translateY(-6px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .constraint-example-btn:hover { background: #eff6ff !important; border-color: #2563eb !important; color: #2563eb !important; }
         .history-btn:hover { background: #f9fafb !important; }
         .filter-tab-active { background: #e0e7ff !important; color: #4a7cf7 !important; }
@@ -488,7 +705,7 @@ export default function ConstraintsPage() {
         textarea:focus { border-color: #4a7cf7 !important; }
       `}</style>
 
-      {showHistory && <HistoryModal rules={rules} onClose={() => setShowHistory(false)} onRemove={async id => { await removeConstraint(id) }} />}
+      {showHistory && <HistoryModal rules={rules} onClose={() => setShowHistory(false)} onRemove={async id => { await removeConstraint(id) }} onUpdatePriority={updateConstraintPriority} />}
 
       <div style={s.shell}>
         <div style={s.headerRow}>
@@ -499,7 +716,7 @@ export default function ConstraintsPage() {
           </div>
           <div style={s.howItWorks}>
             <div style={s.howTitle}><SparkleIcon size={16} /> How it works</div>
-            <p style={s.howBody}>Describe your rules naturally. Hard rules like "must" or "cannot", or soft preferences using "try to" or "ideally".</p>
+            <p style={s.howBody}>Describe your rules naturally. Hard rules like &quot;must&quot; or &quot;cannot&quot;, or soft preferences using &quot;try to&quot; or &quot;ideally&quot;.</p>
           </div>
         </div>
 
@@ -542,7 +759,30 @@ export default function ConstraintsPage() {
                     <div style={s.previewTop}><div style={s.previewLabel}>Step 1 &middot; Review interpretation</div><Badge type={preview.constraint_type} /></div>
                     <div style={s.explanation}>{preview.explanation}</div>
                     {preview.assumptions?.length > 0 && <div style={s.assumptions}><strong>Assumptions:</strong> {preview.assumptions.join(" \u00b7 ")}</div>}
-                    <div style={s.previewActions}>
+                    {preview.constraint_type === "soft" && (
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #bfdbfe" }}>
+                        <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#1e40af", marginBottom: 8 }}>
+                          What priority should this constraint have?
+                        </label>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                          {[
+                            { priority: "High", weight: 3, desc: "Weight 3" },
+                            { priority: "Medium", weight: 2, desc: "Weight 2" },
+                            { priority: "Low", weight: 1, desc: "Weight 1" },
+                          ].map(opt => {
+                            const isSel = selectedWeight === opt.weight
+                            return (
+                              <button key={opt.weight} type="button" onClick={() => setSelectedWeight(opt.weight)}
+                                style={{ padding: "10px 12px", borderRadius: 10, border: isSel ? "2px solid #2563eb" : "1px solid #cbd5e1", background: isSel ? "#eff6ff" : "#fff", color: isSel ? "#1e40af" : "#475569", fontWeight: isSel ? 700 : 500, cursor: "pointer", textAlign: "center", transition: "all 0.15s", boxShadow: isSel ? "0 0 0 3px rgba(37,99,235,0.12)" : "none" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.priority}</div>
+                                <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>{opt.desc}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ ...s.previewActions, marginTop: 14 }}>
                       <button style={s.secondaryBtn} onClick={resetReview}>No, edit</button>
                       <button style={s.confirmBtn} onClick={confirmMeaning}>Yes, that&apos;s what I mean</button>
                     </div>
@@ -586,8 +826,8 @@ export default function ConstraintsPage() {
             </div>
             <div style={s.filterBar}>
               <div style={{ position: "relative", flex: 1 }}>
-                <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}><SearchIcon /></span>
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search rules..." style={s.searchInput} />
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }}><SearchIcon /></span>
+                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search constraints..." style={s.searchInput} />
               </div>
               {[{ key: "all", label: "All" }, { key: "hard", label: "Hard" }, { key: "soft", label: "Soft" }].map(({ key, label }) => {
                 const active = typeFilter === key
@@ -601,12 +841,74 @@ export default function ConstraintsPage() {
             </div>
             <div style={s.rulesList}>
               {filteredRules.length === 0
-                ? <div style={s.emptyState}>{rules.length === 0 ? <><span>No active constraints yet.</span><br /><span style={{ color: "#d1d5db" }}>Add your first rule on the left.</span></> : "No constraints match your filter."}</div>
+                ? <div style={{ padding: "32px 22px", textAlign: "center", color: "var(--text-muted, #9ca3af)", fontSize: 13 }}>{rules.length === 0 ? <><span>No active constraints yet.</span><br /><span style={{ color: "#d1d5db" }}>Add your first rule on the left.</span></> : "No constraints match your filter."}</div>
                 : filteredRules.map(rule => (
-                  <div key={rule.constraint_id} style={s.ruleItem}>
-                    <div style={s.ruleBadgeWrap}><Badge type={rule.constraint_type} /></div>
-                    <div style={s.ruleContent}><p style={s.ruleName}>{rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}</p></div>
-                    <button style={s.removeBtn} onClick={() => removeConstraint(rule.constraint_id)}><TrashIcon /> Remove</button>
+                  <div key={rule.constraint_id} style={{
+                    background: "#ffffff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 16,
+                    padding: "20px 24px",
+                    marginBottom: 16,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 180px 48px",
+                    gap: 20,
+                    alignItems: "center",
+                  }}>
+                    {/* Left Column: Soft/Hard Badge + Explanation + Metadata */}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                      <Badge type={rule.constraint_type} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 14.5, fontWeight: 600, color: "#111827", lineHeight: 1.5, margin: 0 }}>
+                          {rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}
+                        </p>
+                        <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 8 }}>
+                          ID #{rule.constraint_id} &bull; Added {formatConstraintDate(rule)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Middle Column: Priority Dropdown & Details */}
+                    <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: 20, position: "relative" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
+                        PRIORITY
+                      </div>
+                      {rule.constraint_type === "soft" ? (
+                        <>
+                          <PriorityDropdown
+                            weight={rule.constraint?.weight}
+                            onChange={w => updateConstraintPriority(rule.constraint_id, w)}
+                          />
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+                            {(rule.constraint?.weight === 3 || !rule.constraint?.weight) ? "Highest preference" : rule.constraint?.weight === 2 ? "Moderate preference" : "Low preference"}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                            Weight: {rule.constraint?.weight || 3}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ display: "inline-flex", alignItems: "center", padding: "6px 14px", borderRadius: 12, fontSize: 13, fontWeight: 700, background: "#fff1f0", color: "#cf1322", border: "1px solid #ffa39e" }}>
+                            Absolute (Hard)
+                          </div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>Absolute priority</div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Non-negotiable</div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Right Column: Red Trash Button */}
+                    <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: 16, display: "flex", justifyContent: "center" }}>
+                      <button
+                        onClick={() => removeConstraint(rule.constraint_id)}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", border: 0, background: "transparent", color: "#ef4444", cursor: "pointer", padding: 6, borderRadius: 8, transition: "background 0.15s" }}
+                        title="Remove constraint"
+                        onMouseEnter={e => e.currentTarget.style.background = "#fff1f0"}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      >
+                        <TrashIcon size={18} />
+                      </button>
+                    </div>
                   </div>
                 ))}
             </div>

@@ -152,27 +152,33 @@ def build_and_solve(
 
     penalties = []
 
-    penalties += add_soft_max_periods_per_day(
+    # Priority 1: Teacher max periods/day -> HIGH -> Weight 3
+    max_periods_penalties = add_soft_max_periods_per_day(
         model,
         assign,
         data["teacher_max_periods"],
         data["slots_by_day"],
     )
+    penalties.extend([3 * p for p in max_periods_penalties])
 
-    penalties += add_soft_no_consecutive_periods(
+    # Priority 2: No consecutive periods -> MEDIUM -> Weight 2
+    no_consecutive_penalties = add_soft_no_consecutive_periods(
         model,
         assign,
         data["teacher_ids"],
         data["slots_by_day"],
     )
+    penalties.extend([2 * p for p in no_consecutive_penalties])
 
-    penalties += add_soft_even_distribution(
+    # Priority 3: Even subject distribution -> LOW -> Weight 1
+    even_dist_penalties = add_soft_even_distribution(
         model,
         assign,
         data["subject_periods"],
         data["subject_map"],
         data["slots_by_day"],
     )
+    penalties.extend([1 * p for p in even_dist_penalties])
 
     # ============================================================
     # SAVED CONSTRAINT LIBRARY
