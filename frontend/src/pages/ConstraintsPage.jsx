@@ -344,24 +344,10 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
                   <div style={{ fontSize: 12, color: "var(--text-muted, #6b7280)", marginTop: 2 }}>"{clarification.subject}" is registered for multiple classes. Select one or more combinations.</div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", pointerEvents: "none" }}><SearchIcon /></span>
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search classes..." style={{ paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7, border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 8, fontSize: 12, outline: "none", background: "var(--input-bg, #fafafa)", color: "var(--text-main, #1e293b)", width: 165 }} />
-                </div>
-                {["all", "theory", "lab"].map(t => (
-                  <button key={t} onClick={() => setTypeFilter(t)} style={{ padding: "6px 11px", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: 7, background: typeFilter === t ? (t === "lab" ? "#ecfdf5" : t === "theory" ? "#eff6ff" : "#e0e7ff") : "var(--bg-card, #fff)", color: typeFilter === t ? (t === "lab" ? "#059669" : "#4a7cf7") : "#6b7280", fontSize: 11.5, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
-                ))}
-              </div>
+
             </div>
 
-            <div style={{ padding: "0 24px", borderBottom: "1px solid var(--border-color, #f3f4f6)", display: "flex" }}>
-              {[{ id: "subject", label: "By Subject", icon: "\uD83D\uDCCB" }, { id: "class", label: "By Class", icon: "\uD83C\uDFEB" }].map(t => (
-                <button key={t.id} onClick={() => setTabView(t.id)} style={{ padding: "10px 18px", border: "none", background: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, color: tabView === t.id ? "#4a7cf7" : "var(--text-muted, #6b7280)", borderBottom: tabView === t.id ? "2.5px solid #4a7cf7" : "2.5px solid transparent" }}>
-                  <span>{t.icon}</span>{t.label}
-                </button>
-              ))}
-            </div>
+
 
             <div style={{ padding: "16px 24px 8px", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main, #111827)" }}>{clarification.subject}</span>
