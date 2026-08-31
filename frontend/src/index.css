@@ -29,9 +29,9 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: #f7f9fc; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 
-/* Academic Structure — polished setup screen */
+/* Academic Structure */
 .academic-page { min-height: 100%; padding: 34px 38px 56px; max-width: 1320px; margin: 0 auto; color: #172554; }
 .academic-hero { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; padding: 30px 32px; border: 1px solid #dbe5f5; border-radius: 22px; background: linear-gradient(135deg, #eef5ff 0%, #f8f5ff 100%); box-shadow: 0 12px 35px rgba(37,99,235,.07); margin-bottom: 22px; }
 .academic-eyebrow { font-size: 11px; font-weight: 850; letter-spacing: .13em; color: #4f46e5; }
@@ -51,10 +51,10 @@ button, input { font: inherit; }
 .section-heading h2 { margin: 1px 0 3px; font-size: 19px; color: #172554; }
 .section-heading p { margin: 0; color: #64748b; font-size: 13px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.field { display: grid; gap: 7px; }
+.field { display: grid; gap: 7px; margin-bottom: 14px; }
 .field > span, .year-heading > span, .side-title > div > span, .summary-card > span { font-size: 10px; font-weight: 850; letter-spacing: .1em; color: #64748b; }
-.field input, .year-card input { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 11px 12px; outline: none; background: #fff; color: #172554; transition: .15s; }
-.field input:focus, .year-card input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+.field input, .field select, .year-card input { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 11px 12px; outline: none; background: #fff; color: #172554; transition: .15s; }
+.field input:focus, .field select:focus, .year-card input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
 .year-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 25px 0 10px; }
 .year-heading small { color: #94a3b8; font-size: 11px; }
 .year-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 11px; }
@@ -64,7 +64,7 @@ button, input { font: inherit; }
 .year-top b { font-size: 13px; }
 .year-top span { font-size: 9px; color: #64748b; text-align: right; }
 .year-card small { display: block; margin-top: 7px; color: #94a3b8; font-size: 10px; }
-.primary-button, .secondary-button, .department-button { cursor: pointer; }
+.primary-button, .secondary-button, .department-button, .modal-close { cursor: pointer; }
 .primary-button { margin-top: 20px; width: 100%; border: 0; border-radius: 11px; padding: 13px 18px; background: linear-gradient(100deg,#2563eb,#6d28d9); color: #fff; font-weight: 800; font-size: 13px; box-shadow: 0 8px 20px rgba(79,70,229,.2); }
 .primary-button span { margin-left: 8px; }
 .notice { margin-top: 14px; padding: 11px 13px; border-radius: 10px; font-size: 12px; font-weight: 600; }
@@ -101,10 +101,19 @@ button, input { font: inherit; }
 .summary-lines b { color: #fff; }
 .legacy-card { border-color: #fde68a; background: #fffdf6; }
 .legacy-list { display: grid; gap: 8px; }
-.legacy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #f1f5d0; border-radius: 10px; background: #fff; }
+.legacy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #f1e7bd; border-radius: 10px; background: #fff; }
 .legacy-row b { display: block; color: #334155; font-size: 12px; }
 .legacy-row small { color: #94a3b8; font-size: 9px; }
 .secondary-button { border: 1px solid #c7d2fe; border-radius: 9px; padding: 8px 10px; background: #fff; color: #4338ca; font-size: 11px; font-weight: 750; white-space: nowrap; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(4px); }
+.link-modal { width: min(520px,100%); padding: 25px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fff; box-shadow: 0 25px 70px rgba(15,23,42,.25); }
+.modal-top { display: flex; gap: 15px; justify-content: space-between; margin-bottom: 22px; }
+.modal-top h2 { margin: 5px 0; color: #172554; font-size: 20px; }
+.modal-top p { margin: 0; color: #64748b; font-size: 12px; line-height: 1.55; }
+.modal-close { width: 31px; height: 31px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; color: #64748b; font-size: 20px; line-height: 1; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 7px; }
+.modal-actions .secondary-button { padding: 10px 14px; }
+.modal-primary { width: auto; margin: 0; padding: 10px 15px; box-shadow: none; }
 
 @media (max-width: 1000px) {
   .structure-layout { grid-template-columns: 1fr; }
@@ -118,4 +127,5 @@ button, input { font: inherit; }
   .field-row { grid-template-columns: 1fr; }
   .year-grid { grid-template-columns: 1fr 1fr; }
   .academic-card { padding: 18px; }
+  .legacy-row { align-items: flex-start; flex-direction: column; }
 }
