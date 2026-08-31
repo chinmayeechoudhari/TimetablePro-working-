@@ -22,22 +22,59 @@ class AcademicStructureCreate(BaseModel):
     years: List[YearConfig]
 
 
+class AdoptClassRequest(BaseModel):
+    class_id: int
+    academic_year: str
+    department: str
+    year_of_study: int = Field(ge=1, le=4)
+    division_name: str = Field(min_length=1, max_length=1)
+
+
+def year_label(year: int) -> str:
+    return {1: "1st Year", 2: "2nd Year", 3: "3rd Year", 4: "4th Year"}[year]
+
+
+def _serialize_group(group: AcademicGroup) -> dict:
+    return {
+        "group_id": group.group_id,
+        "academic_year": group.academic_year,
+        "department": group.department,
+        "year_of_study": group.year_of_study,
+        "divisions": [
+            {
+                "division_id": d.division_id,
+                "class_id": d.class_id,
+                "division_name": d.division_name,
+            }
+            for d in sorted(group.divisions, key=lambda x: x.division_name)
+        ],
+    }
+
+
 @router.get("")
 def list_structure(db: Session = Depends(get_db)):
     groups = db.query(AcademicGroup).order_by(AcademicGroup.department, AcademicGroup.year_of_study).all()
-    return [
-        {
-            "group_id": g.group_id,
-            "academic_year": g.academic_year,
-            "department": g.department,
-            "year_of_study": g.year_of_study,
-            "divisions": [
-                {"division_id": d.division_id, "class_id": d.class_id, "division_name": d.division_name}
-                for d in sorted(g.divisions, key=lambda x: x.division_name)
-            ],
-        }
-        for g in groups
-    ]
+    linked_class_ids = {d.class_id for g in groups for d in g.divisions}
+
+    # Classes created by the older workflow do not have a Division record.
+    # Keep them intact and expose them so the user can link them to the new
+    # department/year/division structure instead of losing existing data.
+    legacy_classes = (
+        db.query(Class)
+        .filter(~Class.class_id.in_(linked_class_ids))
+        .order_by(Class.class_name)
+        .all()
+        if linked_class_ids
+        else db.query(Class).order_by(Class.class_name).all()
+    )
+
+    return {
+        "groups": [_serialize_group(g) for g in groups],
+        "legacy_classes": [
+            {"class_id": c.class_id, "class_name": c.class_name}
+            for c in legacy_classes
+        ],
+    }
 
 
 @router.post("", status_code=201)
@@ -77,7 +114,7 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
         db.flush()
 
         for index in range(count):
-            division_name = chr(ord('A') + index)
+            division_name = chr(ord("A") + index)
             class_obj = Class(class_name=f"{department} {year_label(year)} - {division_name}")
             db.add(class_obj)
             db.flush()
@@ -106,5 +143,58 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
     }
 
 
-def year_label(year: int) -> str:
-    return {1: "1st Year", 2: "2nd Year", 3: "3rd Year", 4: "4th Year"}[year]
+@router.post("/adopt-class")
+def adopt_existing_class(payload: AdoptClassRequest, db: Session = Depends(get_db)):
+    academic_year = payload.academic_year.strip()
+    department = payload.department.strip()
+    division_name = payload.division_name.strip().upper()
+
+    if not academic_year or not department:
+        raise HTTPException(status_code=400, detail="Academic year and department are required.")
+    if not division_name.isalpha() or len(division_name) != 1:
+        raise HTTPException(status_code=400, detail="Division must be a single letter such as A or B.")
+
+    class_obj = db.query(Class).filter(Class.class_id == payload.class_id).first()
+    if class_obj is None:
+        raise HTTPException(status_code=404, detail="Class not found.")
+    if class_obj.division is not None:
+        raise HTTPException(status_code=409, detail="This class is already linked to an academic division.")
+
+    group = (
+        db.query(AcademicGroup)
+        .filter(
+            func.lower(func.trim(AcademicGroup.academic_year)) == academic_year.lower(),
+            func.lower(func.trim(AcademicGroup.department)) == department.lower(),
+            AcademicGroup.year_of_study == payload.year_of_study,
+        )
+        .first()
+    )
+    if group is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Create {department} {year_label(payload.year_of_study)} first, then link the class.",
+        )
+
+    duplicate_division = (
+        db.query(Division)
+        .filter(
+            Division.group_id == group.group_id,
+            func.lower(Division.division_name) == division_name.lower(),
+        )
+        .first()
+    )
+    if duplicate_division is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Division {division_name} already exists in {department} {year_label(payload.year_of_study)}.",
+        )
+
+    db.add(
+        Division(
+            group_id=group.group_id,
+            class_id=class_obj.class_id,
+            division_name=division_name,
+        )
+    )
+    db.commit()
+    return {"message": f"{class_obj.class_name} linked as {department} {year_label(payload.year_of_study)} - {division_name}."}
