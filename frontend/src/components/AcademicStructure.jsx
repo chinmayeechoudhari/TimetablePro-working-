@@ -12,6 +12,8 @@ export default function AcademicStructure() {
   const [groups, setGroups] = useState([])
   const [legacyClasses, setLegacyClasses] = useState([])
   const [selectedDepartment, setSelectedDepartment] = useState('')
+  const [linkingClass, setLinkingClass] = useState(null)
+  const [linkForm, setLinkForm] = useState({ groupId: '', division: '' })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -36,6 +38,11 @@ export default function AcademicStructure() {
     ? groups.filter(g => g.department === selectedDepartment)
     : groups
 
+  const selectedGroup = groups.find(g => String(g.group_id) === String(linkForm.groupId))
+  const availableDivisions = selectedGroup
+    ? selectedGroup.divisions.map(d => d.division_name)
+    : []
+
   async function submit(e) {
     e.preventDefault(); setMessage(''); setError('')
     const selected = years
@@ -57,26 +64,27 @@ export default function AcademicStructure() {
     }
   }
 
-  async function adoptClass(item) {
-    const division = window.prompt(
-      `Link ${item.class_name} to which division? Enter A, B, C, etc.`,
-      inferDivision(item.class_name) || 'A',
-    )
-    if (!division) return
-    const dep = window.prompt('Department for this existing class:', department || '')
-    if (!dep) return
-    const year = window.prompt('Year of study (1-4):', inferYear(item.class_name) || '1')
-    if (!year) return
+  function openLinker(item) {
+    setLinkingClass(item)
+    setLinkForm({ groupId: '', division: '' })
+    setMessage(''); setError('')
+  }
+
+  async function linkExistingClass(e) {
+    e.preventDefault()
+    if (!linkingClass || !linkForm.groupId || !linkForm.division) return
+    const group = groups.find(g => String(g.group_id) === String(linkForm.groupId))
     try {
       const r = await axios.post(`${BASE}/academic-structure/adopt-class`, {
-        class_id: item.class_id,
-        academic_year: academicYear.trim() || '2026-27',
-        department: dep.trim(),
-        year_of_study: Number(year),
-        division_name: division.trim().toUpperCase(),
+        class_id: linkingClass.class_id,
+        academic_year: group.academic_year,
+        department: group.department,
+        year_of_study: group.year_of_study,
+        division_name: linkForm.division,
       })
       setMessage(r.data.message)
       setError('')
+      setLinkingClass(null)
       await load()
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not link existing class.')
@@ -119,7 +127,7 @@ export default function AcademicStructure() {
               <button className="primary-button">Create Academic Structure <span>→</span></button>
             </form>
             {message && <div className="notice success">✓ {message}</div>}
-            {error && <div className="notice error">! {error}</div>}
+            {error && !linkingClass && <div className="notice error">! {error}</div>}
           </div>
 
           <div className="academic-card groups-card">
@@ -136,10 +144,10 @@ export default function AcademicStructure() {
           {legacyClasses.length > 0 && (
             <div className="academic-card legacy-card">
               <div className="section-heading compact">
-                <div><span className="step-badge amber">!</span><div><h2>Existing classes not yet linked</h2><p>These were created by the older class workflow. They are <b>not deleted</b>; link them to the new structure below.</p></div></div>
+                <div><span className="step-badge amber">!</span><div><h2>Existing classes found</h2><p>These classes were created in the previous workflow. <b>Nothing is deleted.</b> Link each one to its correct department, year and division.</p></div></div>
               </div>
               <div className="legacy-list">
-                {legacyClasses.map(item => <div className="legacy-row" key={item.class_id}><div><b>{item.class_name}</b><small>Class ID {item.class_id}</small></div><button className="secondary-button" onClick={() => adoptClass(item)}>Link to structure</button></div>)}
+                {legacyClasses.map(item => <div className="legacy-row" key={item.class_id}><div><b>{item.class_name}</b><small>Existing class · ID {item.class_id}</small></div><button type="button" className="secondary-button" onClick={() => openLinker(item)}>Link class →</button></div>)}
               </div>
             </div>
           )}
@@ -148,13 +156,13 @@ export default function AcademicStructure() {
         <aside className="structure-side">
           <div className="academic-card department-card">
             <div className="side-title"><div><span>VIEW</span><h3>Departments</h3></div><span className="count-badge">{departments.length}</span></div>
-            <p className="side-help">Select a department to see only its academic groups.</p>
+            <p className="side-help">Select a department to filter the academic groups on the left.</p>
             <div className="department-list">
-              <button className={!selectedDepartment ? 'department-button active' : 'department-button'} onClick={() => setSelectedDepartment('')}><span>All departments</span><b>{groups.length}</b></button>
+              <button type="button" className={!selectedDepartment ? 'department-button active' : 'department-button'} onClick={() => setSelectedDepartment('')}><span>All departments</span><b>{groups.length}</b></button>
               {departments.map(dep => {
                 const depGroups = groups.filter(g => g.department === dep)
                 const divisionCount = depGroups.reduce((n, g) => n + g.divisions.length, 0)
-                return <button key={dep} className={selectedDepartment === dep ? 'department-button active' : 'department-button'} onClick={() => setSelectedDepartment(dep)}><span>{dep}</span><b>{divisionCount}</b></button>
+                return <button type="button" key={dep} className={selectedDepartment === dep ? 'department-button active' : 'department-button'} onClick={() => setSelectedDepartment(dep)}><span>{dep}</span><b>{divisionCount}</b></button>
               })}
             </div>
           </div>
@@ -168,6 +176,18 @@ export default function AcademicStructure() {
           </div>
         </aside>
       </section>
+
+      {linkingClass && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setLinkingClass(null)}>
+          <form className="link-modal" onSubmit={linkExistingClass}>
+            <div className="modal-top"><div><span className="academic-eyebrow">RECOVER EXISTING CLASS</span><h2>Link {linkingClass.class_name}</h2><p>This keeps the existing class and all its related data. You are only adding its academic-structure link.</p></div><button type="button" className="modal-close" onClick={() => setLinkingClass(null)}>×</button></div>
+            <Field label="DEPARTMENT / YEAR"><select value={linkForm.groupId} onChange={e => setLinkForm({ groupId: e.target.value, division: '' })} required><option value="">Select academic group</option>{groups.map(g => <option key={g.group_id} value={g.group_id}>{g.department} · {label(g.year_of_study)} · {g.academic_year}</option>)}</select></Field>
+            <Field label="DIVISION"><select value={linkForm.division} onChange={e => setLinkForm({ ...linkForm, division: e.target.value })} required disabled={!linkForm.groupId}><option value="">Select division</option>{availableDivisions.map(d => <option key={d} value={d}>{d}</option>)}</select></Field>
+            {error && <div className="notice error">! {error}</div>}
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setLinkingClass(null)}>Cancel</button><button className="primary-button modal-primary">Link existing class</button></div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
@@ -177,5 +197,3 @@ function GroupCard({ group }) {
 }
 
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label> }
-function inferDivision(name) { const m = name.match(/[-\s]([A-Z])$/i); return m?.[1]?.toUpperCase() || '' }
-function inferYear(name) { const m = name.match(/(1st|2nd|3rd|4th)\s+Year/i); return m ? ({ '1st': 1, '2nd': 2, '3rd': 3, '4th': 4 }[m[1].toLowerCase()]) : '' }
