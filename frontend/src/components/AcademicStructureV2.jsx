@@ -2,32 +2,268 @@ import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructure.css'
 
-const BASE='http://localhost:8000'
-const years=[1,2,3,4]
-const label=y=>({1:'1st Year',2:'2nd Year',3:'3rd Year',4:'4th Year'}[y])
+const BASE = 'http://localhost:8000'
+const years = [1, 2, 3, 4]
+const label = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y])
 
-export default function AcademicStructureV2(){
- const [academicYear,setAcademicYear]=useState('2026-27'),[department,setDepartment]=useState(''),[counts,setCounts]=useState({1:0,2:0,3:0,4:0}),[groups,setGroups]=useState([]),[legacyClasses,setLegacyClasses]=useState([]),[message,setMessage]=useState(''),[error,setError]=useState(''),[modal,setModal]=useState(null),[selectedDepartment,setSelectedDepartment]=useState(''),[editName,setEditName]=useState(''),[linkingClass,setLinkingClass]=useState(null),[linkForm,setLinkForm]=useState({groupId:'',division:''})
- async function load(){try{const d=(await axios.get(`${BASE}/academic-structure`)).data;setGroups(d.groups||[]);setLegacyClasses(d.legacy_classes||[])}catch{setError('Could not load academic structure.')}}
- useEffect(()=>{load()},[])
- const departments=useMemo(()=>[...new Set(groups.map(g=>g.department))].sort(),[groups])
- const data=departments.map(name=>{const rows=groups.filter(g=>g.department===name);return{name,groups:rows,divisions:rows.reduce((n,g)=>n+g.divisions.length,0)}})
- const selectedGroup=groups.find(g=>String(g.group_id)===String(linkForm.groupId))
- const close=()=>{setModal(null);setError('')}
- async function create(e){e.preventDefault();const selected=years.filter(y=>counts[y]>0).map(y=>({year_of_study:y,division_count:Number(counts[y])}));if(!department.trim()||!academicYear.trim()||!selected.length){setError('Enter department, academic year, and at least one year with divisions.');return}try{const r=await axios.post(`${BASE}/academic-structure`,{academic_year:academicYear.trim(),department:department.trim(),years:selected});setMessage(r.data.message);setCounts({1:0,2:0,3:0,4:0});close();await load()}catch(e){setError(e.response?.data?.detail||'Could not create structure.')}}
- async function rename(e){e.preventDefault();try{const r=await axios.put(`${BASE}/academic-structure/department`,{old_department:modal.name,new_department:editName.trim()});setMessage(r.data.message);close();await load()}catch(e){setError(e.response?.data?.detail||'Could not rename department.')}}
- async function remove(name){if(!window.confirm(`Remove ${name} from academic structure? Existing class records will be preserved.`))return;try{const r=await axios.delete(`${BASE}/academic-structure/department`,{params:{department:name}});setMessage(r.data.message);await load()}catch(e){setError(e.response?.data?.detail||'Could not remove department.')}}
- async function link(e){e.preventDefault();const g=groups.find(x=>String(x.group_id)===String(linkForm.groupId));if(!g||!linkForm.division)return;try{const r=await axios.post(`${BASE}/academic-structure/adopt-class`,{class_id:linkingClass.class_id,academic_year:g.academic_year,department:g.department,year_of_study:g.year_of_study,division_name:linkForm.division});setMessage(r.data.message);setLinkingClass(null);await load()}catch(e){setError(e.response?.data?.detail||'Could not link class.')}}
- return <div className="academic-page">
-  <section className="academic-hero"><div className="hero-copy"><div className="academic-eyebrow">ACADEMIC SETUP</div><h1>Academic Structure</h1><p>Build a clear hierarchy of departments, years and divisions for your timetable.</p></div><div className="hero-metrics"><div><strong>{departments.length}</strong><span>Departments</span></div><i/><div><strong>{groups.reduce((n,g)=>n+g.divisions.length,0)}</strong><span>Divisions</span></div></div></section>
-  {message&&<div className="global-notice success">✓ {message}<button onClick={()=>setMessage('')}>×</button></div>}{error&&!modal&&!linkingClass&&<div className="global-notice error">! {error}</div>}
-  <section className="workspace-head"><div><div className="section-kicker">YOUR ACADEMIC SETUP</div><h2>Departments</h2><p>Each card represents a department and its configured years and divisions.</p></div><button className="create-group-button" onClick={()=>{setError('');setModal('create')}}><span>＋</span>Create new academic group</button></section>
-  <section className="department-grid">{data.length?data.map(d=><article className="department-card-large" key={d.name}><div className="department-card-top"><div className="department-avatar">{d.name.slice(0,2).toUpperCase()}</div><div className="department-title"><h3>{d.name}</h3><span>{d.divisions} divisions · {d.groups.length} years</span></div><div className="card-actions"><button onClick={()=>{setEditName(d.name);setModal({type:'edit',name:d.name})}}>✎</button><button className="danger" onClick={()=>remove(d.name)}>⌫</button></div></div><div className="department-years">{years.map(y=>{const g=d.groups.find(x=>x.year_of_study===y);return <div className={`year-row ${g?'has-data':''}`} key={y}><span>{label(y)}</span>{g?<div className="mini-divisions">{g.divisions.map(v=><b key={v.division_id}>{v.division_name}</b>)}</div>:<em>—</em>}</div>})}</div><div className="department-footer"><span>Academic year</span><b>{d.groups[0]?.academic_year||'—'}</b><button className="view-link" onClick={()=>setSelectedDepartment(d.name)}>{selectedDepartment===d.name?'Selected':'View details'} →</button></div></article>):<div className="empty-departments"><div className="empty-icon">⌘</div><h3>No departments yet</h3><p>Create your first academic group to get started.</p><button className="create-group-button" onClick={()=>setModal('create')}>Create academic group</button></div>}</section>
-  {selectedDepartment&&<section className="details-panel"><div><div className="section-kicker">DEPARTMENT VIEW</div><h2>{selectedDepartment}</h2><p>Configured academic groups for this department.</p></div><div className="detail-pills">{groups.filter(g=>g.department===selectedDepartment).map(g=><div key={g.group_id}><b>{label(g.year_of_study)}</b><span>{g.divisions.length} divisions</span></div>)}</div></section>}
-  {legacyClasses.length>0&&<section className="legacy-strip"><div><b>Existing classes need attention</b><p>Older classes are preserved. Link them to the new structure without deleting their records.</p></div><div className="legacy-count">{legacyClasses.length}</div><button className="secondary-button" onClick={()=>document.getElementById('legacy-classes')?.scrollIntoView({behavior:'smooth'})}>Review →</button></section>}
-  {legacyClasses.length>0&&<section id="legacy-classes" className="legacy-card"><div className="section-heading"><span className="step-badge">!</span><div><h2>Existing classes</h2><p>Created by the previous workflow and preserved.</p></div></div><div className="legacy-list">{legacyClasses.map(c=><div className="legacy-row" key={c.class_id}><div><b>{c.class_name}</b><small>Existing class · ID {c.class_id}</small></div><button className="secondary-button" onClick={()=>{setLinkingClass(c);setLinkForm({groupId:'',division:''});setError('')}}>Link class →</button></div>)}</div></section>}
-  {modal&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="academic-modal">{modal==='create'?<><div className="modal-header"><div><div className="modal-icon">＋</div><div><span className="academic-eyebrow">NEW ACADEMIC GROUP</span><h2>Create new academic group</h2><p>Add a department and configure its divisions.</p></div></div><button className="modal-close" onClick={close}>×</button></div><form onSubmit={create}><div className="modal-field-grid"><Field label="DEPARTMENT"><input autoFocus value={department} onChange={e=>setDepartment(e.target.value)} placeholder="e.g. Computer Science"/></Field><Field label="ACADEMIC YEAR"><input value={academicYear} onChange={e=>setAcademicYear(e.target.value)} placeholder="2026-27"/></Field></div><div className="modal-section-label">DIVISIONS BY YEAR</div><div className="modal-year-grid">{years.map(y=><label className={`modal-year ${counts[y]?'selected':''}`} key={y}><span><b>{label(y)}</b><small>{counts[y]?`${counts[y]} divisions`:'Not selected'}</small></span><input type="number" min="0" max="26" value={counts[y]||''} onChange={e=>setCounts({...counts,[y]:Number(e.target.value)})} placeholder="0"/></label>)}</div>{error&&<div className="notice error">! {error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="create-group-button">Create academic group →</button></div></form></>:<form onSubmit={rename}><div className="modal-header"><div><div className="modal-icon edit">✎</div><div><span className="academic-eyebrow">EDIT DEPARTMENT</span><h2>Rename department</h2><p>Update the name across its academic groups.</p></div></div><button type="button" className="modal-close" onClick={close}>×</button></div><Field label="DEPARTMENT NAME"><input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}/></Field>{error&&<div className="notice error">! {error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="create-group-button">Save changes →</button></div></form>}</div></div>}
-  {linkingClass&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setLinkingClass(null)}><form className="academic-modal" onSubmit={link}><div className="modal-header"><div><div className="modal-icon">↗</div><div><span className="academic-eyebrow">RECOVER EXISTING CLASS</span><h2>Link {linkingClass.class_name}</h2><p>The existing class and its related data stay untouched.</p></div></div><button type="button" className="modal-close" onClick={()=>setLinkingClass(null)}>×</button></div><Field label="ACADEMIC GROUP"><select required value={linkForm.groupId} onChange={e=>setLinkForm({groupId:e.target.value,division:''})}><option value="">Select department & year</option>{groups.map(g=><option key={g.group_id} value={g.group_id}>{g.department} · {label(g.year_of_study)} · {g.academic_year}</option>)}</select></Field><Field label="DIVISION"><select required disabled={!linkForm.groupId} value={linkForm.division} onChange={e=>setLinkForm({...linkForm,division:e.target.value})}><option value="">Select division</option>{selectedGroup?.divisions.map(d=><option key={d.division_id} value={d.division_name}>{d.division_name}</option>)}</select></Field>{error&&<div className="notice error">! {error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setLinkingClass(null)}>Cancel</button><button className="create-group-button">Link existing class →</button></div></form></div>}
- </div>
+export default function AcademicStructureV2() {
+  const [academicYear, setAcademicYear] = useState('2026-27')
+  const [department, setDepartment] = useState('')
+  const [counts, setCounts] = useState({ 1: 0, 2: 0, 3: 0, 4: 0 })
+  const [groups, setGroups] = useState([])
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [modal, setModal] = useState(null)
+  const [selectedDepartment, setSelectedDepartment] = useState('')
+  const [editName, setEditName] = useState('')
+
+  async function load() {
+    try {
+      const data = (await axios.get(`${BASE}/academic-structure`)).data
+      setGroups(data.groups || [])
+    } catch {
+      setError('Could not load academic structure.')
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const departments = useMemo(
+    () => [...new Set(groups.map(g => g.department))].sort(),
+    [groups]
+  )
+
+  const data = departments.map(name => {
+    const rows = groups.filter(g => g.department === name)
+    return {
+      name,
+      groups: rows,
+      divisions: rows.reduce((n, g) => n + g.divisions.length, 0),
+      academicYear: rows[0]?.academic_year || '—'
+    }
+  })
+
+  const selected = data.find(d => d.name === selectedDepartment)
+  const closeModal = () => { setModal(null); setError('') }
+
+  async function create(e) {
+    e.preventDefault()
+    const selectedYears = years
+      .filter(y => counts[y] > 0)
+      .map(y => ({ year_of_study: y, division_count: Number(counts[y]) }))
+
+    if (!department.trim() || !academicYear.trim() || !selectedYears.length) {
+      setError('Enter department, academic year, and at least one year with divisions.')
+      return
+    }
+
+    try {
+      const response = await axios.post(`${BASE}/academic-structure`, {
+        academic_year: academicYear.trim(),
+        department: department.trim(),
+        years: selectedYears
+      })
+      setMessage(response.data.message)
+      setCounts({ 1: 0, 2: 0, 3: 0, 4: 0 })
+      setDepartment('')
+      closeModal()
+      await load()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Could not create academic structure.')
+    }
+  }
+
+  async function rename(e) {
+    e.preventDefault()
+    if (!editName.trim()) return
+    try {
+      const response = await axios.put(`${BASE}/academic-structure/department`, {
+        old_department: modal.name,
+        new_department: editName.trim()
+      })
+      setMessage(response.data.message)
+      closeModal()
+      await load()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Could not rename department.')
+    }
+  }
+
+  async function remove(name) {
+    if (!window.confirm(`Remove ${name} from the academic structure?`)) return
+    try {
+      const response = await axios.delete(`${BASE}/academic-structure/department`, {
+        params: { department: name }
+      })
+      setMessage(response.data.message)
+      if (selectedDepartment === name) setSelectedDepartment('')
+      await load()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Could not remove department.')
+    }
+  }
+
+  return (
+    <div className="academic-page">
+      <section className="academic-hero">
+        <div className="hero-copy">
+          <div className="academic-eyebrow">ACADEMIC SETUP</div>
+          <h1>Academic Structure</h1>
+          <p>Set up departments, years and divisions before adding subjects and faculty assignments.</p>
+        </div>
+        <div className="hero-metrics">
+          <div><strong>{departments.length}</strong><span>Departments</span></div>
+          <i />
+          <div><strong>{data.reduce((n, d) => n + d.divisions, 0)}</strong><span>Divisions</span></div>
+        </div>
+      </section>
+
+      {message && (
+        <div className="global-notice success">✓ {message}<button onClick={() => setMessage('')}>×</button></div>
+      )}
+      {error && !modal && (
+        <div className="global-notice error">! {error}<button onClick={() => setError('')}>×</button></div>
+      )}
+
+      <section className="workspace-head">
+        <div>
+          <div className="section-kicker">YOUR ACADEMIC SETUP</div>
+          <h2>Departments</h2>
+          <p>Each department can have its own divisions for 1st, 2nd, 3rd and 4th year.</p>
+        </div>
+        <button className="create-group-button" onClick={() => { setError(''); setModal('create') }}>
+          <span>＋</span>Create new academic group
+        </button>
+      </section>
+
+      <section className="department-table-wrap">
+        <div className="department-table-head">
+          <span>DEPARTMENT</span>
+          <span>ACADEMIC YEAR</span>
+          <span>YEARS & DIVISIONS</span>
+          <span>ACTIONS</span>
+        </div>
+
+        {data.length ? data.map(d => (
+          <article className="department-row" key={d.name}>
+            <div className="department-cell department-main-cell">
+              <div className="department-avatar">{d.name.slice(0, 2).toUpperCase()}</div>
+              <div>
+                <h3>{d.name}</h3>
+                <span>{d.divisions} divisions · {d.groups.length} years configured</span>
+              </div>
+            </div>
+
+            <div className="department-cell academic-year-cell">
+              <b>{d.academicYear}</b>
+              <span>Active</span>
+            </div>
+
+            <div className="department-cell year-divisions-cell">
+              {years.map(y => {
+                const group = d.groups.find(g => g.year_of_study === y)
+                return (
+                  <div className="year-block" key={y}>
+                    <span>{label(y)}</span>
+                    <div>
+                      {group?.divisions.map(v => <b key={v.division_id}>{v.division_name}</b>)}
+                      {!group && <em>—</em>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="department-cell row-actions">
+              <button title="Edit department" onClick={() => { setEditName(d.name); setError(''); setModal({ type: 'edit', name: d.name }) }}>✎</button>
+              <button className="danger" title="Remove department" onClick={() => remove(d.name)}>⌫</button>
+              <button className="view-action" title="View details" onClick={() => setSelectedDepartment(selectedDepartment === d.name ? '' : d.name)}>›</button>
+            </div>
+          </article>
+        )) : (
+          <div className="empty-departments">
+            <div className="empty-icon">⌘</div>
+            <h3>No departments yet</h3>
+            <p>Create your first academic group to start building the timetable structure.</p>
+            <button className="create-group-button" onClick={() => setModal('create')}>Create academic group</button>
+          </div>
+        )}
+      </section>
+
+      {selected && (
+        <section className="details-panel">
+          <div>
+            <div className="section-kicker">DEPARTMENT VIEW</div>
+            <h2>{selected.name}</h2>
+            <p>{selected.academicYear} · {selected.divisions} divisions</p>
+          </div>
+          <div className="detail-pills">
+            {selected.groups.map(g => (
+              <div key={g.group_id}>
+                <b>{label(g.year_of_study)}</b>
+                <span>{g.divisions.map(v => v.division_name).join(', ')}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="structure-note">
+        <div className="note-icon">✦</div>
+        <div>
+          <b>How this structure is used</b>
+          <p>Subjects added for a department and year are shared by all divisions of that year. Each division will receive its own timetable during generation.</p>
+        </div>
+      </section>
+
+      {modal && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && closeModal()}>
+          <div className="academic-modal">
+            {modal === 'create' ? (
+              <>
+                <div className="modal-header">
+                  <div className="modal-title-wrap">
+                    <div className="modal-icon">＋</div>
+                    <div><span className="academic-eyebrow">NEW ACADEMIC GROUP</span><h2>Create academic group</h2><p>Add one department and configure its yearly divisions.</p></div>
+                  </div>
+                  <button className="modal-close" onClick={closeModal}>×</button>
+                </div>
+                <form onSubmit={create}>
+                  <div className="modal-field-grid">
+                    <Field label="DEPARTMENT"><input autoFocus value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Computer Science" /></Field>
+                    <Field label="ACADEMIC YEAR"><input value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="2026-27" /></Field>
+                  </div>
+                  <div className="modal-section-label">DIVISIONS BY YEAR</div>
+                  <div className="modal-year-grid">
+                    {years.map(y => (
+                      <label className={`modal-year ${counts[y] ? 'selected' : ''}`} key={y}>
+                        <span><b>{label(y)}</b><small>{counts[y] ? `${counts[y]} divisions` : 'Not configured'}</small></span>
+                        <input type="number" min="0" max="26" value={counts[y] || ''} onChange={e => setCounts({ ...counts, [y]: Number(e.target.value) })} placeholder="0" />
+                      </label>
+                    ))}
+                  </div>
+                  {error && <div className="notice error">! {error}</div>}
+                  <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Cancel</button><button className="create-group-button">Create academic group →</button></div>
+                </form>
+              </>
+            ) : (
+              <form onSubmit={rename}>
+                <div className="modal-header">
+                  <div className="modal-title-wrap"><div className="modal-icon edit">✎</div><div><span className="academic-eyebrow">EDIT DEPARTMENT</span><h2>Rename department</h2><p>Update the department name across its academic groups.</p></div></div>
+                  <button type="button" className="modal-close" onClick={closeModal}>×</button>
+                </div>
+                <Field label="DEPARTMENT NAME"><input autoFocus value={editName} onChange={e => setEditName(e.target.value)} /></Field>
+                {error && <div className="notice error">! {error}</div>}
+                <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Cancel</button><button className="create-group-button">Save changes →</button></div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
-function Field({label,children}){return <label className="field"><span>{label}</span>{children}</label>}
+
+function Field({ label, children }) {
+  return <label className="field"><span>{label}</span>{children}</label>
+}
