@@ -1,20 +1,207 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const BASE='http://localhost:8000'
-const yearLabel=y=>({1:'1st Year',2:'2nd Year',3:'3rd Year',4:'4th Year'}[y])
+const BASE = 'http://localhost:8000'
+const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y] || `${y}th Year`)
 
-export default function AcademicSubjects(){
- const [groups,setGroups]=useState([]); const [groupId,setGroupId]=useState(''); const [subjects,setSubjects]=useState([])
- const [name,setName]=useState(''); const [type,setType]=useState('theory'); const [periods,setPeriods]=useState(3); const [message,setMessage]=useState(''); const [error,setError]=useState('')
- async function load(){try{const [g,s]=await Promise.all([axios.get(`${BASE}/academic-structure`),axios.get(`${BASE}/academic-subjects`)]);setGroups(g.data);setSubjects(s.data)}catch{setError('Could not load academic data.')}}
- useEffect(()=>{load()},[])
- const group=groups.find(g=>String(g.group_id)===String(groupId)); const groupSubjects=subjects.filter(s=>s.group_id===Number(groupId))
- async function submit(e){e.preventDefault();setMessage('');setError('');if(!groupId||!name.trim()){setError('Select a department/year and enter a subject name.');return}try{const r=await axios.post(`${BASE}/academic-subjects`,{group_id:Number(groupId),subject_name:name.trim(),subject_type:type,periods_per_week:Number(periods)});setMessage(`${r.data.subject_name} added to all divisions: ${r.data.assigned_to_divisions.join(', ')}`);setName('');await load()}catch(err){setError(err.response?.data?.detail||'Could not save subject.')}}
- return <div style={page}><section style={hero}><div style={eyebrow}>STEP 2 · SUBJECTS</div><h1 style={title}>Subjects</h1><p style={sub}>Select one department and year. A subject is created once and automatically belongs to every division of that academic group.</p></section>
- <section style={card}><h2 style={h2}>Select academic group</h2><select value={groupId} onChange={e=>setGroupId(e.target.value)} style={input}><option value="">Select department and year</option>{groups.map(g=><option key={g.group_id} value={g.group_id}>{g.department} · {yearLabel(g.year_of_study)} · Divisions {g.divisions.map(d=>d.division_name).join(', ')}</option>)}</select>{group&&<div style={context}><b>{group.department} · {yearLabel(group.year_of_study)}</b><span>Divisions: {group.divisions.map(d=>d.division_name).join(', ')}</span></div>}
- <form onSubmit={submit} style={{marginTop:20}}><div style={grid3}><Field label="Subject name"><input value={name} onChange={e=>setName(e.target.value)} placeholder="DBMS" style={input}/></Field><Field label="Type"><select value={type} onChange={e=>setType(e.target.value)} style={input}><option value="theory">Theory</option><option value="lab">Lab</option></select></Field><Field label="Periods / week"><input type="number" min="1" max="30" value={periods} onChange={e=>setPeriods(e.target.value)} style={input}/></Field></div><button style={button}>Add Subject to All Divisions</button></form>{message&&<div style={success}>{message}</div>}{error&&<div style={errorBox}>{error}</div>}</section>
- <section style={card}><h2 style={h2}>Subjects for this academic group</h2>{!groupId?<p style={muted}>Select a department/year above.</p>:groupSubjects.length===0?<p style={muted}>No subjects added yet.</p>:<div style={table}><div style={thead}><span>Subject</span><span>Type</span><span>Periods</span><span>Scope</span></div>{groupSubjects.map(s=><div key={s.definition_id} style={tr}><b>{s.subject_name}</b><span style={badge}>{s.subject_type}</span><span>{s.periods_per_week}</span><span>{group?.divisions.map(d=>d.division_name).join(', ')}</span></div>)}</div>}</section></div>
+export default function AcademicSubjects() {
+  const [groups, setGroups] = useState([])
+  const [subjects, setSubjects] = useState([])
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [modalStep, setModalStep] = useState(null)
+  const [departmentChoice, setDepartmentChoice] = useState('')
+  const [name, setName] = useState('')
+  const [type, setType] = useState('theory')
+  const [periods, setPeriods] = useState(3)
+  const [theoryPeriods, setTheoryPeriods] = useState(3)
+  const [labPeriods, setLabPeriods] = useState(2)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [editing, setEditing] = useState(null)
+
+  async function load() {
+    try {
+      const [g, s] = await Promise.all([
+        axios.get(`${BASE}/academic-structure`),
+        axios.get(`${BASE}/academic-subjects`),
+      ])
+      const data = g.data
+      setGroups(Array.isArray(data) ? data : (data.groups || []))
+      setSubjects(Array.isArray(s.data) ? s.data : [])
+    } catch (err) {
+      setError('Could not load academic subjects.')
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const departments = useMemo(
+    () => [...new Set(groups.map(g => g.department))].sort((a, b) => a.localeCompare(b)),
+    [groups]
+  )
+  const departmentGroups = useMemo(
+    () => groups.filter(g => g.department === departmentChoice).sort((a, b) => a.year_of_study - b.year_of_study),
+    [groups, departmentChoice]
+  )
+  const selectedGroup = groups.find(g => String(g.group_id) === String(selectedGroupId))
+  const selectedSubjects = subjects.filter(s => s.group_id === Number(selectedGroupId))
+
+  // The backend stores theory and lab as separate solver-ready definitions.
+  // The directory merges them visually so the user sees one subject.
+  const directory = useMemo(() => {
+    const map = new Map()
+    selectedSubjects.forEach(s => {
+      const key = s.subject_name.trim().toLowerCase()
+      if (!map.has(key)) map.set(key, { name: s.subject_name, components: [], definitionIds: [] })
+      const row = map.get(key)
+      row.components.push(s.subject_type)
+      row.definitionIds.push(s.definition_id)
+      row.periods = (row.periods || 0) + Number(s.periods_per_week || 0)
+    })
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [selectedSubjects])
+
+  function openSelector() {
+    setError('')
+    setModalStep('department')
+    setDepartmentChoice('')
+  }
+
+  function chooseDepartment(department) {
+    setDepartmentChoice(department)
+    setModalStep('year')
+  }
+
+  function chooseYear(groupId) {
+    setSelectedGroupId(String(groupId))
+    setModalStep(null)
+    setMessage('')
+    setError('')
+  }
+
+  function clearSelection() {
+    setSelectedGroupId('')
+    setMessage('')
+    setError('')
+  }
+
+  function resetForm() {
+    setName('')
+    setType('theory')
+    setPeriods(3)
+    setTheoryPeriods(3)
+    setLabPeriods(2)
+    setEditing(null)
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    setMessage('')
+    setError('')
+    if (!selectedGroupId || !name.trim()) {
+      setError('Select a department and year, then enter a subject name.')
+      return
+    }
+    try {
+      const payload = {
+        group_id: Number(selectedGroupId),
+        subject_name: name.trim(),
+        subject_type: type,
+        periods_per_week: Number(periods),
+        ...(type === 'theory+lab' ? {
+          theory_periods_per_week: Number(theoryPeriods),
+          lab_periods_per_week: Number(labPeriods),
+        } : {}),
+      }
+      const r = await axios.post(`${BASE}/academic-subjects`, payload)
+      setMessage(`${r.data.subject_name} added to all divisions: ${r.data.assigned_to_divisions.join(', ')}`)
+      resetForm()
+      await load()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not save subject.')
+    }
+  }
+
+  function startEdit(row) {
+    setEditing(row)
+    setName(row.name)
+    if (row.components.includes('theory') && row.components.includes('lab')) setType('theory+lab')
+    else setType(row.components[0] || 'theory')
+    setPeriods(Math.max(1, Math.round(row.periods / row.components.length)))
+    setTheoryPeriods(3)
+    setLabPeriods(2)
+    setError('Editing existing subjects is not yet exposed by the current academic-subject API.')
+  }
+
+  return (
+    <div className="subjects-page">
+      <section className="subjects-hero">
+        <div className="subjects-hero-copy">
+          <div className="subjects-eyebrow">ACADEMIC SETUP · STEP 2</div>
+          <h1>Subjects</h1>
+          <p>Configure subjects by department and year. Every subject is automatically assigned to all divisions in that academic group.</p>
+        </div>
+        <div className="subjects-hero-stats">
+          <div><strong>{departments.length}</strong><span>Departments</span></div>
+          <i />
+          <div><strong>{groups.reduce((n, g) => n + g.divisions.length, 0)}</strong><span>Divisions</span></div>
+        </div>
+      </section>
+
+      {message && <div className="subjects-notice success">✓ {message}<button onClick={() => setMessage('')}>×</button></div>}
+      {error && !modalStep && <div className="subjects-notice error">! {error}<button onClick={() => setError('')}>×</button></div>}
+
+      <section className="subject-selection-card">
+        <div className="subject-selection-copy">
+          <span className="subjects-kicker">CURRENT SCOPE</span>
+          {selectedGroup ? (
+            <>
+              <h2>{selectedGroup.department} · {yearLabel(selectedGroup.year_of_study)}</h2>
+              <p>Subjects added here will automatically be assigned to every division of this year.</p>
+              <div className="division-chips">{selectedGroup.divisions.map(d => <span key={d.division_id}>{d.division_name}</span>)}</div>
+            </>
+          ) : (
+            <><h2>Choose where to add subjects</h2><p>Select a department first, then choose its year.</p></>
+          )}
+        </div>
+        <div className="selection-actions">
+          <button className="subject-primary" onClick={openSelector}>＋ {selectedGroup ? 'Change department / year' : 'Select your department'}</button>
+          {selectedGroup && <button className="subject-ghost" onClick={clearSelection}>Clear</button>}
+        </div>
+      </section>
+
+      {selectedGroup && (
+        <>
+          <section className="subject-workspace">
+            <div className="add-subject-panel">
+              <div className="subject-panel-heading"><div className="panel-icon">＋</div><div><span className="subjects-kicker">ADD TO {selectedGroup.department.toUpperCase()}</span><h2>New Subject</h2><p>{yearLabel(selectedGroup.year_of_study)} · Divisions {selectedGroup.divisions.map(d => d.division_name).join(', ')}</p></div></div>
+              <form onSubmit={submit}>
+                <label className="subject-field"><span>SUBJECT NAME</span><input autoFocus={!editing} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Data Structures" /></label>
+                <div className="subject-field"><span>SUBJECT TYPE</span><div className="subject-type-grid">
+                  <button type="button" className={`type-option ${type === 'theory' ? 'active' : ''}`} onClick={() => setType('theory')}><b>▣</b><strong>Theory Only</strong><small>Lecture sessions</small></button>
+                  <button type="button" className={`type-option ${type === 'theory+lab' ? 'active' : ''}`} onClick={() => setType('theory+lab')}><b>⚗</b><strong>Theory + Lab</strong><small>Both components</small></button>
+                </div></div>
+                {type === 'theory+lab' ? <div className="period-split"><label className="subject-field"><span>THEORY PERIODS / WEEK</span><input type="number" min="1" max="30" value={theoryPeriods} onChange={e => setTheoryPeriods(e.target.value)} /></label><label className="subject-field"><span>LAB PERIODS / WEEK</span><input type="number" min="1" max="30" value={labPeriods} onChange={e => setLabPeriods(e.target.value)} /></label></div> : <label className="subject-field"><span>PERIODS / WEEK</span><input type="number" min="1" max="30" value={periods} onChange={e => setPeriods(e.target.value)} /></label>}
+                <button className="subject-primary full">＋ Add Subject to All Divisions</button>
+              </form>
+              <div className="subject-info">ⓘ This subject will be created for {selectedGroup.divisions.length} division{selectedGroup.divisions.length !== 1 ? 's' : ''}: {selectedGroup.divisions.map(d => d.division_name).join(', ')}.</div>
+            </div>
+
+            <div className="subject-directory-panel">
+              <div className="directory-heading"><div><span className="subjects-kicker">SUBJECT DIRECTORY</span><h2>{selectedGroup.department} · {yearLabel(selectedGroup.year_of_study)}</h2><p>Subjects configured for all divisions in this academic group.</p></div><span className="directory-count">{directory.length} subject{directory.length !== 1 ? 's' : ''}</span></div>
+              {directory.length === 0 ? <div className="directory-empty"><div>＋</div><h3>No subjects yet</h3><p>Add the first subject using the form.</p></div> : <div className="subject-table"><div className="subject-table-head"><span>SUBJECT</span><span>TYPE</span><span>PERIODS</span><span>ACTIONS</span></div>{directory.map(row => <div className="subject-table-row" key={row.name}><div><strong>{row.name}</strong><small>{selectedGroup.divisions.length} divisions</small></div><div className="type-badges">{row.components.includes('theory') && <span className="theory-badge">Theory</span>}{row.components.includes('lab') && <span className="lab-badge">Lab</span>}</div><span>{row.periods}</span><div className="row-actions"><button title="Edit" onClick={() => startEdit(row)}>✎</button><button title="Delete" className="delete">⌫</button></div></div>)}</div>}
+            </div>
+          </section>
+        </>
+      )}
+
+      <section className="subject-guidelines"><div className="guideline-title"><span>ⓘ</span><div><h3>How subjects are assigned</h3><p>Choose one department and year. The system applies each subject to every division in that group.</p></div></div><div className="guideline-points"><div><b>01</b><span>Department → Year</span></div><div><b>02</b><span>One subject definition</span></div><div><b>03</b><span>All divisions inherit it</span></div></div></section>
+
+      {modalStep && <div className="subjects-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setModalStep(null)}><div className="subjects-modal">
+        <div className="subjects-modal-head"><div><span className="subjects-eyebrow">SUBJECT CONFIGURATION</span><h2>{modalStep === 'department' ? 'Select your department' : 'Select a year'}</h2><p>{modalStep === 'department' ? 'Choose the department whose subjects you want to configure.' : `Choose the year for ${departmentChoice}.`}</p></div><button onClick={() => setModalStep(null)}>×</button></div>
+        {modalStep === 'department' ? <div className="department-choice-grid">{departments.map(dep => <button key={dep} className="department-choice" onClick={() => chooseDepartment(dep)}><span>{dep.slice(0, 2).toUpperCase()}</span><strong>{dep}</strong><small>{groups.filter(g => g.department === dep).reduce((n, g) => n + g.divisions.length, 0)} divisions</small><b>→</b></button>)}</div> : <div className="year-choice-list">{departmentGroups.map(g => <button key={g.group_id} className="year-choice" onClick={() => chooseYear(g.group_id)}><span className="year-number">{g.year_of_study}</span><div><strong>{yearLabel(g.year_of_study)}</strong><small>{g.divisions.length} division{g.divisions.length !== 1 ? 's' : ''} · {g.divisions.map(d => d.division_name).join(', ')}</small></div><b>→</b></button>)}</div>}
+        {modalStep === 'year' && <button className="modal-back" onClick={() => setModalStep('department')}>← Back to departments</button>}
+      </div></div>}
+    </div>
+  )
 }
-function Field({label,children}){return <label style={{display:'grid',gap:7}}><span style={labelStyle}>{label}</span>{children}</label>}
-const page={padding:'34px 38px',maxWidth:1100,margin:'0 auto'};const hero={padding:'28px 30px',borderRadius:18,background:'linear-gradient(135deg,#eef5ff,#f7f4ff)',border:'1px solid #dbe5f5',marginBottom:20};const eyebrow={fontSize:11,fontWeight:800,letterSpacing:'.12em',color:'#4f46e5'};const title={fontSize:32,margin:'8px 0 6px',color:'#172554'};const sub={margin:0,color:'#64748b',fontSize:15,lineHeight:1.6};const card={background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:26,marginBottom:20,boxShadow:'0 5px 20px rgba(15,23,42,.04)'};const h2={fontSize:19,color:'#172554',margin:'0 0 16px'};const input={width:'100%',boxSizing:'border-box',padding:'11px 12px',border:'1px solid #cbd5e1',borderRadius:9,fontSize:14,background:'#fff'};const grid3={display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:14};const button={marginTop:18,padding:'12px 20px',border:0,borderRadius:10,background:'linear-gradient(90deg,#2563eb,#6d28d9)',color:'#fff',fontWeight:800,cursor:'pointer'};const labelStyle={fontSize:11,fontWeight:800,letterSpacing:'.08em',color:'#64748b'};const muted={color:'#64748b',fontSize:13};const context={marginTop:14,padding:13,borderRadius:10,background:'#eff6ff',color:'#1e3a8a',display:'flex',justifyContent:'space-between'};const success={marginTop:14,padding:12,borderRadius:9,background:'#ecfdf5',color:'#047857'};const errorBox={marginTop:14,padding:12,borderRadius:9,background:'#fef2f2',color:'#b91c1c'};const table={border:'1px solid #e2e8f0',borderRadius:10,overflow:'hidden'};const thead={display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1.5fr',padding:12,background:'#f8fafc',fontSize:11,fontWeight:800,color:'#64748b',textTransform:'uppercase'};const tr={display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1.5fr',padding:13,borderTop:'1px solid #e2e8f0',alignItems:'center'};const badge={fontSize:11,fontWeight:700,textTransform:'capitalize'}
