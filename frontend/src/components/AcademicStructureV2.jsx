@@ -273,14 +273,17 @@ export default function AcademicStructureV2() {
         <div className="stat-card stat-blue">
           <div className="stat-icon"><Icon name="building" size={24} /></div>
           <div><div className="stat-label">TOTAL DEPARTMENTS</div><div className="stat-number">{departmentRows.length}</div></div>
+          <StatSpark color="#2563eb" id="dept" />
         </div>
         <div className="stat-card stat-green">
           <div className="stat-icon"><Icon name="layers" size={24} /></div>
           <div><div className="stat-label">TOTAL YEARS</div><div className="stat-number">{totalYears}</div></div>
+          <StatSpark color="#10b981" id="years" />
         </div>
         <div className="stat-card stat-purple">
           <div className="stat-icon"><Icon name="grid" size={24} /></div>
           <div><div className="stat-label">TOTAL DIVISIONS</div><div className="stat-number">{totalDivisions}</div></div>
+          <StatSpark color="#a855f7" id="divs" />
         </div>
       </section>
 
@@ -288,16 +291,23 @@ export default function AcademicStructureV2() {
       {error && !modal && !deleteTarget && !legacyTarget && <div className="global-notice error">{error}<button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
 
       {/* DIRECTORY */}
-      <section className="dept-directory-head">
-        <div>
-          <div className="section-kicker">DEPARTMENT DIRECTORY</div>
-          <h2>All departments</h2>
-          <p>{departmentRows.length} department{departmentRows.length === 1 ? '' : 's'} configured for {academicYear}</p>
-        </div>
-        <div className="dept-search">
-          <Icon name="search" size={17} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search departments..." />
-          {search && <button onClick={() => setSearch('')} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><Icon name="close" size={14} /></button>}
+      <section className="dept-directory-card">
+        <div className="dept-directory-head">
+          <div>
+            <div className="section-kicker">DEPARTMENT DIRECTORY</div>
+            <div className="dept-directory-title-row">
+              <div className="dept-directory-icon"><Icon name="building" size={22} /></div>
+              <div>
+                <h2>Departments</h2>
+                <p>{departmentRows.length} department{departmentRows.length === 1 ? '' : 's'} configured for {academicYear}</p>
+              </div>
+            </div>
+          </div>
+          <div className="dept-search">
+            <Icon name="search" size={17} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search departments..." />
+            {search && <button onClick={() => setSearch('')} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><Icon name="close" size={14} /></button>}
+          </div>
         </div>
       </section>
 
@@ -332,10 +342,9 @@ export default function AcademicStructureV2() {
           )
         }) : (
           <div className="empty-departments">
-            <div className="empty-icon"><Icon name="building" size={22} /></div>
+            <div className="empty-icon"><Icon name="building" size={18} /></div>
             <h3>{search ? 'No departments match your search' : 'No departments yet'}</h3>
             <p>{search ? 'Try a different name.' : 'Create your first department to begin.'}</p>
-            {!search && <button className="primary-button" onClick={openCreate}><Icon name="plus" size={16} /> Create New Department</button>}
           </div>
         )}
       </section>
@@ -491,6 +500,24 @@ export default function AcademicStructureV2() {
         </div>
       )}
 
+    </div>
+  )
+}
+
+function StatSpark({ color, id }) {
+  const gid = `as-spark-${id}`
+  return (
+    <div className="stat-decoration">
+      <svg width="110" height="38" viewBox="0 0 120 40" preserveAspectRatio="none">
+        <path d="M0 30 Q 15 15, 30 25 T 60 15 T 90 20 T 120 10" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" style={{ opacity: 0.6 }} />
+        <path d="M0 30 Q 15 15, 30 25 T 60 15 T 90 20 T 120 10 L 120 40 L 0 40 Z" fill={`url(#${gid})`} style={{ opacity: 0.15 }} />
+        <defs>
+          <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={color} />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+      </svg>
     </div>
   )
 }
