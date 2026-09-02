@@ -1,0 +1,10 @@
+/* Final spacing override for the relocated action. */
+.academic-stats { margin-bottom: 104px !important; }
+
+@media (max-width: 900px) {
+  .academic-stats { margin-bottom: 104px !important; }
+}
+
+@media (max-width: 700px) {
+  .academic-stats { margin-bottom: 104px !important; }
+}
