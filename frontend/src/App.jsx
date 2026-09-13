@@ -14,6 +14,7 @@ import TimetableGrid from './components/TimetableGrid.jsx'
 import StatusDashboard from './components/StatusDashboard.jsx'
 import ConstraintsPage from './pages/ConstraintsPage.jsx'
 import AcademicStructure from './components/AcademicStructureV2.jsx'
+import AcademicLegacyCleanup from './components/AcademicLegacyCleanup.jsx'
 import AcademicSubjects from './components/AcademicSubjects.jsx'
 import FacultyAssignments from './components/FacultyAssignments.jsx'
 import ChatBubble from './components/ChatBubble.jsx'
@@ -30,6 +31,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<StatusDashboard />} />
             <Route path="/academic-structure" element={<AcademicStructure />} />
+            <Route path="/academic-structure/legacy-cleanup" element={<AcademicLegacyCleanup />} />
             <Route path="/subjects" element={<AcademicSubjects />} />
             <Route path="/faculty-assignments" element={<FacultyAssignments />} />
             <Route path="/teachers" element={<TeacherForm />} />
