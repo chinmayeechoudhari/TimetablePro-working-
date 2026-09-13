@@ -19,6 +19,15 @@ import AcademicSubjects from './components/AcademicSubjects.jsx'
 import FacultyAssignments from './components/FacultyAssignments.jsx'
 import ChatBubble from './components/ChatBubble.jsx'
 
+function AcademicStructurePage() {
+  return (
+    <>
+      <AcademicStructure />
+      <AcademicLegacyCleanup />
+    </>
+  )
+}
+
 export default function App() {
   const [enteredApp, setEnteredApp] = useState(false)
 
@@ -30,8 +39,7 @@ export default function App() {
         <div style={{ flex:1, height:'100vh', overflowY:'auto', overflowX:'hidden', background:'var(--bg-page)' }}>
           <Routes>
             <Route path="/" element={<StatusDashboard />} />
-            <Route path="/academic-structure" element={<AcademicStructure />} />
-            <Route path="/academic-structure/legacy-cleanup" element={<AcademicLegacyCleanup />} />
+            <Route path="/academic-structure" element={<AcademicStructurePage />} />
             <Route path="/subjects" element={<AcademicSubjects />} />
             <Route path="/faculty-assignments" element={<FacultyAssignments />} />
             <Route path="/teachers" element={<TeacherForm />} />
