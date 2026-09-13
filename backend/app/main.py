@@ -13,6 +13,8 @@ from app.api.academic_subjects import router as academic_subjects_router
 from app.api.teaching_assignments import router as teaching_assignments_router
 from app.api.generate import router as generate_router
 from app.api.constraints import router as constraints_router
+from app.api.validate import router as validate_router
+from app.api.database import router as database_router
 
 from app.core.config import Base, engine
 from app.models import models
@@ -47,3 +49,6 @@ app.include_router(academic_subjects_router)
 app.include_router(teaching_assignments_router)
 app.include_router(generate_router)
 app.include_router(constraints_router)
+app.include_router(validate_router)
+app.include_router(database_router)
+

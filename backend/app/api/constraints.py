@@ -39,7 +39,7 @@ class UpdateConstraintRequest(BaseModel):
     weight: int
 
 
-def _serialize(row: Constraint) -> dict:
+def _serialize(row: Constraint, display_number: int | None = None) -> dict:
     try:
         payload = json.loads(row.parameters_json or "{}")
     except json.JSONDecodeError:
@@ -48,7 +48,10 @@ def _serialize(row: Constraint) -> dict:
         weight = payload.get("weight")
         if weight not in (1, 2, 3):
             payload["weight"] = 3
-    return {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
+    result = {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
+    if display_number is not None:
+        result["display_number"] = display_number
+    return result
 
 
 def _walk_conditions(condition: Any):
@@ -244,8 +247,10 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
 
 @router.get("")
 def list_constraints(db: Session = Depends(get_db)):
-    rows = db.query(Constraint).order_by(Constraint.constraint_id.desc()).all()
-    return [_serialize(row) for row in rows]
+    rows = db.query(Constraint).order_by(Constraint.constraint_id.asc()).all()
+    result = [_serialize(row, display_number=i + 1) for i, row in enumerate(rows)]
+    result.reverse()  # newest first for display
+    return result
 
 
 @router.post("")

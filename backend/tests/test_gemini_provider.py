@@ -98,7 +98,7 @@ def test_default_model_is_used(mock_client, monkeypatch):
 
     provider = GeminiProvider()
 
-    assert provider.model == "gemini-3.6-flash"
+    assert provider.model == "gemini-2.0-flash"
 
 
 # ============================================================
