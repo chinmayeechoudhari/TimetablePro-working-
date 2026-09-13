@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import ThemeToggle from "./ThemeToggle";
+import ConfirmModal from "./ConfirmModal";
+import { apiGet, invalidateCache } from "../lib/apiCache";
 
 const BASE = "http://localhost:8000";
+
 
 /* ─── SVG Icons ───────────────────────────────────────────────── */
 const SVG = {
@@ -90,7 +93,22 @@ const SVG = {
         </linearGradient>
       </defs>
     </svg>
-  )
+  ),
+  trash: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <line x1="10" y1="11" x2="10" y2="17"/>
+      <line x1="14" y1="11" x2="14" y2="17"/>
+    </svg>
+  ),
+  alertTriangle: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+  ),
 };
 
 export default function StatusDashboard() {
@@ -104,32 +122,59 @@ export default function StatusDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [showWipeModal, setShowWipeModal] = useState(false);
+  const [isWiping, setIsWiping] = useState(false);
+  const [wipeNotice, setWipeNotice] = useState(null);
+
   const classroomCount = rooms.filter(room => room.room_type === "classroom" || !room.room_type).length;
   const labCount = rooms.filter(room => room.room_type === "lab").length;
 
-  async function fetchDashboard() {
+  async function fetchDashboard(forceRefresh = false) {
     try {
       setLoading(true);
       setError("");
 
       const [teacherRes, roomRes, classRes, subjectRes, validationRes] = await Promise.all([
-        axios.get(`${BASE}/teachers`),
-        axios.get(`${BASE}/rooms`),
-        axios.get(`${BASE}/classes`),
-        axios.get(`${BASE}/subjects`),
-        axios.get(`${BASE}/validate`),
+        apiGet(`${BASE}/teachers`, { forceRefresh }),
+        apiGet(`${BASE}/rooms`, { forceRefresh }),
+        apiGet(`${BASE}/classes`, { forceRefresh }),
+        apiGet(`${BASE}/subjects`, { forceRefresh }),
+        apiGet(`${BASE}/validate`, { forceRefresh, ttl: 30000 }),
       ]);
 
-      setTeachers(teacherRes.data);
-      setRooms(roomRes.data);
-      setClasses(classRes.data);
-      setSubjects(subjectRes.data);
-      setValidation(validationRes.data);
+      setTeachers(teacherRes.data || []);
+      setRooms(roomRes.data || []);
+      setClasses(classRes.data || []);
+      setSubjects(subjectRes.data || []);
+      setValidation(validationRes.data || null);
     } catch (err) {
       console.error(err);
       setError("Unable to load dashboard.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleWipeDatabase() {
+    try {
+      setIsWiping(true);
+      setWipeNotice(null);
+      const res = await axios.post(`${BASE}/database/wipe`);
+      invalidateCache();
+      setShowWipeModal(false);
+      setWipeNotice({
+        type: "success",
+        message: res.data?.message || "All database information wiped successfully. Tables are intact.",
+      });
+      await fetchDashboard(true);
+    } catch (err) {
+      console.error(err);
+      setWipeNotice({
+        type: "error",
+        message: err.response?.data?.detail || "Failed to wipe database information. Please try again.",
+      });
+    } finally {
+      setIsWiping(false);
     }
   }
 
@@ -245,7 +290,7 @@ export default function StatusDashboard() {
 
           {/* Refresh Button */}
           <button
-            onClick={fetchDashboard}
+            onClick={() => fetchDashboard(true)}
             style={{
               height: '40px',
               padding: '0 20px',
@@ -268,6 +313,43 @@ export default function StatusDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Notice Banner */}
+      {wipeNotice && (
+        <div style={{
+          marginBottom: '24px',
+          padding: '14px 18px',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: wipeNotice.type === 'success' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+          border: `1px solid ${wipeNotice.type === 'success' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          color: wipeNotice.type === 'success' ? '#16a34a' : '#dc2626',
+          fontSize: '13.5px',
+          fontWeight: '600',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>{wipeNotice.type === 'success' ? '✓' : '⚠️'}</span>
+            <span>{wipeNotice.message}</span>
+          </div>
+          <button
+            onClick={() => setWipeNotice(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: '700',
+              padding: '0 4px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
 
       {/* ── METRIC CARDS ROW (5 COLUMNS) ── */}
       <div style={{
@@ -505,6 +587,95 @@ export default function StatusDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── DANGER ZONE: RESET DATABASE INFORMATION ── */}
+      <div style={{
+        marginTop: '32px',
+        background: 'var(--bg-card)',
+        borderRadius: '12px',
+        padding: '22px 28px',
+        border: '1px solid rgba(239, 68, 68, 0.25)',
+        boxShadow: '0 1px 4px rgba(0, 0, 0, 0.04)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '16px',
+        transition: 'background 0.3s ease, border-color 0.3s ease',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', maxWidth: '750px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: 'rgba(239, 68, 68, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            {SVG.alertTriangle}
+          </div>
+          <div>
+            <h3 style={{
+              margin: '0 0 4px',
+              fontSize: '15.5px',
+              fontWeight: '700',
+              color: 'var(--text-main)',
+            }}>
+              Wipe Database Information
+            </h3>
+            <p style={{
+              margin: 0,
+              fontSize: '12.5px',
+              color: 'var(--text-muted)',
+              lineHeight: '1.4',
+            }}>
+              Permanently clears all data records from every database table (teachers, rooms, classes, subjects, weekly schedule, availability, assignments, constraints, and timetables). <strong>The database tables themselves are NOT deleted.</strong>
+            </p>
+          </div>
+        </div>
+
+        <button
+          id="btn-wipe-db-danger-zone"
+          onClick={() => setShowWipeModal(true)}
+          style={{
+            height: '38px',
+            padding: '0 18px',
+            borderRadius: '10px',
+            background: '#ef4444',
+            color: '#ffffff',
+            border: 'none',
+            fontWeight: '700',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.25)',
+            transition: 'background 0.15s ease',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = '#dc2626'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = '#ef4444'; }}
+        >
+          {SVG.trash}
+          <span>Delete All Information</span>
+        </button>
+      </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showWipeModal}
+        title="Wipe All Database Information?"
+        message="Are you sure you want to delete all database information? This will permanently wipe all saved data from every table (teachers, rooms, classes, subjects, weekly schedule, availability, assignments, constraints, and generated timetables). The tables themselves will NOT be deleted. This action cannot be undone."
+        confirmText="Yes, Wipe All Data"
+        isDeletingText="Wiping Database..."
+        isDeleting={isWiping}
+        onConfirm={handleWipeDatabase}
+        onCancel={() => {
+          if (!isWiping) setShowWipeModal(false);
+        }}
+      />
     </div>
   );
 }

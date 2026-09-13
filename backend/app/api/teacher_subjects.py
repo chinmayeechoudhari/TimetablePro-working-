@@ -1,6 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_db
@@ -49,10 +50,33 @@ def get_teacher_subject(teacher_id: int, subject_id: int, db: Session = Depends(
 
 @router.post("", response_model=TeacherSubjectRead, status_code=status.HTTP_201_CREATED)
 def create_teacher_subject(payload: TeacherSubjectCreate, db: Session = Depends(get_db)) -> TeacherSubjectRead:
+    from app.models.models import Teacher, Subject
+    teacher = db.query(Teacher).filter(Teacher.teacher_id == payload.teacher_id).first()
+    if not teacher:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found.")
+    subject = db.query(Subject).filter(Subject.subject_id == payload.subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found.")
+    existing = db.query(TeacherSubject).filter(
+        TeacherSubject.teacher_id == payload.teacher_id,
+        TeacherSubject.subject_id == payload.subject_id,
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This teacher is already assigned to this subject.",
+        )
     data = _dump_payload(payload)
     item = TeacherSubject(**data)
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This teacher is already assigned to this subject.",
+        )
     db.refresh(item)
     return TeacherSubjectRead(teacher_id=item.teacher_id, subject_id=item.subject_id)
 
@@ -83,7 +107,14 @@ def update_teacher_subject(
         setattr(item, field, value)
 
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This teacher is already assigned to this subject.",
+        )
     db.refresh(item)
     return TeacherSubjectRead(teacher_id=item.teacher_id, subject_id=item.subject_id)
 

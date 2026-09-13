@@ -1,0 +1,162 @@
+:root {
+    --bg-page: #f7f9fc;
+    --bg-card: #ffffff;
+    --border-color: #e4e9f2;
+    --text-main: #172554;
+    --text-muted: #64748b;
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #e5e7eb;
+    --sidebar-hover-bg: #f1f5ff;
+    --sidebar-hover-text: #1d4ed8;
+    --sidebar-text: #334155;
+    --sidebar-muted: #64748b;
+    --sidebar-section: #64748b;
+    --nav-inactive-text: #475569;
+    --nav-active-bg: #eff6ff;
+    --nav-active-text: #1d4ed8;
+    --nav-active-border: #2563eb;
+    --nav-active-dot: #2563eb;
+    --status-card-bg: #f8fafc;
+    --status-card-border: #e2e8f0;
+    --status-text: #334155;
+    --status-sub: #64748b;
+    --badge-teacher: #dbeafe;
+    --badge-classroom: #d1fae5;
+    --badge-lab: #ede9fe;
+    --badge-class: #ffedd5;
+    --badge-subject: #fce7f3;
+    color-scheme: light;
+}
+
+html[data-theme="dark"] {
+    --bg-page: #080f1c;
+    --bg-card: #101a2b;
+    --border-color: #25324a;
+    --text-main: #eef2ff;
+    --text-muted: #9aa8c2;
+    --sidebar-bg: #0d1625;
+    --sidebar-border: #25324a;
+    --sidebar-hover-bg: #15223a;
+    --sidebar-hover-text: #bfdbfe;
+    --sidebar-text: #e2e8f0;
+    --sidebar-muted: #94a3b8;
+    --sidebar-section: #94a3b8;
+    --nav-inactive-text: #b6c2d9;
+    --nav-active-bg: #152847;
+    --nav-active-text: #bfdbfe;
+    --nav-active-border: #60a5fa;
+    --nav-active-dot: #60a5fa;
+    --status-card-bg: #101a2b;
+    --status-card-border: #293650;
+    --status-text: #e2e8f0;
+    --status-sub: #9aa8c2;
+    --badge-teacher: #172f54;
+    --badge-classroom: #12352b;
+    --badge-lab: #2a2148;
+    --badge-class: #402915;
+    --badge-subject: #40213a;
+    color-scheme: dark;
+}
+
+html,
+body,
+#root {
+    background: var(--bg-page);
+    color: var(--text-main);
+    transition: background .25s ease, color .25s ease
+}
+
+/* Dashboard theme switch */
+.switch {
+    font-size: 17px;
+    position: relative;
+    display: inline-block;
+    width: 58px;
+    height: 32px;
+    flex: 0 0 auto;
+    cursor: pointer
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0
+}
+
+.slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #70c6ff;
+    transition: .3s;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .08)
+}
+
+.slider:before {
+    content: "";
+    position: absolute;
+    width: 25px;
+    height: 25px;
+    left: 4px;
+    top: 3.5px;
+    border-radius: 50%;
+    background: #ffd34d;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, .2);
+    transition: .3s;
+    z-index: 2
+}
+
+.switch input:checked+.slider {
+    background: #17233d
+}
+
+.switch input:checked+.slider:before {
+    transform: translateX(25px);
+    background: #f8fafc
+}
+
+.star {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0;
+    transition: .3s;
+    z-index: 1
+}
+
+.star_1 {
+    top: 7px;
+    left: 10px
+}
+
+.star_2 {
+    top: 17px;
+    left: 19px
+}
+
+.star_3 {
+    top: 10px;
+    left: 27px
+}
+
+.switch input:checked+.slider .star {
+    opacity: 1
+}
+
+.cloud {
+    position: absolute;
+    width: 21px;
+    height: 21px;
+    right: 5px;
+    bottom: 4px;
+    opacity: 1;
+    transition: .3s;
+    z-index: 1
+}
+
+.switch input:checked+.slider .cloud {
+    opacity: 0
+}

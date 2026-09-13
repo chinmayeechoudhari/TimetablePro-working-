@@ -7,7 +7,9 @@ export default function ConfirmModal({
   message,
   onConfirm,
   onCancel,
-  isDeleting = false
+  isDeleting = false,
+  confirmText = 'Yes, Delete',
+  isDeletingText = 'Deleting...',
 }) {
   if (!isOpen) return null
 
@@ -54,10 +56,11 @@ export default function ConfirmModal({
             disabled={isDeleting}
             style={styles.deleteBtn}
           >
-            {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+            {isDeleting ? isDeletingText : confirmText}
           </button>
         </div>
       </div>
+
 
       <style>{`
         @keyframes modalFadeIn {

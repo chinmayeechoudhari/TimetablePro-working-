@@ -1,20 +1,559 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
+import './AcademicStructureModern.css'
+import './AcademicSubjects.css'
+import Icon from './AcademicIcon'
+import { loadShortCodes, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
 
-const BASE='http://localhost:8000'
-const yearLabel=y=>({1:'1st Year',2:'2nd Year',3:'3rd Year',4:'4th Year'}[y])
+const BASE = 'http://localhost:8000'
+const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y] || `${y}th Year`)
 
-export default function AcademicSubjects(){
- const [groups,setGroups]=useState([]); const [groupId,setGroupId]=useState(''); const [subjects,setSubjects]=useState([])
- const [name,setName]=useState(''); const [type,setType]=useState('theory'); const [periods,setPeriods]=useState(3); const [message,setMessage]=useState(''); const [error,setError]=useState('')
- async function load(){try{const [g,s]=await Promise.all([axios.get(`${BASE}/academic-structure`),axios.get(`${BASE}/academic-subjects`)]);setGroups(g.data?.groups || []);setSubjects(Array.isArray(s.data) ? s.data : (s.data?.subjects || []))}catch(err){console.error(err);setError('Could not load academic data.')}}
- useEffect(()=>{load()},[])
- const group=groups.find(g=>String(g.group_id)===String(groupId)); const groupSubjects=subjects.filter(s=>s.group_id===Number(groupId))
- async function submit(e){e.preventDefault();setMessage('');setError('');if(!groupId||!name.trim()){setError('Select a department/year and enter a subject name.');return}try{const r=await axios.post(`${BASE}/academic-subjects`,{group_id:Number(groupId),subject_name:name.trim(),subject_type:type,periods_per_week:Number(periods)});setMessage(`${r.data.subject_name} added to all divisions: ${r.data.assigned_to_divisions.join(', ')}`);setName('');await load()}catch(err){setError(err.response?.data?.detail||'Could not save subject.')}}
- return <div style={page}><section style={hero}><div style={eyebrow}>STEP 2 · SUBJECTS</div><h1 style={title}>Subjects</h1><p style={sub}>Select one department and year. A subject is created once and automatically belongs to every division of that academic group.</p></section>
- <section style={card}><h2 style={h2}>Select academic group</h2><select value={groupId} onChange={e=>setGroupId(e.target.value)} style={input}><option value="">Select department and year</option>{groups.map(g=><option key={g.group_id} value={g.group_id}>{g.department} · {yearLabel(g.year_of_study)} · Divisions {g.divisions.map(d=>d.division_name).join(', ')}</option>)}</select>{group&&<div style={context}><b>{group.department} · {yearLabel(group.year_of_study)}</b><span>Divisions: {group.divisions.map(d=>d.division_name).join(', ')}</span></div>}
- <form onSubmit={submit} style={{marginTop:20}}><div style={grid3}><Field label="Subject name"><input value={name} onChange={e=>setName(e.target.value)} placeholder="DBMS" style={input}/></Field><Field label="Type"><select value={type} onChange={e=>setType(e.target.value)} style={input}><option value="theory">Theory</option><option value="lab">Lab</option></select></Field><Field label="Periods / week"><input type="number" min="1" max="30" value={periods} onChange={e=>setPeriods(e.target.value)} style={input}/></Field></div><button style={button}>Add Subject to All Divisions</button></form>{message&&<div style={success}>{message}</div>}{error&&<div style={errorBox}>{error}</div>}</section>
- <section style={card}><h2 style={h2}>Subjects for this academic group</h2>{!groupId?<p style={muted}>Select a department/year above.</p>:groupSubjects.length===0?<p style={muted}>No subjects added yet.</p>:<div style={table}><div style={thead}><span>Subject</span><span>Type</span><span>Periods</span><span>Scope</span></div>{groupSubjects.map(s=><div key={s.definition_id} style={tr}><b>{s.subject_name}</b><span style={badge}>{s.subject_type}</span><span>{s.periods_per_week}</span><span>{group?.divisions.map(d=>d.division_name).join(', ')}</span></div>)}</div>}</section></div>
+function StatSpark({ color, id }) {
+  const gid = `subj-spark-${id}`
+  return (
+    <div className="stat-decoration">
+      <svg width="110" height="38" viewBox="0 0 120 40" preserveAspectRatio="none">
+        <path d="M0 30 Q 15 15, 30 25 T 60 15 T 90 20 T 120 10" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" style={{ opacity: 0.6 }} />
+        <path d="M0 30 Q 15 15, 30 25 T 60 15 T 90 20 T 120 10 L 120 40 L 0 40 Z" fill={`url(#${gid})`} style={{ opacity: 0.15 }} />
+        <defs>
+          <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={color} />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  )
 }
-function Field({label,children}){return <label style={{display:'grid',gap:7}}><span style={labelStyle}>{label}</span>{children}</label>}
-const page={padding:'34px 38px',maxWidth:1100,margin:'0 auto'};const hero={padding:'28px 30px',borderRadius:18,background:'linear-gradient(135deg,#eef5ff,#f7f4ff)',border:'1px solid #dbe5f5',marginBottom:20};const eyebrow={fontSize:11,fontWeight:800,letterSpacing:'.12em',color:'#4f46e5'};const title={fontSize:32,margin:'8px 0 6px',color:'#172554'};const sub={margin:0,color:'#64748b',fontSize:15,lineHeight:1.6};const card={background:'#fff',border:'1px solid #e2e8f0',borderRadius:16,padding:26,marginBottom:20,boxShadow:'0 5px 20px rgba(15,23,42,.04)'};const h2={fontSize:19,color:'#172554',margin:'0 0 16px'};const input={width:'100%',boxSizing:'border-box',padding:'11px 12px',border:'1px solid #cbd5e1',borderRadius:9,fontSize:14,background:'#fff'};const grid3={display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:14};const button={marginTop:18,padding:'12px 20px',border:0,borderRadius:10,background:'linear-gradient(90deg,#2563eb,#6d28d9)',color:'#fff',fontWeight:800,cursor:'pointer'};const labelStyle={fontSize:11,fontWeight:800,letterSpacing:'.08em',color:'#64748b'};const muted={color:'#64748b',fontSize:13};const context={marginTop:14,padding:13,borderRadius:10,background:'#eff6ff',color:'#1e3a8a',display:'flex',justifyContent:'space-between'};const success={marginTop:14,padding:12,borderRadius:9,background:'#ecfdf5',color:'#047857'};const errorBox={marginTop:14,padding:12,borderRadius:9,background:'#fef2f2',color:'#b91c1c'};const table={border:'1px solid #e2e8f0',borderRadius:10,overflow:'hidden'};const thead={display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1.5fr',padding:12,background:'#f8fafc',fontSize:11,fontWeight:800,color:'#64748b',textTransform:'uppercase'};const tr={display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1.5fr',padding:13,borderTop:'1px solid #e2e8f0',alignItems:'center'};const badge={fontSize:11,fontWeight:700,textTransform:'capitalize'}
+
+function Field({ label, children }) {
+  return <label className="field"><span>{label}</span>{children}</label>
+}
+
+// Very subtle curriculum / stacked-books watermark for the empty landing
+// state — same technique as the Departments hero's architectural line-art,
+// just themed around subjects instead of buildings.
+function SubjectsWatermark({ className = 'subjects-landing-illustration' }) {
+  return (
+    <svg className={className} viewBox="0 0 620 220" fill="none" aria-hidden="true">
+      <rect x="150" y="150" width="150" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="163" y="136" width="130" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="140" y="164" width="165" height="14" rx="2" stroke="currentColor" strokeWidth="2" />
+      <path d="M370 70v100M410 60v110M450 74v96" stroke="currentColor" strokeWidth="2" />
+      <path d="M362 70h16M402 60h16M442 74h16" stroke="currentColor" strokeWidth="2" />
+      <rect x="330" y="170" width="160" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
+      <path d="M120 118h90M120 132h60" stroke="currentColor" strokeWidth="2" />
+      <circle cx="470" cy="120" r="34" stroke="currentColor" strokeWidth="2" />
+      <path d="M470 104v16l11 11" stroke="currentColor" strokeWidth="2" />
+      <path d="M40 185h540" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
+
+export default function AcademicSubjects() {
+  const [groups, setGroups] = useState([])
+  const [subjects, setSubjects] = useState([])
+  const [shortCodes] = useState(loadShortCodes)
+  const [loadError, setLoadError] = useState('')
+
+  const [selectedDepartment, setSelectedDepartment] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+
+  const [deptModalOpen, setDeptModalOpen] = useState(false)
+  const [deptModalSearch, setDeptModalSearch] = useState('')
+
+  const [search, setSearch] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  // Add / edit subject modal
+  const [formModal, setFormModal] = useState(null) // null | 'add' | { type: 'edit', originalName }
+  const [formName, setFormName] = useState('')
+  const [formType, setFormType] = useState('theory')
+  const [formPeriods, setFormPeriods] = useState(3)
+  const [formTheoryPeriods, setFormTheoryPeriods] = useState(3)
+  const [formLabPeriods, setFormLabPeriods] = useState(2)
+  const [formError, setFormError] = useState('')
+  const [formSaving, setFormSaving] = useState(false)
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  async function load() {
+    try {
+      const [groupResponse, subjectResponse] = await Promise.all([
+        axios.get(`${BASE}/academic-structure`),
+        axios.get(`${BASE}/academic-subjects`),
+      ])
+      const groupData = groupResponse.data
+      setGroups(Array.isArray(groupData) ? groupData : (groupData?.groups || []))
+      setSubjects(Array.isArray(subjectResponse.data) ? subjectResponse.data : [])
+      setLoadError('')
+    } catch (err) {
+      console.error('Failed to load academic subjects:', err)
+      setLoadError('Could not load academic structure or subjects. Is the backend running?')
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const departments = useMemo(
+    () => [...new Set(groups.map(g => g.department))].sort((a, b) => a.localeCompare(b)),
+    [groups]
+  )
+
+  const departmentRows = useMemo(() => departments.map(name => {
+    const rows = groups.filter(g => g.department === name).sort((a, b) => a.year_of_study - b.year_of_study)
+    return {
+      name,
+      groups: rows,
+      divisions: rows.reduce((n, g) => n + g.divisions.length, 0),
+    }
+  }), [departments, groups])
+
+  const filteredDeptRows = useMemo(() => {
+    const q = deptModalSearch.trim().toLowerCase()
+    if (!q) return departmentRows
+    return departmentRows.filter(d => d.name.toLowerCase().includes(q))
+  }, [departmentRows, deptModalSearch])
+
+  const totalDivisions = departmentRows.reduce((n, d) => n + d.divisions, 0)
+  const totalSubjects = useMemo(
+    () => new Set(subjects.map(s => `${s.group_id}::${s.subject_name.trim().toLowerCase()}`)).size,
+    [subjects]
+  )
+
+  const activeDeptRow = departmentRows.find(d => d.name === selectedDepartment) || null
+  const selectedGroup = groups.find(g => String(g.group_id) === String(selectedGroupId)) || null
+
+  // Keep a valid year selected whenever the department changes / loads.
+  useEffect(() => {
+    if (!activeDeptRow) return
+    const stillValid = activeDeptRow.groups.some(g => String(g.group_id) === String(selectedGroupId))
+    if (!stillValid) {
+      setSelectedGroupId(activeDeptRow.groups[0] ? String(activeDeptRow.groups[0].group_id) : '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDeptRow?.name, groups])
+
+  const directory = useMemo(() => {
+    if (!selectedGroup) return []
+    const rows = subjects.filter(s => s.group_id === selectedGroup.group_id)
+    const map = new Map()
+    rows.forEach(subject => {
+      const key = subject.subject_name.trim().toLowerCase()
+      if (!map.has(key)) map.set(key, { name: subject.subject_name, theory: null, lab: null })
+      const row = map.get(key)
+      row[subject.subject_type] = subject.periods_per_week
+    })
+    return [...map.values()]
+      .map(row => ({
+        ...row,
+        type: row.theory != null && row.lab != null ? 'theory+lab' : (row.lab != null ? 'lab' : 'theory'),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [subjects, selectedGroup])
+
+  const filteredDirectory = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return directory
+    return directory.filter(row => row.name.toLowerCase().includes(q))
+  }, [directory, search])
+
+  function openDeptModal() {
+    setError('')
+    setDeptModalSearch('')
+    setDeptModalOpen(true)
+  }
+
+  function chooseDepartment(name) {
+    setSelectedDepartment(name)
+    const rows = groups.filter(g => g.department === name).sort((a, b) => a.year_of_study - b.year_of_study)
+    setSelectedGroupId(rows[0] ? String(rows[0].group_id) : '')
+    setDeptModalOpen(false)
+    setSearch('')
+    setMessage('')
+    setError('')
+  }
+
+  function changeDepartment() {
+    setSelectedDepartment('')
+    setSelectedGroupId('')
+    setSearch('')
+  }
+
+  function chooseYear(groupId) {
+    setSelectedGroupId(String(groupId))
+    setSearch('')
+  }
+
+  function resetForm() {
+    setFormName(''); setFormType('theory'); setFormPeriods(3); setFormTheoryPeriods(3); setFormLabPeriods(2); setFormError('')
+  }
+
+  function openAdd() {
+    resetForm()
+    setFormModal('add')
+  }
+
+  function openEdit(row) {
+    setFormError('')
+    setFormName(row.name)
+    setFormType(row.type)
+    if (row.type === 'theory+lab') {
+      setFormTheoryPeriods(row.theory ?? 3)
+      setFormLabPeriods(row.lab ?? 2)
+      setFormPeriods(row.theory ?? 3)
+    } else if (row.type === 'lab') {
+      setFormPeriods(row.lab ?? 2)
+    } else {
+      setFormPeriods(row.theory ?? 3)
+    }
+    setFormModal({ type: 'edit', originalName: row.name })
+  }
+
+  function closeFormModal() {
+    setFormModal(null)
+    resetForm()
+  }
+
+  async function submitForm(e) {
+    e.preventDefault()
+    setFormError('')
+    if (!formName.trim()) { setFormError('Enter a subject name.'); return }
+    if (!selectedGroup) { setFormError('Select a department and year first.'); return }
+
+    const payload = {
+      subject_name: formName.trim(),
+      subject_type: formType,
+      periods_per_week: Number(formPeriods),
+      ...(formType === 'theory+lab'
+        ? { theory_periods_per_week: Number(formTheoryPeriods), lab_periods_per_week: Number(formLabPeriods) }
+        : {}),
+    }
+
+    setFormSaving(true)
+    try {
+      const isEdit = formModal && formModal.type === 'edit'
+      if (isEdit) {
+        await axios.put(
+          `${BASE}/academic-subjects/${selectedGroup.group_id}/${encodeURIComponent(formModal.originalName)}`,
+          payload
+        )
+        setMessage(`${payload.subject_name} was updated.`)
+      } else {
+        const response = await axios.post(`${BASE}/academic-subjects`, { group_id: selectedGroup.group_id, ...payload })
+        setMessage(`${response.data.subject_name} added to all divisions: ${response.data.assigned_to_divisions.join(', ')}`)
+      }
+      closeFormModal()
+      await load()
+    } catch (err) {
+      setFormError(err.response?.data?.detail || 'Could not save the subject.')
+    } finally {
+      setFormSaving(false)
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || !selectedGroup) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await axios.delete(`${BASE}/academic-subjects/${selectedGroup.group_id}/${encodeURIComponent(deleteTarget.name)}`)
+      setMessage(`${deleteTarget.name} was deleted.`)
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      setDeleteError(err.response?.data?.detail || 'Could not delete this subject.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="academic-page">
+
+      {/* HERO */}
+      <section className="academic-hero">
+        <SubjectsWatermark className="academic-hero-watermark" />
+        <div className="hero-left">
+          <div className="hero-icon"><Icon name="book" size={28} stroke={1.7} /></div>
+          <div>
+            <div className="academic-eyebrow">ACADEMIC STRUCTURE</div>
+            <h1>Subjects</h1>
+            <div className="hero-subtitle">Manage Subjects &amp; Course Components</div>
+            <p>Configure subjects for each department and year. Subjects are automatically associated with the divisions in their academic group.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* STATS */}
+      <section className="subjects-stats">
+        <div className="stat-card stat-blue">
+          <div className="stat-icon"><Icon name="building" size={24} /></div>
+          <div><div className="stat-label">TOTAL DEPARTMENTS</div><div className="stat-number">{departmentRows.length}</div></div>
+          <StatSpark color="#2563eb" id="dept" />
+        </div>
+        <div className="stat-card stat-green">
+          <div className="stat-icon"><Icon name="book" size={22} /></div>
+          <div><div className="stat-label">TOTAL SUBJECTS</div><div className="stat-number">{totalSubjects}</div></div>
+          <StatSpark color="#10b981" id="subj" />
+        </div>
+        <div className="stat-card stat-purple">
+          <div className="stat-icon"><Icon name="grid" size={24} /></div>
+          <div><div className="stat-label">TOTAL DIVISIONS</div><div className="stat-number">{totalDivisions}</div></div>
+          <StatSpark color="#a855f7" id="divs" />
+        </div>
+      </section>
+
+      {message && <div className="global-notice success"><Icon name="check" size={16} />{message}<button onClick={() => setMessage('')}><Icon name="close" size={15} /></button></div>}
+      {error && <div className="global-notice error">{error}<button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
+      {loadError && <div className="global-notice error">{loadError}<button onClick={() => setLoadError('')}><Icon name="close" size={15} /></button></div>}
+
+      {/* STATE 1 — no department selected */}
+      {!selectedGroup && (
+        <section className="subjects-landing-card">
+          <SubjectsWatermark />
+          <div className="subjects-landing-icon"><Icon name="book" size={26} stroke={1.7} /></div>
+          <div className="academic-eyebrow" style={{ position: 'relative', zIndex: 1 }}>SUBJECT CONFIGURATION</div>
+          <h2>Select a department to get started</h2>
+          <p>Choose a department and manage its subjects year by year.</p>
+          <button className="primary-button" onClick={openDeptModal}><Icon name="plus" size={17} /> Select Your Department</button>
+        </section>
+      )}
+
+      {/* STATE 2 / 3 — department workspace */}
+      {selectedGroup && (
+        <>
+          <section className="subjects-context-bar">
+            <div className="subjects-context-left">
+              <div className={`subjects-context-avatar avatar-accent-${accentIndex(selectedDepartment)}`}>
+                {(shortCodes[selectedDepartment] || deriveShortCode(selectedDepartment)).slice(0, 2)}
+              </div>
+              <div className="subjects-context-copy">
+                <h2>{selectedDepartment}</h2>
+                <div className="subjects-context-meta">
+                  <span>{activeDeptRow.groups.length} Year{activeDeptRow.groups.length === 1 ? '' : 's'}</span>
+                  <i />
+                  <span>{activeDeptRow.divisions} Division{activeDeptRow.divisions === 1 ? '' : 's'}</span>
+                </div>
+              </div>
+            </div>
+            <button className="secondary-button" onClick={changeDepartment}>Change Department</button>
+          </section>
+
+          <section className="subjects-workspace">
+            {/* LEFT — year navigation */}
+            <div className="year-nav-card">
+              <div className="section-kicker">YEARS</div>
+              <div className="year-nav-list">
+                {activeDeptRow.groups.map(g => (
+                  <button
+                    key={g.group_id}
+                    className={`year-nav-item ${String(g.group_id) === String(selectedGroupId) ? 'active' : ''}`}
+                    onClick={() => chooseYear(g.group_id)}
+                  >
+                    <span className="year-nav-item-label"><span className="year-nav-dot" />{yearLabel(g.year_of_study)}</span>
+                    <span className="year-nav-item-count">{g.divisions.length} div{g.divisions.length === 1 ? '' : 's'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* RIGHT — subject directory */}
+            <div className="subject-directory-card">
+              <div className="subject-directory-head">
+                <div>
+                  <div className="section-kicker">SUBJECT DIRECTORY</div>
+                  <div className="subject-directory-title-row">
+                    <h2>{selectedDepartment} · {yearLabel(selectedGroup.year_of_study)}</h2>
+                    <span className="subject-directory-count">{directory.length}</span>
+                  </div>
+                  <p className="subject-directory-divisions">Divisions: <b>{selectedGroup.divisions.map(d => d.division_name).join(' · ')}</b></p>
+                </div>
+                <div className="subject-directory-actions">
+                  <div className="dept-search">
+                    <Icon name="search" size={16} />
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search subjects..." />
+                    {search && <button onClick={() => setSearch('')} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><Icon name="close" size={13} /></button>}
+                  </div>
+                  <button className="primary-button" onClick={openAdd}><Icon name="plus" size={16} /> Add Subject</button>
+                </div>
+              </div>
+
+              {directory.length === 0 ? (
+                <div className="subject-empty">
+                  <div className="subject-empty-icon"><Icon name="book" size={19} /></div>
+                  <h3>No subjects configured yet</h3>
+                  <p>Add the first subject for {selectedDepartment} · {yearLabel(selectedGroup.year_of_study)}.</p>
+                  <button className="primary-button" onClick={openAdd}><Icon name="plus" size={16} /> Add Subject</button>
+                </div>
+              ) : filteredDirectory.length === 0 ? (
+                <div className="subject-no-match">No subjects match your search.</div>
+              ) : (
+                <div className="subject-list">
+                  {filteredDirectory.map(row => (
+                    <div className="subject-card" key={row.name}>
+                      <div className="subject-card-main">
+                        <h3 className="subject-card-name">{row.name}</h3>
+                        <div className="subject-card-meta">
+                          {row.theory != null && <span className="subject-type-pill theory">Theory</span>}
+                          {row.lab != null && <span className="subject-type-pill lab">Lab</span>}
+                          <span className="subject-card-periods">
+                            {row.type === 'theory+lab'
+                              ? <>Theory: <b>{row.theory}</b>/week &middot; Lab: <b>{row.lab}</b>/week</>
+                              : <><b>{row.theory ?? row.lab}</b> periods/week</>}
+                          </span>
+                        </div>
+                        <div className="subject-card-divisions">Divisions: {selectedGroup.divisions.map(d => d.division_name).join(' · ')}</div>
+                      </div>
+                      <div className="subject-card-actions">
+                        <button className="subject-icon-btn" title="Edit" onClick={() => openEdit(row)}><Icon name="edit" size={14} /></button>
+                        <button className="subject-icon-btn danger" title="Delete" onClick={() => { setDeleteError(''); setDeleteTarget(row) }}><Icon name="trash" size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* DEPARTMENT SELECTOR MODAL */}
+      {deptModalOpen && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDeptModalOpen(false)}>
+          <div className="academic-modal dept-select-modal">
+            <div className="modal-header">
+              <div className="modal-title">
+                <div className="modal-icon"><Icon name="building" size={19} /></div>
+                <div>
+                  <div className="academic-eyebrow">SUBJECT CONFIGURATION</div>
+                  <h2>Select Department</h2>
+                  <p>Choose the department whose subjects you want to configure.</p>
+                </div>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setDeptModalOpen(false)}><Icon name="close" size={17} /></button>
+            </div>
+
+            {departmentRows.length > 3 && (
+              <div className="dept-search" style={{ width: '100%', marginBottom: 14 }}>
+                <Icon name="search" size={16} />
+                <input autoFocus value={deptModalSearch} onChange={e => setDeptModalSearch(e.target.value)} placeholder="Search departments..." />
+              </div>
+            )}
+
+            <div className="dept-select-list">
+              {filteredDeptRows.length ? filteredDeptRows.map(row => {
+                const code = shortCodes[row.name] || deriveShortCode(row.name)
+                return (
+                  <button className="dept-select-item" key={row.name} onClick={() => chooseDepartment(row.name)}>
+                    <div className={`dept-select-avatar avatar-accent-${accentIndex(row.name)}`}>{code.slice(0, 2)}</div>
+                    <div className="dept-select-copy">
+                      <strong>{row.name}</strong>
+                      <small>{code} &middot; {row.groups.length} year{row.groups.length === 1 ? '' : 's'} configured</small>
+                    </div>
+                    <div className="dept-select-arrow"><Icon name="arrowRight" size={16} /></div>
+                  </button>
+                )
+              }) : (
+                <div className="dept-select-empty">
+                  {departmentRows.length === 0
+                    ? 'No departments yet. Create one on the Academic Structure page first.'
+                    : 'No departments match your search.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT SUBJECT MODAL */}
+      {formModal && selectedGroup && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && closeFormModal()}>
+          <div className="academic-modal">
+            <form onSubmit={submitForm}>
+              <div className="modal-header">
+                <div className="modal-title">
+                  <div className={`modal-icon ${formModal.type === 'edit' ? 'edit' : ''}`}><Icon name={formModal.type === 'edit' ? 'edit' : 'plus'} size={19} /></div>
+                  <div>
+                    <div className="academic-eyebrow">{formModal.type === 'edit' ? 'EDIT SUBJECT' : 'NEW SUBJECT'}</div>
+                    <h2>{formModal.type === 'edit' ? 'Edit subject' : 'Add subject'}</h2>
+                    <p>{selectedDepartment} &middot; {yearLabel(selectedGroup.year_of_study)}</p>
+                  </div>
+                </div>
+                <button type="button" className="modal-close" onClick={closeFormModal}><Icon name="close" size={17} /></button>
+              </div>
+
+              <Field label="SUBJECT NAME">
+                <input autoFocus value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. Data Structures" />
+              </Field>
+
+              <div className="modal-section-label">SUBJECT TYPE</div>
+              <div className="subject-type-select">
+                <button type="button" className={`subject-type-option ${formType === 'theory' ? 'active' : ''}`} onClick={() => setFormType('theory')}>
+                  <Icon name="book" size={17} />Theory
+                </button>
+                <button type="button" className={`subject-type-option ${formType === 'lab' ? 'active' : ''}`} onClick={() => setFormType('lab')}>
+                  <Icon name="beaker" size={17} />Lab
+                </button>
+                <button type="button" className={`subject-type-option ${formType === 'theory+lab' ? 'active' : ''}`} onClick={() => setFormType('theory+lab')}>
+                  <Icon name="layers" size={17} />Theory + Lab
+                </button>
+              </div>
+
+              {formType === 'theory+lab' ? (
+                <div className="subject-period-grid">
+                  <Field label="THEORY PERIODS / WEEK">
+                    <input type="number" min="1" max="30" value={formTheoryPeriods} onChange={e => setFormTheoryPeriods(e.target.value)} />
+                  </Field>
+                  <Field label="LAB PERIODS / WEEK">
+                    <input type="number" min="1" max="30" value={formLabPeriods} onChange={e => setFormLabPeriods(e.target.value)} />
+                  </Field>
+                </div>
+              ) : (
+                <Field label="PERIODS / WEEK">
+                  <input type="number" min="1" max="30" value={formPeriods} onChange={e => setFormPeriods(e.target.value)} />
+                </Field>
+              )}
+
+              <div className="subject-form-note">
+                <Icon name="info" size={13} />
+                <span>This subject will be created for all {selectedGroup.divisions.length} division{selectedGroup.divisions.length !== 1 ? 's' : ''} of {selectedDepartment} &middot; {yearLabel(selectedGroup.year_of_study)}: {selectedGroup.divisions.map(d => d.division_name).join(', ')}.</span>
+              </div>
+
+              {formError && <div className="notice error">{formError}</div>}
+
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={closeFormModal}>Cancel</button>
+                <button className="primary-button modal-primary" disabled={formSaving}>
+                  <Icon name="check" size={16} /> {formSaving ? 'Saving…' : (formModal.type === 'edit' ? 'Save Changes' : 'Add Subject')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION */}
+      {deleteTarget && selectedGroup && (
+        <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDeleteTarget(null)}>
+          <div className="danger-modal">
+            <div className="danger-modal-icon"><Icon name="trash" size={20} /></div>
+            <div className="academic-eyebrow danger-eyebrow">DELETE SUBJECT</div>
+            <h2>Delete {deleteTarget.name}?</h2>
+            <p>Are you sure you want to delete &ldquo;{deleteTarget.name}&rdquo;? This subject is associated with all divisions of {selectedDepartment} &middot; {yearLabel(selectedGroup.year_of_study)} ({selectedGroup.divisions.map(d => d.division_name).join(', ')}), and will be removed from every one of them.</p>
+            {deleteError && <div className="notice error">{deleteError}</div>}
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => { setDeleteTarget(null); setDeleteError('') }}>Cancel</button>
+              <button className="delete-confirm" onClick={confirmDelete} disabled={deleting}><Icon name="trash" size={16} /> {deleting ? 'Deleting…' : 'Delete Subject'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}

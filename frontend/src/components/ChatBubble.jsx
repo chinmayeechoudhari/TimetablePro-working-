@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { apiGet, invalidateCache } from '../lib/apiCache'
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
 const BASE_URL = 'http://localhost:8000'
@@ -80,9 +81,13 @@ export default function ChatBubble() {
   const [classes, setClasses] = useState([])
 
   const messagesEndRef = useRef(null)
-  const inputRef = useRef(null)
-
-  useEffect(() => { fetchContextData() }, [])
+  const hasFetchedRef = useRef(false)
+  useEffect(() => {
+    if (isOpen && !hasFetchedRef.current) {
+      hasFetchedRef.current = true
+      fetchContextData()
+    }
+  }, [isOpen])
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
@@ -90,16 +95,19 @@ export default function ChatBubble() {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
   }, [isOpen])
 
-  async function fetchContextData() {
+  async function fetchContextData(forceRefresh = false) {
     try {
+      if (forceRefresh) {
+        invalidateCache(`${BASE_URL}/teacher-availabilities`)
+      }
       const [tRes, sRes, aRes, rRes, ttRes, subRes, cRes] = await Promise.all([
-        axios.get(`${BASE_URL}/teachers`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/timeslots`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/teacher-availabilities`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/rooms`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/timetable`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/subjects`).catch(() => ({ data: [] })),
-        axios.get(`${BASE_URL}/classes`).catch(() => ({ data: [] }))
+        apiGet(`${BASE_URL}/teachers`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/timeslots`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/teacher-availabilities`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/rooms`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/timetable`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/subjects`, { forceRefresh }).catch(() => ({ data: [] })),
+        apiGet(`${BASE_URL}/classes`, { forceRefresh }).catch(() => ({ data: [] }))
       ])
       setTeachers(tRes.data || [])
       setTimeslots(sRes.data || [])
@@ -218,7 +226,7 @@ export default function ChatBubble() {
         }
       }
 
-      fetchContextData()
+      fetchContextData(true)
       window.dispatchEvent(new CustomEvent('availabilityUpdated', { detail: { teacherId, day } }))
 
       const periodLabel = period ? ` Period ${period}` : ''
