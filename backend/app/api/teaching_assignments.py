@@ -14,6 +14,9 @@ class AssignmentCreate(BaseModel):
     definition_ids: list[int] = []
     division_ids: list[int]
 
+class AssignmentReassign(BaseModel):
+    teacher_id: int
+
 @router.get("")
 def list_assignments(db: Session = Depends(get_db)):
     rows = db.query(TeachingAssignment).order_by(TeachingAssignment.assignment_id.asc()).all()
@@ -110,6 +113,54 @@ def create_assignment(payload: AssignmentCreate, db: Session = Depends(get_db)):
     if not created_divisions:
         return {"message": "Selected assignment(s) are already assigned to this teacher.", "divisions": []}
     return {"message": f"Assignment saved for division(s): {', '.join(sorted(list(created_divisions)))}.", "divisions": sorted(list(created_divisions))}
+
+@router.put("/{assignment_id}")
+def reassign_assignment(assignment_id: int, payload: AssignmentReassign, db: Session = Depends(get_db)):
+    """
+    Change which teacher is responsible for an existing teaching assignment.
+    Preserves the subject/definition/division on the assignment; only the
+    teacher changes. Additive endpoint — does not touch assignment creation.
+    """
+    row = db.query(TeachingAssignment).filter(TeachingAssignment.assignment_id == assignment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+
+    teacher = db.query(Teacher).filter(Teacher.teacher_id == payload.teacher_id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher not found.")
+
+    if row.teacher_id == teacher.teacher_id:
+        return {
+            "message": "No change — this assignment is already assigned to that teacher.",
+            "assignment_id": row.assignment_id,
+        }
+
+    duplicate = db.query(TeachingAssignment).filter(
+        TeachingAssignment.teacher_id == teacher.teacher_id,
+        TeachingAssignment.definition_id == row.definition_id,
+        TeachingAssignment.division_id == row.division_id,
+        TeachingAssignment.assignment_id != assignment_id,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"{teacher.teacher_name} already has this exact assignment.")
+
+    link = db.query(TeacherSubject).filter(
+        TeacherSubject.teacher_id == teacher.teacher_id,
+        TeacherSubject.subject_id == row.subject_id,
+    ).first()
+    if not link:
+        db.add(TeacherSubject(teacher_id=teacher.teacher_id, subject_id=row.subject_id))
+
+    row.teacher_id = teacher.teacher_id
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Could not reassign — this assignment already exists for that teacher.")
+
+    return {"message": f"Assignment reassigned to {teacher.teacher_name}.", "assignment_id": row.assignment_id}
+
 
 @router.delete("/{assignment_id}")
 def delete_assignment(assignment_id: int, db: Session = Depends(get_db)):

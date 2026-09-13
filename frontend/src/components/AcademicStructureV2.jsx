@@ -1,64 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
+import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
+import Icon from './AcademicIcon'
 
 const BASE = 'http://localhost:8000'
 const YEARS = [1, 2, 3, 4]
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y])
 const letterAt = i => String.fromCharCode(65 + i)
-const ACCENTS = 6
-const SHORT_CODE_KEY = 'timetablepro.department_short_codes'
-
-// Short codes have no backing column on the backend (Department is just a
-// free-text string on AcademicGroup — see backend/app/models/models.py).
-// We persist an optional user-entered code per department name in this
-// browser's localStorage so it survives reloads without requiring a schema
-// change. It is NOT synced across users/devices.
-function loadShortCodes() {
-  try { return JSON.parse(localStorage.getItem(SHORT_CODE_KEY) || '{}') } catch { return {} }
-}
-function saveShortCode(name, code) {
-  const map = loadShortCodes()
-  if (code) map[name] = code; else delete map[name]
-  localStorage.setItem(SHORT_CODE_KEY, JSON.stringify(map))
-}
-function deriveShortCode(name) {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  if (!words.length) return ''
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase()
-  return words.map(w => w[0]).join('').slice(0, 4).toUpperCase()
-}
 function defaultAcademicYear() {
   const now = new Date()
   const start = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1
   return `${start}-${String(start + 1).slice(-2)}`
 }
-function accentIndex(name) {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  return hash % ACCENTS
-}
 function emptyYearConfig() {
   return { 1: 0, 2: 0, 3: 0, 4: 0 }
-}
-
-function Icon({ name, size = 18, stroke = 1.9 }) {
-  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
-  const paths = {
-    building: <><path d="M3 21h18" /><path d="M5 21V6l7-3 7 3v15" /><path d="M8 9h1M12 9h1M16 9h1M8 12h1M12 12h1M16 12h1M8 15h1M12 15h1M16 15h1" /></>,
-    layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></>,
-    grid: <><rect x="4" y="4" width="6" height="6" rx="1.4" /><rect x="14" y="4" width="6" height="6" rx="1.4" /><rect x="4" y="14" width="6" height="6" rx="1.4" /><rect x="14" y="14" width="6" height="6" rx="1.4" /></>,
-    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
-    edit: <><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" /><path d="m13.5 7.5 3 3" /></>,
-    trash: <><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 14h10l1-14" /><path d="M9 7V4h6v3" /></>,
-    close: <><path d="m6 6 12 12" /><path d="m18 6-12 12" /></>,
-    check: <path d="m5 12 4 4L19 6" />,
-    archive: <><path d="M4 7h16" /><path d="M6 7v13h12V7" /><path d="M9 11h6" /><path d="m9 4 6 0 1 3H8l1-3Z" /></>,
-    search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
-    lock: <><rect x="5" y="10" width="14" height="10" rx="2.2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
-    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><path d="M12 7.5v.01" /></>,
-  }
-  return <svg {...common}>{paths[name]}</svg>
 }
 
 export default function AcademicStructureV2() {

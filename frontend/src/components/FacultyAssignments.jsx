@@ -1,744 +1,732 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
+import ConfirmModal from './ConfirmModal.jsx'
+import SubjectTypeBadge from './SubjectTypeBadge.jsx'
+import './AcademicStructureModern.css'
+import './FacultyAssignmentsModern.css'
 
 const BASE = 'http://localhost:8000'
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y] || `Year ${y}`)
 
-/* ─── Group-picker modal ────────────────────────────────────────────── */
-function GroupPickerModal({ groups, initialGroup, initialDivisionIds, onConfirm, onClose }) {
-  const [step, setStep] = useState(initialGroup?.department ? 2 : 1)
-  const [dept, setDept] = useState(initialGroup?.department || '')
-  const [expandedYear, setExpandedYear] = useState(initialGroup?.year_of_study || null)
-  const [divIds, setDivIds] = useState(initialDivisionIds || [])
+/* ─────────────────────────────────────────────────────────────────────
+   ICONS
+───────────────────────────────────────────────────────────────────── */
+function Icon({ name, size = 18, stroke = 1.9 }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
+  const paths = {
+    faculty: <><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17" cy="8.5" r="2.6" /><path d="M15.2 14.2c2.6.4 4.6 2.6 4.8 5.8" /></>,
+    link: <><path d="M9 15 15 9" /><path d="M10.5 6.5 12 5a3.7 3.7 0 0 1 5.2 5.2l-1.5 1.5" /><path d="M13.5 17.5 12 19a3.7 3.7 0 0 1-5.2-5.2l1.5-1.5" /></>,
+    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    edit: <><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" /><path d="m13.5 7.5 3 3" /></>,
+    trash: <><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 14h10l1-14" /><path d="M9 7V4h6v3" /></>,
+    close: <><path d="m6 6 12 12" /><path d="m18 6-12 12" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
+    chevronDown: <path d="m6 9 6 6 6-6" />,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><path d="M12 7.5v.01" /></>,
+    book: <><path d="M5 4.5C5 4 5.5 3.5 6 3.5h10c.6 0 1 .4 1 1V19c0 .6-.4 1-1 1H7c-1 0-2 .8-2 2V4.5Z" /><path d="M5 18.5c0-1 .9-1.7 2-1.7h10" /></>,
+    grid: <><rect x="4" y="4" width="6" height="6" rx="1.4" /><rect x="14" y="4" width="6" height="6" rx="1.4" /><rect x="4" y="14" width="6" height="6" rx="1.4" /><rect x="14" y="14" width="6" height="6" rx="1.4" /></>,
+    filter: <path d="M4 5h16M7 12h10M10 19h4" />,
+    building: <><path d="M3 21h18" /><path d="M5 21V6l7-3 7 3v15" /><path d="M8 9h1M12 9h1M16 9h1M8 12h1M12 12h1M16 12h1M8 15h1M12 15h1M16 15h1" /></>,
+    alert: <><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></>,
+  }
+  return <svg {...common}>{paths[name]}</svg>
+}
 
-  const departments = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
-  const years = useMemo(() => groups.filter(g => g.department === dept).sort((a, b) => a.year_of_study - b.year_of_study), [groups, dept])
-  const activeGroup = useMemo(() => years.find(g => g.year_of_study === expandedYear) || null, [years, expandedYear])
+/* Subtle faculty-themed line-art watermark for the hero */
+function FacultyWatermark(props) {
+  return (
+    <svg className="fac-hero-watermark" viewBox="0 0 640 220" fill="none" aria-hidden="true" {...props}>
+      {/* mortarboard */}
+      <path d="M120 70 220 35l100 35-100 35Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M170 88v34c0 10 22 18 50 18s50-8 50-18V88" stroke="currentColor" strokeWidth="2" />
+      <path d="M300 78v40" stroke="currentColor" strokeWidth="2" />
+      <circle cx="300" cy="122" r="4" stroke="currentColor" strokeWidth="2" />
+      {/* connected nodes: faculty -> subjects */}
+      <circle cx="410" cy="60" r="9" stroke="currentColor" strokeWidth="2" />
+      <circle cx="470" cy="110" r="7" stroke="currentColor" strokeWidth="2" />
+      <circle cx="410" cy="150" r="7" stroke="currentColor" strokeWidth="2" />
+      <circle cx="530" cy="70" r="7" stroke="currentColor" strokeWidth="2" />
+      <circle cx="540" cy="150" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M410 60 470 110M410 60 410 150M470 110 530 70M470 110 540 150" stroke="currentColor" strokeWidth="1.6" />
+      {/* books */}
+      <path d="M40 185h90M45 175h80M50 165h70" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
 
-  function toggleYear(y) {
-    if (expandedYear === y) {
-      setExpandedYear(null)
-    } else {
-      setExpandedYear(y)
-      // If switching to a different year, reset selected division ids
-      if (activeGroup?.year_of_study !== y) {
-        setDivIds([])
-      }
+/* ─────────────────────────────────────────────────────────────────────
+   SMALL FIELD WRAPPER (matches .field styling from AcademicStructureModern.css)
+───────────────────────────────────────────────────────────────────── */
+function Field({ label, children, hint }) {
+  return (
+    <div className="field">
+      <span>{label}</span>
+      {children}
+      {hint && <p className="field-hint">{hint}</p>}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Group assignments (flat, per-division rows) into a nested
+   teacher -> subject -> divisions structure for display.
+───────────────────────────────────────────────────────────────────── */
+function buildTeacherAssignmentTree(assignments) {
+  const teacherMap = new Map()
+  assignments.forEach(a => {
+    const tKey = a.teacher_id
+    if (!teacherMap.has(tKey)) {
+      teacherMap.set(tKey, { teacherId: a.teacher_id, teacherName: a.teacher_name, subjects: new Map() })
     }
-  }
-
-  function toggleDiv(id) {
-    setDivIds(v => v.includes(id) ? v.filter(x => x !== id) : [...v, id])
-  }
-
-  function selectAllDivs(yearDivisions) {
-    const allIds = yearDivisions.map(d => d.division_id)
-    const isAll = allIds.length > 0 && allIds.every(id => divIds.includes(id))
-    if (isAll) {
-      setDivIds([])
-    } else {
-      setDivIds(allIds)
+    const teacherEntry = teacherMap.get(tKey)
+    const sKey = `${a.definition_id}-${a.department}-${a.year_of_study}`
+    if (!teacherEntry.subjects.has(sKey)) {
+      teacherEntry.subjects.set(sKey, {
+        key: sKey,
+        subjectName: a.subject_name,
+        subjectType: a.subject_type,
+        department: a.department,
+        yearOfStudy: a.year_of_study,
+        definitionId: a.definition_id,
+        divisions: [],
+      })
     }
-  }
+    teacherEntry.subjects.get(sKey).divisions.push({
+      assignmentId: a.assignment_id,
+      divisionId: a.division_id,
+      divisionName: a.division_name,
+    })
+  })
+  return Array.from(teacherMap.values()).map(t => ({
+    ...t,
+    subjects: Array.from(t.subjects.values()).sort((a, b) => a.subjectName.localeCompare(b.subjectName)),
+  })).sort((a, b) => a.teacherName.localeCompare(b.teacherName))
+}
 
-  function pickDept(d) {
-    setDept(d)
-    setExpandedYear(null)
-    setDivIds([])
-    setStep(2)
-  }
+function initials(name) {
+  return (name || '').trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || '?'
+}
 
-  function back() {
-    setDept('')
-    setExpandedYear(null)
-    setDivIds([])
-    setStep(1)
-  }
-
-  function confirm() {
-    if (!activeGroup || !divIds.length) return
-    onConfirm({ group: activeGroup, divisionIds: divIds })
-  }
-
-  const stepLabel = ['', 'Select Department', 'Select Year & Divisions']
-  const canConfirm = step === 2 && !!activeGroup && divIds.length > 0
+/* =========================================================================
+   FACULTY DIRECTORY MODAL — view / search / edit / delete teachers
+========================================================================= */
+function FacultyDirectoryModal({ teachers, assignmentCountByTeacher, onClose, onRequestEdit, onRequestDelete }) {
+  const [search, setSearch] = useState('')
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return teachers
+    return teachers.filter(t => t.teacher_name.toLowerCase().includes(q))
+  }, [teachers, search])
 
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={modal}>
-        {/* Header */}
-        <div style={modalHeader}>
-          <div>
-            <div style={modalEyebrow}>TEACHING ASSIGNMENT</div>
-            <div style={modalTitle}>{stepLabel[step]}</div>
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="academic-modal fac-modal-lg">
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-icon"><Icon name="faculty" size={20} /></div>
+            <div>
+              <div className="academic-eyebrow">FACULTY</div>
+              <h2>Faculty Directory</h2>
+              <p>Manage all globally configured teachers</p>
+            </div>
           </div>
-          <button style={closeBtn} onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
 
-        {/* Step indicator */}
-        <div style={stepRow}>
-          {[1, 2].map(s => (
-            <div key={s} style={stepDot(s <= step)}>
-              <div style={stepDotInner(s < step, s === step)}>{s < step ? '✓' : s}</div>
-              <span style={stepDotLabel(s === step)}>{['Department', 'Year & Divisions'][s - 1]}</span>
-            </div>
-          ))}
-          <div style={stepLine} />
+        <div className="fac-search">
+          <Icon name="search" size={16} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teachers..." autoFocus />
+          {search && <button onClick={() => setSearch('')}><Icon name="close" size={13} /></button>}
         </div>
 
-        {/* Step 1 – Department */}
-        {step === 1 && (
-          <div style={stepContent}>
-            <p style={stepHint}>Which department does the teacher belong to?</p>
-            <div style={optionGrid}>
-              {departments.map(d => (
-                <button key={d} style={optionBtn(dept === d)} onClick={() => pickDept(d)}>
-                  <span style={optionIcon}>🏫</span>
-                  <span style={optionText}>{d}</span>
-                </button>
-              ))}
-            </div>
+        {filtered.length ? (
+          <div className="fac-table-wrap">
+            <table className="fac-table">
+              <thead>
+                <tr>
+                  <th>Teacher</th>
+                  <th>Max Periods/Day</th>
+                  <th>Assignments</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(t => (
+                  <tr key={t.teacher_id}>
+                    <td className="name-cell">{t.teacher_name}</td>
+                    <td><span className="fac-max-badge">{t.max_periods_per_day} / day</span></td>
+                    <td>{assignmentCountByTeacher.get(t.teacher_id) || 0}</td>
+                    <td>
+                      <div className="fac-row-actions">
+                        <button className="fac-icon-btn" title="Edit" onClick={() => onRequestEdit(t)}><Icon name="edit" size={14} /></button>
+                        <button className="fac-icon-btn danger" title="Delete" onClick={() => onRequestDelete(t)}><Icon name="trash" size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="fac-empty">
+            <div className="fac-empty-icon"><Icon name="search" size={18} /></div>
+            <h3>No faculty members found.</h3>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
 
-        {/* Step 2 – Year Options with Accordion Expand to Divisions */}
-        {step === 2 && (
-          <div style={{ ...stepContent, maxHeight: 380, overflowY: 'auto' }}>
-            <p style={stepHint}>
-              Select year for <b>{dept}</b> and click to expand divisions:
-            </p>
-            <div style={{ display: 'grid', gap: 10 }}>
-              {years.map(g => {
-                const isExpanded = expandedYear === g.year_of_study
-                const yearDivisions = g.divisions || []
-                const selectedInThisYear = isExpanded ? divIds : []
-                const isAllSelected = yearDivisions.length > 0 && selectedInThisYear.length === yearDivisions.length
+/* =========================================================================
+   TEACHER EDIT MODAL (also reused for "add" is inline on the page)
+========================================================================= */
+function TeacherEditModal({ teacher, onSave, onClose, error }) {
+  const [name, setName] = useState(teacher.teacher_name)
+  const [max, setMax] = useState(teacher.max_periods_per_day)
 
-                return (
-                  <div
-                    key={g.group_id}
-                    style={{
-                      border: `1.5px solid ${isExpanded ? '#7c3aed' : '#e2e8f0'}`,
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                      background: '#fff',
-                      boxShadow: isExpanded ? '0 4px 12px rgba(124, 58, 237, 0.08)' : 'none',
-                      transition: 'all .2s ease',
-                    }}
-                  >
-                    {/* Clickable Year Row */}
-                    <button
-                      type="button"
-                      onClick={() => toggleYear(g.year_of_study)}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '13px 16px',
-                        background: isExpanded ? '#faf5ff' : '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background .15s',
-                      }}
-                    >
-                      <span style={{ fontSize: 18 }}>📅</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: isExpanded ? '#5b21b6' : '#1e293b' }}>
-                          {yearLabel(g.year_of_study)}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
-                          {yearDivisions.length} division{yearDivisions.length !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-
-                      {/* Pill indicating selected count if any */}
-                      {isExpanded && selectedInThisYear.length > 0 && (
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: '#15803d',
-                          background: '#dcfce7',
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          marginRight: 4
-                        }}>
-                          {selectedInThisYear.length} selected
-                        </span>
-                      )}
-
-                      {/* Chevron indicator */}
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={isExpanded ? '#7c3aed' : '#94a3b8'}
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{
-                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                          transition: 'transform .2s ease',
-                        }}
-                      >
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </button>
-
-                    {/* Expanded Divisions Panel */}
-                    {isExpanded && (
-                      <div style={{
-                        padding: '12px 16px 16px',
-                        background: '#faf5ff',
-                        borderTop: '1px solid #f3e8ff',
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          marginBottom: 10
-                        }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: '#6b21a8' }}>
-                            Choose division{yearDivisions.length > 1 ? 's' : ''}:
-                          </span>
-                          {yearDivisions.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => selectAllDivs(yearDivisions)}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#7c3aed',
-                                fontSize: 12,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                padding: '2px 4px',
-                                textDecoration: 'underline',
-                              }}
-                            >
-                              {isAllSelected ? 'Deselect All' : 'Select All'}
-                            </button>
-                          )}
-                        </div>
-
-                        {yearDivisions.length === 0 ? (
-                          <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                            No divisions configured for this year.
-                          </p>
-                        ) : (
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-                            gap: 8,
-                          }}>
-                            {yearDivisions.map(d => {
-                              const isSelected = divIds.includes(d.division_id)
-                              return (
-                                <button
-                                  key={d.division_id}
-                                  type="button"
-                                  onClick={() => toggleDiv(d.division_id)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    padding: '10px 12px',
-                                    border: `1.5px solid ${isSelected ? '#7c3aed' : '#cbd5e1'}`,
-                                    borderRadius: 9,
-                                    background: isSelected ? '#ede9fe' : '#fff',
-                                    cursor: 'pointer',
-                                    transition: 'all .15s',
-                                  }}
-                                >
-                                  <div style={{
-                                    width: 18,
-                                    height: 18,
-                                    borderRadius: 5,
-                                    border: `2px solid ${isSelected ? '#7c3aed' : '#cbd5e1'}`,
-                                    background: isSelected ? '#7c3aed' : '#fff',
-                                    color: '#fff',
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                    transition: 'all .15s',
-                                  }}>
-                                    {isSelected ? '✓' : ''}
-                                  </div>
-                                  <span style={{
-                                    fontSize: 13,
-                                    fontWeight: isSelected ? 700 : 500,
-                                    color: isSelected ? '#5b21b6' : '#334155',
-                                  }}>
-                                    Division {d.division_name}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-
-                        {divIds.length > 0 && (
-                          <div style={{
-                            marginTop: 12,
-                            padding: '6px 10px',
-                            background: '#f0fdf4',
-                            borderRadius: 7,
-                            fontSize: 12,
-                            color: '#15803d',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6
-                          }}>
-                            <span>✓</span>
-                            <span>{divIds.length} division{divIds.length > 1 ? 's' : ''} selected</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="academic-modal" style={{ width: 'min(440px, 100%)' }}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-icon edit"><Icon name="edit" size={19} /></div>
+            <div>
+              <div className="academic-eyebrow">FACULTY</div>
+              <h2>Edit Faculty Member</h2>
+              <p>Update this teacher's details</p>
             </div>
           </div>
-        )}
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
 
-        {/* Footer */}
-        <div style={modalFooter}>
-          {step > 1 && <button style={backBtn} onClick={back}>← Back</button>}
-          <div style={{ flex: 1 }} />
-          <button style={cancelBtn} onClick={onClose}>Cancel</button>
-          {step === 2 && (
-            <button style={confirmBtn(canConfirm)} onClick={confirm} disabled={!canConfirm}>
-              Confirm Selection
-            </button>
-          )}
+        <Field label="Teacher name">
+          <input value={name} onChange={e => setName(e.target.value)} />
+        </Field>
+        <Field label="Maximum periods / day">
+          <input type="number" min="1" max="8" value={max} onChange={e => setMax(e.target.value)} />
+        </Field>
+
+        {error && <div className="notice error">{error}</div>}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          <button className="primary-button modal-primary" onClick={() => onSave({ teacher_name: name.trim(), max_periods_per_day: Number(max) })}>Save Changes</button>
         </div>
       </div>
     </div>
   )
 }
 
-/* ─── Subject-picker modal (grouped theory & lab dropdown) ──────────── */
-function SubjectPickerModal({ group, selectedDefinitionIds, onConfirm, onClose }) {
-  const [selectedIds, setSelectedIds] = useState(selectedDefinitionIds || [])
-  const [collapsedSubjects, setCollapsedSubjects] = useState({})
-  const subjects = group?.subjects || []
+/* =========================================================================
+   ADD ASSIGNMENT WIZARD — Teacher -> Departments -> Subjects/Divisions -> Review
+========================================================================= */
+function AddAssignmentWizardModal({ teachers, groups, onClose, onSubmit, submitError }) {
+  const [step, setStep] = useState(1)
+  const [teacherSearch, setTeacherSearch] = useState('')
+  const [teacherId, setTeacherId] = useState(null)
+  const [depts, setDepts] = useState([])                 // selected department names
+  // selection[groupId] = { defIds: Set, divIds: Set }
+  const [selection, setSelection] = useState({})
 
-  // Group subjects by subject_name
-  const subjectGroups = useMemo(() => {
-    const map = new Map()
-    subjects.forEach(s => {
-      const key = s.subject_name.trim().toLowerCase()
-      if (!map.has(key)) {
-        map.set(key, {
-          name: s.subject_name.trim(),
-          components: []
+  const departments = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
+  const selectedTeacher = teachers.find(t => t.teacher_id === teacherId)
+
+  const filteredTeachers = useMemo(() => {
+    const q = teacherSearch.trim().toLowerCase()
+    if (!q) return teachers
+    return teachers.filter(t => t.teacher_name.toLowerCase().includes(q))
+  }, [teachers, teacherSearch])
+
+  // groups relevant to the selected departments, keyed by group_id
+  const relevantGroups = useMemo(() => groups.filter(g => depts.includes(g.department)), [groups, depts])
+
+  function toggleDept(d) {
+    setDepts(prev => {
+      const removing = prev.includes(d)
+      const next = removing ? prev.filter(x => x !== d) : [...prev, d]
+      if (removing) {
+        setSelection(sel => {
+          const copy = { ...sel }
+          groups.filter(g => g.department === d).forEach(g => delete copy[g.group_id])
+          return copy
         })
       }
-      map.get(key).components.push(s)
+      return next
     })
-    // Sort components: Theory first, then Lab
-    map.forEach(val => {
-      val.components.sort((a, b) => {
-        if (a.subject_type === b.subject_type) return 0
-        return a.subject_type === 'theory' ? -1 : 1
+  }
+
+  function ensureGroupSelection(groupId, allDivisionIds) {
+    setSelection(sel => {
+      if (sel[groupId]) return sel
+      return { ...sel, [groupId]: { defIds: new Set(), divIds: new Set(allDivisionIds) } }
+    })
+  }
+
+  function toggleSubject(group, definitionId) {
+    setSelection(sel => {
+      const current = sel[group.group_id] || { defIds: new Set(), divIds: new Set(group.divisions.map(d => d.division_id)) }
+      const defIds = new Set(current.defIds)
+      if (defIds.has(definitionId)) defIds.delete(definitionId); else defIds.add(definitionId)
+      return { ...sel, [group.group_id]: { ...current, defIds } }
+    })
+  }
+
+  function toggleDivision(group, divisionId) {
+    setSelection(sel => {
+      const current = sel[group.group_id] || { defIds: new Set(), divIds: new Set(group.divisions.map(d => d.division_id)) }
+      const divIds = new Set(current.divIds)
+      if (divIds.has(divisionId)) divIds.delete(divisionId); else divIds.add(divisionId)
+      return { ...sel, [group.group_id]: { ...current, divIds } }
+    })
+  }
+
+  function removeSubjectChip(groupId, definitionId) {
+    setSelection(sel => {
+      const current = sel[groupId]
+      if (!current) return sel
+      const defIds = new Set(current.defIds)
+      defIds.delete(definitionId)
+      return { ...sel, [groupId]: { ...current, defIds } }
+    })
+  }
+
+  // flattened list of selected subject chips: { group, subject }
+  const selectedSubjectChips = useMemo(() => {
+    const chips = []
+    relevantGroups.forEach(g => {
+      const sel = selection[g.group_id]
+      if (!sel) return
+      g.subjects.forEach(s => { if (sel.defIds.has(s.definition_id)) chips.push({ group: g, subject: s }) })
+    })
+    return chips
+  }, [relevantGroups, selection])
+
+  const totalSelectedSubjects = selectedSubjectChips.length
+
+  const canGoStep2 = !!teacherId
+  const canGoStep3 = depts.length > 0
+  const canGoStep4 = totalSelectedSubjects > 0
+  const steps = ['Teacher', 'Departments', 'Subjects', 'Review']
+
+  function goNext() {
+    if (step === 1 && canGoStep2) setStep(2)
+    else if (step === 2 && canGoStep3) setStep(3)
+    else if (step === 3 && canGoStep4) setStep(4)
+  }
+  function goBack() { setStep(s => Math.max(1, s - 1)) }
+
+  function handleSubmit() {
+    const payloadGroups = relevantGroups
+      .map(g => {
+        const sel = selection[g.group_id]
+        if (!sel || sel.defIds.size === 0 || sel.divIds.size === 0) return null
+        return { group: g, definitionIds: [...sel.defIds], divisionIds: [...sel.divIds] }
       })
-    })
-    return Array.from(map.values())
-  }, [subjects])
-
-  function toggleSubjectDropdown(subjectName) {
-    setCollapsedSubjects(prev => ({
-      ...prev,
-      [subjectName]: !prev[subjectName]
-    }))
+      .filter(Boolean)
+    if (!payloadGroups.length) return
+    onSubmit({ teacherId, groups: payloadGroups })
   }
-
-  function toggleComponent(id) {
-    setSelectedIds(v => v.includes(id) ? v.filter(x => x !== id) : [...v, id])
-  }
-
-  function toggleAllForSubject(components, e) {
-    e?.stopPropagation()
-    const compIds = components.map(c => c.definition_id)
-    const isAll = compIds.every(id => selectedIds.includes(id))
-    if (isAll) {
-      setSelectedIds(prev => prev.filter(id => !compIds.includes(id)))
-    } else {
-      setSelectedIds(prev => [...new Set([...prev, ...compIds])])
-    }
-  }
-
-  function handleSelectAll() {
-    if (selectedIds.length === subjects.length) {
-      setSelectedIds([])
-    } else {
-      setSelectedIds(subjects.map(s => s.definition_id))
-    }
-  }
-
-  const canConfirm = selectedIds.length > 0
 
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={modal}>
-        {/* Header */}
-        <div style={modalHeader}>
-          <div>
-            <div style={modalEyebrow}>TEACHING ASSIGNMENT · {group?.department} ({yearLabel(group?.year_of_study)})</div>
-            <div style={modalTitle}>Select Subjects</div>
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="academic-modal fac-modal-xl">
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-icon"><Icon name="link" size={19} /></div>
+            <div>
+              <div className="academic-eyebrow">TEACHING ASSIGNMENTS</div>
+              <h2>Add Teaching Assignment</h2>
+              <p>Assign a faculty member to subjects across departments and divisions.</p>
+            </div>
           </div>
-          <button style={closeBtn} onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={16} /></button>
         </div>
 
-        {/* Content */}
-        <div style={stepContent}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <p style={{ ...stepHint, margin: 0 }}>
-              Select subject components (Theory &amp; Lab):
-            </p>
-            {subjects.length > 1 && (
-              <button type="button" style={selectAllBtn} onClick={handleSelectAll}>
-                {selectedIds.length === subjects.length ? 'Deselect All' : 'Select All'}
-              </button>
+        <div className="fac-steps">
+          {steps.map((label, i) => {
+            const n = i + 1
+            const cls = n === step ? 'active' : n < step ? 'done' : ''
+            return (
+              <div className={`fac-step ${cls}`} key={label}>
+                <div className="fac-step-dot">{n < step ? <Icon name="check" size={13} /> : n}</div>
+                <span className="fac-step-label">{label}</span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* STEP 1 — TEACHER */}
+        {step === 1 && (
+          <div>
+            <div className="modal-section-label">1 &middot; SELECT TEACHER</div>
+            <div className="fac-search">
+              <Icon name="search" size={16} />
+              <input value={teacherSearch} onChange={e => setTeacherSearch(e.target.value)} placeholder="Search faculty..." autoFocus />
+            </div>
+            <div className="fac-radio-list">
+              {filteredTeachers.map(t => (
+                <button key={t.teacher_id} type="button" className={`fac-radio-row ${teacherId === t.teacher_id ? 'selected' : ''}`} onClick={() => setTeacherId(t.teacher_id)}>
+                  <span className="fac-radio-dot">{teacherId === t.teacher_id && <span className="fac-radio-dot-inner" />}</span>
+                  {t.teacher_name}
+                  <span className="fac-radio-sub">max {t.max_periods_per_day}/day</span>
+                </button>
+              ))}
+              {!filteredTeachers.length && <div className="fac-subject-group-empty">No faculty members match your search.</div>}
+            </div>
+            {selectedTeacher && <div className="fac-selected-banner">Selected: {selectedTeacher.teacher_name}</div>}
+          </div>
+        )}
+
+        {/* STEP 2 — DEPARTMENTS (multi-select) */}
+        {step === 2 && (
+          <div>
+            <div className="modal-section-label">2 &middot; SELECT DEPARTMENT(S)</div>
+            <div className="fac-dept-grid">
+              {departments.map(d => (
+                <div key={d} className={`fac-dept-card ${depts.includes(d) ? 'checked' : ''}`} onClick={() => toggleDept(d)}>
+                  <span className="fac-checkbox">{depts.includes(d) && <Icon name="check" size={12} />}</span>
+                  <span>{d}</span>
+                </div>
+              ))}
+            </div>
+            {depts.length > 0 && (
+              <div className="chip-row wrap" style={{ marginTop: 14 }}>
+                <span className="modal-section-label" style={{ margin: 0, alignSelf: 'center' }}>Selected:</span>
+                {depts.map(d => (
+                  <span className="division-chip" key={d}>{d}<button onClick={() => toggleDept(d)}><Icon name="close" size={11} /></button></span>
+                ))}
+              </div>
             )}
           </div>
+        )}
 
-          {subjects.length === 0 ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: '#64748b' }}>
-              <span style={{ fontSize: 24, display: 'block', marginBottom: 6 }}>📚</span>
-              No subjects registered for this department and year yet.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gap: 10, maxHeight: 340, overflowY: 'auto', paddingRight: 4 }}>
-              {subjectGroups.map(sg => {
-                const isCollapsed = !!collapsedSubjects[sg.name]
-                const compIds = sg.components.map(c => c.definition_id)
-                const selectedInSubject = compIds.filter(id => selectedIds.includes(id))
-                const isAllSelected = compIds.length > 0 && selectedInSubject.length === compIds.length
-                const isSomeSelected = selectedInSubject.length > 0 && !isAllSelected
-
-                const hasTheory = sg.components.some(c => (c.subject_type || '').toLowerCase() === 'theory')
-                const hasLab = sg.components.some(c => (c.subject_type || '').toLowerCase() === 'lab')
-
+        {/* STEP 3 — SMART SUBJECT + DIVISION REVEAL, grouped by department -> year */}
+        {step === 3 && (
+          <div>
+            <div className="modal-section-label">3 &middot; SELECT SUBJECTS</div>
+            <div className="fac-subject-groups">
+              {relevantGroups.length === 0 && <div className="fac-subject-group-empty">No academic groups found for the selected department(s).</div>}
+              {relevantGroups.map(g => {
+                const allDivisionIds = g.divisions.map(d => d.division_id)
+                const sel = selection[g.group_id] || { defIds: new Set(), divIds: new Set(allDivisionIds) }
                 return (
-                  <div
-                    key={sg.name}
-                    style={{
-                      border: `1.5px solid ${selectedInSubject.length > 0 ? '#7c3aed' : '#e2e8f0'}`,
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                      background: '#fff',
-                      boxShadow: !isCollapsed ? '0 3px 10px rgba(124, 58, 237, 0.06)' : 'none',
-                      transition: 'all .2s ease',
-                    }}
-                  >
-                    {/* Subject Dropdown Header Row */}
-                    <div
-                      onClick={() => toggleSubjectDropdown(sg.name)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '12px 14px',
-                        background: !isCollapsed || selectedInSubject.length > 0 ? '#faf5ff' : '#fff',
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        transition: 'background .15s',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-                        {/* Checkbox to toggle all components for this subject */}
-                        <div
-                          onClick={e => toggleAllForSubject(sg.components, e)}
-                          title={isAllSelected ? 'Deselect all' : 'Select all components'}
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 6,
-                            border: `2px solid ${isAllSelected || isSomeSelected ? '#7c3aed' : '#cbd5e1'}`,
-                            background: isAllSelected ? '#7c3aed' : isSomeSelected ? '#ede9fe' : '#fff',
-                            color: isAllSelected ? '#fff' : '#7c3aed',
-                            fontSize: 12,
-                            fontWeight: 800,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            transition: 'all .15s',
-                          }}
-                        >
-                          {isAllSelected ? '✓' : isSomeSelected ? '–' : ''}
-                        </div>
-
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-                              {sg.name}
-                            </span>
-                            {/* Badges showing available components */}
-                            {hasTheory && (
-                              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 999, background: '#e0e7ff', color: '#3730a3', fontWeight: 600 }}>
-                                📖 Theory
-                              </span>
-                            )}
-                            {hasLab && (
-                              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 999, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>
-                                🧪 Lab
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                            {sg.components.length} component{sg.components.length !== 1 ? 's' : ''} available
-                          </div>
-                        </div>
+                  <div className="fac-subject-group" key={g.group_id}>
+                    <div className="fac-subject-group-head">
+                      <div className="fac-subject-group-title">
+                        {g.department}
+                        <small>{yearLabel(g.year_of_study)} &bull; {g.divisions.length} division{g.divisions.length === 1 ? '' : 's'}</small>
                       </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {/* Selected summary badge */}
-                        {selectedInSubject.length > 0 && (
-                          <span style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#15803d',
-                            background: '#dcfce7',
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                          }}>
-                            {isAllSelected && sg.components.length > 1
-                              ? 'Theory + Lab'
-                              : `${selectedInSubject.length} selected`}
-                          </span>
-                        )}
-
-                        {/* Chevron */}
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#7c3aed"
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          style={{
-                            transform: !isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-                            transition: 'transform .2s ease',
-                          }}
-                        >
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
+                      <div className="fac-div-toggle-row">
+                        {g.divisions.map(d => (
+                          <button
+                            key={d.division_id}
+                            type="button"
+                            className={`fac-div-toggle ${sel.divIds.has(d.division_id) ? 'on' : ''}`}
+                            onClick={() => { ensureGroupSelection(g.group_id, allDivisionIds); toggleDivision(g, d.division_id) }}
+                            title="Toggle division"
+                          >
+                            {d.division_name}
+                          </button>
+                        ))}
                       </div>
                     </div>
-
-                    {/* Expanded Components (Theory & Lab grouped together) */}
-                    {!isCollapsed && (
-                      <div style={{
-                        padding: '10px 14px 14px',
-                        background: '#faf5ff',
-                        borderTop: '1px solid #f3e8ff',
-                        display: 'grid',
-                        gap: 8,
-                      }}>
-                        {sg.components.map(c => {
-                          const isSelected = selectedIds.includes(c.definition_id)
-                          const isLab = (c.subject_type || '').toLowerCase() === 'lab'
+                    {g.subjects.length ? (
+                      <div className="fac-subject-list">
+                        {g.subjects.map(s => {
+                          const checked = sel.defIds.has(s.definition_id)
                           return (
-                            <button
-                              key={c.definition_id}
-                              type="button"
-                              onClick={() => toggleComponent(c.definition_id)}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 10,
-                                padding: '10px 12px',
-                                border: `1.5px solid ${isSelected ? '#7c3aed' : '#cbd5e1'}`,
-                                borderRadius: 9,
-                                background: '#fff',
-                                boxShadow: isSelected ? '0 1px 4px rgba(124, 58, 237, 0.12)' : 'none',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                width: '100%',
-                                transition: 'all .15s',
-                              }}
-                            >
-                              <div style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: 5,
-                                border: `2px solid ${isSelected ? '#7c3aed' : '#cbd5e1'}`,
-                                background: isSelected ? '#7c3aed' : '#fff',
-                                color: '#fff',
-                                fontSize: 11,
-                                fontWeight: 800,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                                transition: 'all .15s',
-                              }}>
-                                {isSelected ? '✓' : ''}
-                              </div>
-
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{
-                                    fontSize: 13,
-                                    fontWeight: isSelected ? 700 : 600,
-                                    color: isSelected ? '#5b21b6' : '#1e293b'
-                                  }}>
-                                    {isLab ? '🧪 Lab Component' : '📖 Theory Component'}
-                                  </span>
-                                  <span style={typeBadge(isLab)}>
-                                    {isLab ? 'Lab' : 'Theory'}
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                                  {c.periods_per_week} periods / week
-                                </div>
-                              </div>
-                            </button>
+                            <div key={s.definition_id} className={`fac-subject-row ${checked ? 'checked' : ''}`} onClick={() => { ensureGroupSelection(g.group_id, allDivisionIds); toggleSubject(g, s.definition_id) }}>
+                              <span className="fac-checkbox">{checked && <Icon name="check" size={12} />}</span>
+                              <span className="fac-subject-name">{s.subject_name}</span>
+                              <SubjectTypeBadge name="" type={s.subject_type} showName={false} />
+                            </div>
                           )
                         })}
                       </div>
-                    )}
+                    ) : <div className="fac-subject-group-empty">No subjects configured for this year yet.</div>}
                   </div>
                 )
               })}
             </div>
-          )}
 
-          {selectedIds.length > 0 && (
-            <div style={selectionSummary}>
-              ✓ {selectedIds.length} component{selectedIds.length > 1 ? 's' : ''} selected
+            <div className="fac-selection-summary">
+              <div className="fac-selection-summary-count">{totalSelectedSubjects} subject{totalSelectedSubjects === 1 ? '' : 's'} selected</div>
+              {totalSelectedSubjects > 0 && (
+                <div className="chip-row wrap">
+                  {selectedSubjectChips.map(({ group, subject }) => (
+                    <span className="division-chip" key={`${group.group_id}-${subject.definition_id}`}>
+                      {subject.subject_name}
+                      <button onClick={() => removeSubjectChip(group.group_id, subject.definition_id)}><Icon name="close" size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Footer */}
-        <div style={modalFooter}>
-          <div style={{ flex: 1 }} />
-          <button style={cancelBtn} onClick={onClose}>Cancel</button>
-          <button
-            style={confirmBtn(canConfirm)}
-            onClick={() => { if (canConfirm) onConfirm(selectedIds) }}
-            disabled={!canConfirm}
-          >
-            Confirm Selection
-          </button>
+        {/* STEP 4 — REVIEW */}
+        {step === 4 && (
+          <div>
+            <div className="modal-section-label">ASSIGNMENT SUMMARY</div>
+            <div className="fac-review-card">
+              <div className="fac-review-row">
+                <span className="label">Teacher</span>
+                <span className="value">{selectedTeacher?.teacher_name}</span>
+              </div>
+              <div className="fac-review-row">
+                <span className="label">Departments</span>
+                <span className="value">{depts.join(', ')}</span>
+              </div>
+              <div className="fac-review-row">
+                <span className="label">Subjects</span>
+                <span className="value">
+                  {relevantGroups.map(g => {
+                    const sel = selection[g.group_id]
+                    if (!sel || sel.defIds.size === 0) return null
+                    const names = g.subjects.filter(s => sel.defIds.has(s.definition_id)).map(s => s.subject_name)
+                    const divNames = g.divisions.filter(d => sel.divIds.has(d.division_id)).map(d => d.division_name)
+                    return (
+                      <div key={g.group_id} style={{ marginBottom: 6 }}>
+                        {names.join(', ')}
+                        <span className="fac-review-sub">{g.department} &bull; {yearLabel(g.year_of_study)} &bull; Div {divNames.join(', ') || '—'}</span>
+                      </div>
+                    )
+                  })}
+                </span>
+              </div>
+            </div>
+            {submitError && <div className="notice error" style={{ marginTop: 14 }}>{submitError}</div>}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          {step > 1 && <button className="secondary-button" onClick={goBack}>Back</button>}
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          {step < 4 && (
+            <button
+              className="primary-button modal-primary"
+              disabled={(step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4)}
+              style={{ opacity: (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) ? 0.5 : 1 }}
+              onClick={goNext}
+            >
+              Continue
+            </button>
+          )}
+          {step === 4 && <button className="primary-button modal-primary" onClick={handleSubmit}>Add Assignment</button>}
         </div>
       </div>
     </div>
   )
 }
 
-const AVATAR_PALETTES = [
-  { bg: '#4f46e5', color: '#ffffff' }, // Royal Blue (SS)
-  { bg: '#f5d0fe', color: '#86198f' }, // Magenta / Pink (DP)
-  { bg: '#fed7aa', color: '#9a3412' }, // Warm Amber / Tan (SV)
-  { bg: '#bbf7d0', color: '#166534' }, // Mint Green (PD)
-  { bg: '#bae6fd', color: '#0369a1' }, // Sky Blue
-  { bg: '#e9d5ff', color: '#6b21a8' }, // Purple
-  { bg: '#fecdd3', color: '#9f1239' }, // Coral
-]
+/* =========================================================================
+   ASSIGNMENT REASSIGN (edit) MODAL — change teacher on one division-level row
+========================================================================= */
+function AssignmentEditModal({ assignment, teachers, onSave, onClose, error }) {
+  const [teacherId, setTeacherId] = useState(assignment.teacherId)
+  const [search, setSearch] = useState('')
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return teachers
+    return teachers.filter(t => t.teacher_name.toLowerCase().includes(q))
+  }, [teachers, search])
 
-function getInitials(name = '') {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  if ((parts[0].toLowerCase() === 'prof.' || parts[0].toLowerCase() === 'dr.') && parts.length > 1) {
-    return (parts[0][0] + parts[1][0]).toUpperCase()
-  }
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="academic-modal" style={{ width: 'min(480px, 100%)' }}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-icon edit"><Icon name="edit" size={19} /></div>
+            <div>
+              <div className="academic-eyebrow">TEACHING ASSIGNMENT</div>
+              <h2>Edit Assignment</h2>
+              <p>{assignment.subjectName} &middot; {assignment.department} &middot; {yearLabel(assignment.yearOfStudy)} &middot; Div {assignment.divisionName}</p>
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+
+        <div className="modal-section-label">TEACHER</div>
+        <div className="fac-search">
+          <Icon name="search" size={16} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search faculty..." />
+        </div>
+        <div className="fac-radio-list">
+          {filtered.map(t => (
+            <button key={t.teacher_id} type="button" className={`fac-radio-row ${teacherId === t.teacher_id ? 'selected' : ''}`} onClick={() => setTeacherId(t.teacher_id)}>
+              <span className="fac-radio-dot">{teacherId === t.teacher_id && <span className="fac-radio-dot-inner" />}</span>
+              {t.teacher_name}
+              <span className="fac-radio-sub">max {t.max_periods_per_day}/day</span>
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="notice error">{error}</div>}
+
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>Cancel</button>
+          <button className="primary-button modal-primary" onClick={() => onSave(teacherId)}>Save Changes</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function getAvatarStyle(name = '') {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  }
-  return AVATAR_PALETTES[hash % AVATAR_PALETTES.length]
-}
+/* =========================================================================
+   ASSIGNMENTS DIRECTORY MODAL — search, filter, grouped-by-teacher, edit/delete
+========================================================================= */
+function AssignmentsDirectoryModal({ tree, departmentsList, teachers, onClose, onEditRow, onDeleteRow }) {
+  const [search, setSearch] = useState('')
+  const [deptFilter, setDeptFilter] = useState('all')
+  const [yearFilter, setYearFilter] = useState('all')
+  const [teacherFilter, setTeacherFilter] = useState('all')
+  const [collapsed, setCollapsed] = useState({})
 
-function groupTeacherAssignmentsBySubject(teacherAssignments) {
-  const subjectMap = new Map()
-  teacherAssignments.forEach(a => {
-    const subjectKey = `${a.subject_name.trim().toLowerCase()}__${a.department}__${a.year_of_study}`
-    if (!subjectMap.has(subjectKey)) {
-      subjectMap.set(subjectKey, {
-        key: subjectKey,
-        subjectName: a.subject_name.trim(),
-        department: a.department,
-        yearOfStudy: a.year_of_study,
-        divisionsMap: new Map(),
-        allAssignments: []
+  const filteredTree = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return tree
+      .filter(t => teacherFilter === 'all' || String(t.teacherId) === String(teacherFilter))
+      .map(t => {
+        const subjects = t.subjects
+          .filter(s => deptFilter === 'all' || s.department === deptFilter)
+          .filter(s => yearFilter === 'all' || String(s.yearOfStudy) === String(yearFilter))
+          .filter(s => {
+            if (!q) return true
+            return (
+              t.teacherName.toLowerCase().includes(q) ||
+              s.subjectName.toLowerCase().includes(q) ||
+              s.department.toLowerCase().includes(q) ||
+              yearLabel(s.yearOfStudy).toLowerCase().includes(q) ||
+              s.divisions.some(d => d.divisionName.toLowerCase().includes(q))
+            )
+          })
+        return { ...t, subjects }
       })
-    }
-    const sg = subjectMap.get(subjectKey)
-    sg.allAssignments.push(a)
+      .filter(t => t.subjects.length > 0)
+  }, [tree, search, deptFilter, yearFilter, teacherFilter])
 
-    const divKey = a.division_id ?? a.division_name
-    if (!sg.divisionsMap.has(divKey)) {
-      sg.divisionsMap.set(divKey, {
-        divisionId: a.division_id,
-        divisionName: a.division_name,
-        theoryAssignment: null,
-        labAssignment: null
-      })
-    }
-    const divEntry = sg.divisionsMap.get(divKey)
-    const isLab = (a.subject_type || '').toLowerCase() === 'lab'
-    if (isLab) {
-      divEntry.labAssignment = a
-    } else {
-      divEntry.theoryAssignment = a
-    }
-  })
+  const hasAnyFilter = search || deptFilter !== 'all' || yearFilter !== 'all' || teacherFilter !== 'all'
 
-  return Array.from(subjectMap.values()).map(sg => ({
-    ...sg,
-    divisions: Array.from(sg.divisionsMap.values()).sort((a, b) =>
-      a.divisionName.localeCompare(b.divisionName)
-    ),
-    hasTheory: sg.allAssignments.some(a => (a.subject_type || '').toLowerCase() === 'theory'),
-    hasLab: sg.allAssignments.some(a => (a.subject_type || '').toLowerCase() === 'lab'),
-  }))
+  function clearFilters() { setSearch(''); setDeptFilter('all'); setYearFilter('all'); setTeacherFilter('all') }
+  function toggle(key) { setCollapsed(c => ({ ...c, [key]: !c[key] })) }
+
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="academic-modal fac-modal-xl">
+        <div className="modal-header">
+          <div className="modal-title">
+            <div className="modal-icon"><Icon name="link" size={19} /></div>
+            <div>
+              <div className="academic-eyebrow">TEACHING ASSIGNMENTS</div>
+              <h2>Assignments Directory</h2>
+              <p>View and manage every faculty-subject assignment</p>
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}><Icon name="close" size={16} /></button>
+        </div>
+
+        <div className="fac-search">
+          <Icon name="search" size={16} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search assignments..." autoFocus />
+          {search && <button onClick={() => setSearch('')}><Icon name="close" size={13} /></button>}
+        </div>
+
+        <div className="fac-filter-bar">
+          <select className="fac-filter-select" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
+            <option value="all">All Departments</option>
+            {departmentsList.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select className="fac-filter-select" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+            <option value="all">All Years</option>
+            {[1, 2, 3, 4].map(y => <option key={y} value={y}>{yearLabel(y)}</option>)}
+          </select>
+          <select className="fac-filter-select" value={teacherFilter} onChange={e => setTeacherFilter(e.target.value)}>
+            <option value="all">All Teachers</option>
+            {teachers.map(t => <option key={t.teacher_id} value={t.teacher_id}>{t.teacher_name}</option>)}
+          </select>
+        </div>
+
+        {filteredTree.length ? (
+          <div className="fac-assign-list">
+            {filteredTree.map(t => {
+              const isOpen = !collapsed[t.teacherId]
+              return (
+                <div className="fac-assign-card" key={t.teacherId}>
+                  <div className="fac-assign-card-head" onClick={() => toggle(t.teacherId)}>
+                    <div className="fac-assign-avatar">{initials(t.teacherName)}</div>
+                    <div>
+                      <b>{t.teacherName}</b>
+                      <small>{t.subjects.length} assignment{t.subjects.length === 1 ? '' : 's'}</small>
+                    </div>
+                    <span className={`chev ${isOpen ? 'open' : ''}`}><Icon name="chevronDown" size={16} /></span>
+                  </div>
+                  {isOpen && t.subjects.map(s => (
+                    <div className="fac-assign-subject-row" key={s.key}>
+                      <div className="fac-assign-subject-main">
+                        <div className="name">{s.subjectName} <SubjectTypeBadge name="" type={s.subjectType} showName={false} /></div>
+                        <div className="meta">{s.department} &middot; {yearLabel(s.yearOfStudy)}</div>
+                        <div style={{ marginTop: 4 }}>
+                          {s.divisions.map(d => <span className="fac-div-pill" key={d.assignmentId}>{d.divisionName}</span>)}
+                        </div>
+                      </div>
+                      <div className="fac-assign-actions">
+                        {s.divisions.map(d => (
+                          <div key={d.assignmentId} style={{ display: 'flex', gap: 4 }}>
+                            <button className="fac-icon-btn" title={`Edit ${d.divisionName}`} onClick={() => onEditRow({ ...s, assignmentId: d.assignmentId, divisionName: d.divisionName, divisionId: d.divisionId, teacherId: t.teacherId })}>
+                              <Icon name="edit" size={13} />
+                            </button>
+                            <button className="fac-icon-btn danger" title={`Remove ${d.divisionName}`} onClick={() => onDeleteRow({ ...s, assignmentId: d.assignmentId, divisionName: d.divisionName, teacherName: t.teacherName })}>
+                              <Icon name="trash" size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="fac-empty">
+            <div className="fac-empty-icon"><Icon name="search" size={18} /></div>
+            <h3>No assignments match the selected filters.</h3>
+            {hasAnyFilter && <button className="secondary-button" onClick={clearFilters}>Clear Filters</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
-/* ─── Main component ─────────────────────────────────────────────────── */
+/* =========================================================================
+   MAIN PAGE
+========================================================================= */
 export default function FacultyAssignments() {
   const [teachers, setTeachers] = useState([])
   const [groups, setGroups] = useState([])
   const [assignments, setAssignments] = useState([])
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
 
-  // teacher form
+  // add-teacher compact row
   const [name, setName] = useState('')
   const [max, setMax] = useState(6)
 
-  // assignment form
-  const [teacherId, setTeacherId] = useState('')
-  const [selectedGroup, setSelectedGroup] = useState(null)     // group object
-  const [divisionIds, setDivisionIds] = useState([])            // chosen division IDs
-  const [definitionIds, setDefinitionIds] = useState([])        // chosen subject definition IDs (array)
-
-  // current assignments list search & filter
-  const [assignmentSearch, setAssignmentSearch] = useState('')
-  const [departmentFilter, setDepartmentFilter] = useState('all')
-  const [collapsedFaculty, setCollapsedFaculty] = useState({})
-  const [collapsedSubjectsInTeacher, setCollapsedSubjectsInTeacher] = useState({})
-
-  const [showPicker, setShowPicker] = useState(false)
-  const [showSubjectPicker, setShowSubjectPicker] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  // modals
+  const [showDirectory, setShowDirectory] = useState(false)
+  const [editTeacher, setEditTeacher] = useState(null)
+  const [teacherEditError, setTeacherEditError] = useState('')
+  const [deleteTeacherTarget, setDeleteTeacherTarget] = useState(null)
+  const [showWizard, setShowWizard] = useState(false)
+  const [wizardError, setWizardError] = useState('')
+  const [showAssignments, setShowAssignments] = useState(false)
+  const [editAssignmentRow, setEditAssignmentRow] = useState(null)
+  const [assignmentEditError, setAssignmentEditError] = useState('')
+  const [deleteAssignmentTarget, setDeleteAssignmentTarget] = useState(null)
 
   async function load() {
     try {
@@ -751,904 +739,348 @@ export default function FacultyAssignments() {
       setGroups(g.data)
       setAssignments(a.data)
     } catch (err) {
-      if (!err.response) {
-        setError('Cannot connect to backend server. Make sure it is running on http://localhost:8000.')
-      } else {
-        setError('Could not load faculty or assignments.')
-      }
+      setError(!err.response ? 'Cannot connect to backend server. Make sure it is running on http://localhost:8000.' : 'Could not load faculty or assignments.')
     }
   }
   useEffect(() => { load() }, [])
 
-  function handlePickerConfirm({ group, divisionIds: ids }) {
-    setSelectedGroup(group)
-    setDivisionIds(ids)
-    setDefinitionIds([]) // reset subjects when group changes
-    setShowPicker(false)
-  }
-
-  function handleSubjectConfirm(ids) {
-    setDefinitionIds(ids)
-    setShowSubjectPicker(false)
-  }
-
-  // label for the group trigger button
-  const pickerLabel = useMemo(() => {
-    if (!selectedGroup) return 'Choose Department · Year · Division'
-    const divNames = selectedGroup.divisions.filter(d => divisionIds.includes(d.division_id)).map(d => d.division_name).join(', ')
-    return `${selectedGroup.department} · ${yearLabel(selectedGroup.year_of_study)} · Div ${divNames || 'None'}`
-  }, [selectedGroup, divisionIds])
-
-  // label for the subject trigger button
-  const subjectPickerLabel = useMemo(() => {
-    if (!selectedGroup) return 'Select Department & Year first'
-    if (definitionIds.length === 0) return 'Choose Subject(s)...'
-
-    const selectedDefs = (selectedGroup.subjects || []).filter(s => definitionIds.includes(s.definition_id))
-    const subjectMap = new Map()
-    selectedDefs.forEach(s => {
-      const name = s.subject_name.trim()
-      if (!subjectMap.has(name)) subjectMap.set(name, [])
-      subjectMap.get(name).push((s.subject_type || '').toLowerCase() === 'lab' ? 'Lab' : 'Theory')
-    })
-
-    const labels = Array.from(subjectMap.entries()).map(([name, types]) => {
-      const typeStr = types.sort((a, b) => a === 'Theory' ? -1 : 1).join(' + ')
-      return `${name} (${typeStr})`
-    })
-
-    if (labels.length <= 2) return labels.join(', ')
-    return `${labels.slice(0, 2).join(', ')} +${labels.length - 2} more`
-  }, [selectedGroup, definitionIds])
-
-  function toggleFacultyCollapse(key) {
-    setCollapsedFaculty(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }))
-  }
-
-  function toggleSubjectCollapseInTeacher(key) {
-    setCollapsedSubjectsInTeacher(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }))
-  }
-
-  // Unique departments for filter dropdown
-  const departmentsList = useMemo(() => {
-    return [...new Set(assignments.map(a => a.department))].filter(Boolean).sort()
+  const tree = useMemo(() => buildTeacherAssignmentTree(assignments), [assignments])
+  const departmentsList = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
+  const assignmentCountByTeacher = useMemo(() => {
+    const m = new Map()
+    assignments.forEach(a => m.set(a.teacher_id, (m.get(a.teacher_id) || 0) + 1))
+    return m
   }, [assignments])
 
-  // Filtered assignments based on search and department
-  const filteredAssignments = useMemo(() => {
-    let list = assignments
-    if (departmentFilter !== 'all') {
-      list = list.filter(a => a.department === departmentFilter)
-    }
-    if (assignmentSearch.trim()) {
-      const q = assignmentSearch.trim().toLowerCase()
-      list = list.filter(a =>
-        (a.teacher_name && a.teacher_name.toLowerCase().includes(q)) ||
-        (a.subject_name && a.subject_name.toLowerCase().includes(q)) ||
-        (a.department && a.department.toLowerCase().includes(q)) ||
-        (a.division_name && a.division_name.toLowerCase().includes(q))
-      )
-    }
-    return list
-  }, [assignments, departmentFilter, assignmentSearch])
-
-  // Group assignments by faculty
-  const facultyGroups = useMemo(() => {
-    const map = new Map()
-    filteredAssignments.forEach(a => {
-      const key = a.teacher_id ?? a.teacher_name
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          teacherId: a.teacher_id,
-          teacherName: a.teacher_name,
-          assignments: []
-        })
-      }
-      map.get(key).assignments.push(a)
-    })
-    return Array.from(map.values())
-  }, [filteredAssignments])
-
+  /* ── Teacher CRUD ───────────────────────────────────────────────── */
   async function addTeacher(e) {
     e.preventDefault(); setMessage(''); setError('')
     if (!name.trim()) { setError('Teacher name is required.'); return }
     try {
       await axios.post(`${BASE}/teachers`, { teacher_name: name.trim(), max_periods_per_day: Number(max) })
-      setMessage(`${name.trim()} added.`); setName(''); setMax(6); await load()
-    } catch (err) {
-      const detail = err.response?.data?.detail
-      setError(typeof detail === 'string' ? detail : !err.response ? 'Cannot connect to backend server. Make sure it is running.' : 'Could not add teacher.')
-    }
-  }
-
-  async function addAssignment(e) {
-    e.preventDefault(); setMessage(''); setError('')
-    if (!teacherId || !definitionIds.length || !divisionIds.length) {
-      setError('Select teacher, department/year/divisions, and at least one subject.')
-      return
-    }
-    try {
-      const r = await axios.post(`${BASE}/teaching-assignments`, {
-        teacher_id: Number(teacherId),
-        definition_ids: definitionIds.map(Number),
-        division_ids: divisionIds.map(Number),
-      })
-      setMessage(r.data.message)
-      setDivisionIds([])
-      setSelectedGroup(null)
-      setDefinitionIds([])
+      setMessage(`${name.trim()} added.`)
+      setName(''); setMax(6)
       await load()
     } catch (err) {
       const detail = err.response?.data?.detail
-      if (typeof detail === 'string') {
-        setError(detail)
-      } else if (Array.isArray(detail)) {
-        setError(detail.map(d => d.msg || JSON.stringify(d)).join(', '))
-      } else if (!err.response) {
-        setError('Cannot connect to backend server. Make sure it is running on port 8000.')
-      } else {
-        setError('Could not save assignment.')
-      }
+      setError(typeof detail === 'string' ? detail : !err.response ? 'Cannot connect to backend server.' : 'Could not add teacher.')
     }
   }
 
-  async function remove(id) {
-    try { await axios.delete(`${BASE}/teaching-assignments/${id}`); await load() }
-    catch (err) {
+  async function saveTeacherEdit(payload) {
+    setTeacherEditError('')
+    try {
+      await axios.put(`${BASE}/teachers/${editTeacher.teacher_id}`, payload)
+      setMessage(`${payload.teacher_name} was updated.`)
+      setEditTeacher(null)
+      await load()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setTeacherEditError(typeof detail === 'string' ? detail : 'Could not update teacher.')
+    }
+  }
+
+  async function confirmDeleteTeacher() {
+    if (!deleteTeacherTarget) return
+    try {
+      await axios.delete(`${BASE}/teachers/${deleteTeacherTarget.teacher_id}`)
+      setMessage(`${deleteTeacherTarget.teacher_name} was deleted.`)
+      setDeleteTeacherTarget(null)
+      await load()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Could not delete teacher.')
+    }
+  }
+
+  /* ── Assignment CRUD ────────────────────────────────────────────── */
+  async function submitWizard({ teacherId, groups: payloadGroups }) {
+    setWizardError('')
+    let createdCount = 0
+    let alreadyCount = 0
+    try {
+      for (const pg of payloadGroups) {
+        const res = await axios.post(`${BASE}/teaching-assignments`, {
+          teacher_id: Number(teacherId),
+          definition_ids: pg.definitionIds.map(Number),
+          division_ids: pg.divisionIds.map(Number),
+        })
+        if (res.data.divisions && res.data.divisions.length) createdCount++
+        else alreadyCount++
+      }
+      const parts = []
+      if (createdCount) parts.push(`${createdCount} assignment group${createdCount === 1 ? '' : 's'} created.`)
+      if (alreadyCount) parts.push(`${alreadyCount} group${alreadyCount === 1 ? '' : 's'} already existed.`)
+      setMessage(parts.join(' ') || 'Assignment saved.')
+      setShowWizard(false)
+      await load()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setWizardError(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : 'Could not save assignment.')
+    }
+  }
+
+  async function saveAssignmentEdit(newTeacherId) {
+    setAssignmentEditError('')
+    try {
+      const res = await axios.put(`${BASE}/teaching-assignments/${editAssignmentRow.assignmentId}`, { teacher_id: Number(newTeacherId) })
+      setMessage(res.data.message)
+      setEditAssignmentRow(null)
+      await load()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setAssignmentEditError(typeof detail === 'string' ? detail : 'Could not reassign this assignment.')
+    }
+  }
+
+  async function confirmDeleteAssignment() {
+    if (!deleteAssignmentTarget) return
+    try {
+      await axios.delete(`${BASE}/teaching-assignments/${deleteAssignmentTarget.assignmentId}`)
+      setMessage('Assignment removed.')
+      setDeleteAssignmentTarget(null)
+      await load()
+    } catch (err) {
       const detail = err.response?.data?.detail
       setError(typeof detail === 'string' ? detail : 'Could not delete assignment.')
     }
   }
 
+  const totalFaculty = teachers.length
+  const totalAssignments = assignments.length
+  const totalDepartments = departmentsList.length
+
   return (
-    <div style={page}>
-      {showPicker && (
-        <GroupPickerModal
-          groups={groups}
-          initialGroup={selectedGroup}
-          initialDivisionIds={divisionIds}
-          onConfirm={handlePickerConfirm}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
+    <div className="academic-page">
 
-      {showSubjectPicker && selectedGroup && (
-        <SubjectPickerModal
-          group={selectedGroup}
-          selectedDefinitionIds={definitionIds}
-          onConfirm={handleSubjectConfirm}
-          onClose={() => setShowSubjectPicker(false)}
-        />
-      )}
-
-      <section style={hero}>
-        <div style={eyebrow}>STEP 3 · FACULTY &amp; ASSIGNMENTS</div>
-        <h1 style={title}>Faculty &amp; Assignments</h1>
-        <p style={sub}>Add each teacher once with their daily maximum. Then assign that global teacher to subjects and specific divisions.</p>
-      </section>
-
-      {/* 1. Add faculty */}
-      <section style={card}>
-        <h2 style={h2}>1. Add faculty</h2>
-        <form onSubmit={addTeacher} style={grid}>
-          <Field label="Teacher name">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Prof. Sharma" style={inp} />
-          </Field>
-          <Field label="Max periods / day">
-            <input type="number" min="1" max="8" value={max} onChange={e => setMax(e.target.value)} style={inp} />
-          </Field>
-          <button style={{ ...button, alignSelf: 'end', marginTop: 14 }}>Add Teacher</button>
-        </form>
-        <div style={teacherList}>
-          {teachers.map(t => (
-            <div key={t.teacher_id} style={teacherCard}>
-              <b>{t.teacher_name}</b>
-              <span>{t.max_periods_per_day} max/day</span>
-            </div>
-          ))}
+      {/* HERO */}
+      <section className="academic-hero">
+        <FacultyWatermark />
+        <div className="hero-left">
+          <div className="hero-icon"><Icon name="faculty" size={30} stroke={1.7} /></div>
+          <div>
+            <div className="academic-eyebrow">ACADEMIC SCHEDULING &middot; STEP 3</div>
+            <h1>Faculty &amp; Assignments</h1>
+            <div className="hero-subtitle">Manage Faculty &amp; Teaching Assignments</div>
+            <p>Add faculty globally, configure their daily teaching capacity, and assign them to subjects across departments and divisions.</p>
+          </div>
         </div>
       </section>
 
-      {/* 2. Add assignment */}
-      <section style={card}>
-        <h2 style={h2}>2. Add teaching assignment</h2>
-
-        <div style={twoCol}>
-          {/* Teacher picker */}
-          <Field label="Teacher">
-            <select value={teacherId} onChange={e => setTeacherId(e.target.value)} style={inp}>
-              <option value="">Select teacher</option>
-              {teachers.map(t => (
-                <option key={t.teacher_id} value={t.teacher_id}>{t.teacher_name} · max {t.max_periods_per_day}/day</option>
-              ))}
-            </select>
-          </Field>
-
-          {/* Department · Year · Divisions trigger */}
-          <Field label="Department · Year · Divisions">
-            <button
-              type="button"
-              style={pickerTrigger(!!selectedGroup)}
-              onClick={() => setShowPicker(true)}
-            >
-              <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {pickerLabel}
-              </span>
-              <span style={pickerArrow}>›</span>
-            </button>
-          </Field>
+      {/* STATS */}
+      <section className="academic-stats">
+        <div className="stat-card stat-blue">
+          <div className="stat-icon"><Icon name="faculty" size={24} /></div>
+          <div><div className="stat-label">TOTAL FACULTY</div><div className="stat-number">{totalFaculty}</div></div>
         </div>
-
-        {/* Subject Popup Trigger */}
-        <div style={{ marginTop: 6 }}>
-          <Field label="Subject(s)">
-            <button
-              type="button"
-              style={pickerTrigger(definitionIds.length > 0, !selectedGroup)}
-              onClick={() => {
-                if (!selectedGroup) {
-                  setError('Please select Department · Year · Divisions first.')
-                  setShowPicker(true)
-                  return
-                }
-                setShowSubjectPicker(true)
-              }}
-            >
-              <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {subjectPickerLabel}
-              </span>
-              <span style={pickerArrow}>›</span>
-            </button>
-          </Field>
+        <div className="stat-card stat-purple">
+          <div className="stat-icon"><Icon name="link" size={24} /></div>
+          <div><div className="stat-label">TOTAL ASSIGNMENTS</div><div className="stat-number">{totalAssignments}</div></div>
         </div>
-
-        <button onClick={addAssignment} style={{ ...button, marginTop: 20 }}>Add Assignment</button>
+        <div className="stat-card stat-green">
+          <div className="stat-icon"><Icon name="building" size={24} /></div>
+          <div><div className="stat-label">TOTAL DEPARTMENTS</div><div className="stat-number">{totalDepartments}</div></div>
+        </div>
       </section>
 
-      {message && <div style={successBox}>{message}</div>}
-      {error   && <div style={errorBox}>{error}</div>}
+      {message && <div className="global-notice success"><Icon name="check" size={16} />{message}<button onClick={() => setMessage('')}><Icon name="close" size={15} /></button></div>}
+      {error && <div className="global-notice error"><Icon name="alert" size={16} />{error}<button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
 
-      {/* 3. Current assignments */}
-      <section style={{ ...card, padding: '26px 28px' }}>
-        {/* Header row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={docIconBox}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-            </div>
-            <div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: 0, letterSpacing: '-0.01em' }}>
-                Current Assignments
-              </h2>
-              <p style={{ fontSize: 13, color: '#64748b', margin: '3px 0 0' }}>
-                View and manage all faculty-subject assignments.
-              </p>
-            </div>
-          </div>
+      <div className="fac-blocks">
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            {/* Search Input */}
-            <div style={{ position: 'relative', width: 280 }}>
-              <svg
-                width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
-              >
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                value={assignmentSearch}
-                onChange={e => setAssignmentSearch(e.target.value)}
-                placeholder="Search by faculty, subject or department..."
-                style={searchInputStyle}
-              />
-              {assignmentSearch && (
-                <button
-                  type="button"
-                  onClick={() => setAssignmentSearch('')}
-                  style={clearSearchBtn}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Department Filter */}
-            <select
-              value={departmentFilter}
-              onChange={e => setDepartmentFilter(e.target.value)}
-              style={deptSelectStyle}
-            >
-              <option value="all">All Departments</option>
-              {departmentsList.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Content list */}
-        {assignments.length === 0 ? (
-          <div style={emptyStateBox}>
-            <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>📋</span>
-            <p style={{ margin: 0, fontSize: 14, color: '#64748b', fontWeight: 500 }}>No assignments yet.</p>
-          </div>
-        ) : facultyGroups.length === 0 ? (
-          <div style={emptyStateBox}>
-            <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>🔍</span>
-            <p style={{ margin: 0, fontSize: 14, color: '#64748b', fontWeight: 500 }}>No assignments match your search or filter.</p>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gap: 16 }}>
-            {facultyGroups.map(group => {
-              const isCollapsed = !!collapsedFaculty[group.key]
-              const avatarStyle = getAvatarStyle(group.teacherName)
-              const initials = getInitials(group.teacherName)
-
-              return (
-                <div key={group.key} style={facultyCardContainer}>
-                  {/* Faculty Card Header */}
-                  <div
-                    style={facultyCardHeader(isCollapsed)}
-                    onClick={() => toggleFacultyCollapse(group.key)}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ ...avatarCircle, background: avatarStyle.bg, color: avatarStyle.color }}>
-                        {initials}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                          {group.teacherName}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                          {group.assignments.length} assignment{group.assignments.length !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      style={chevronButton}
-                      aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-                    >
-                      <svg
-                        width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                        style={{
-                          transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-                          transition: 'transform .2s ease'
-                        }}
-                      >
-                        <polyline points="18 15 12 9 6 15" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Subject Dropdowns grouping Theory & Lab together */}
-                  {!isCollapsed && (
-                    <div style={{ padding: '14px 16px 16px', display: 'grid', gap: 10, background: '#f8fafc' }}>
-                      {groupTeacherAssignmentsBySubject(group.assignments).map((sg, sIdx) => {
-                        const isSubCollapsed = collapsedSubjectsInTeacher[sg.key] === true
-                        return (
-                          <div
-                            key={sg.key}
-                            style={{
-                              border: '1.5px solid #e2e8f0',
-                              borderRadius: 12,
-                              overflow: 'hidden',
-                              background: '#fff',
-                              boxShadow: '0 1px 3px rgba(15,23,42,0.03)',
-                            }}
-                          >
-                            {/* Subject Dropdown Bar */}
-                            <div
-                              onClick={() => toggleSubjectCollapseInTeacher(sg.key)}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '12px 16px',
-                                background: !isSubCollapsed ? '#faf5ff' : '#fff',
-                                cursor: 'pointer',
-                                userSelect: 'none',
-                                borderBottom: !isSubCollapsed ? '1px solid #f3e8ff' : 'none',
-                                transition: 'background .15s',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 16 }}>📘</span>
-                                <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-                                  {sg.subjectName}
-                                </span>
-                                <span style={{ fontSize: 12, color: '#64748b' }}>
-                                  · {sg.department} – {yearLabel(sg.yearOfStudy)}
-                                </span>
-                                {sg.hasTheory && (
-                                  <span style={typePill(false)}>
-                                    Theory
-                                  </span>
-                                )}
-                                {sg.hasLab && (
-                                  <span style={typePill(true)}>
-                                    Lab
-                                  </span>
-                                )}
-                              </div>
-
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  color: '#6d28d9',
-                                  background: '#ede9fe',
-                                  padding: '3px 9px',
-                                  borderRadius: 999,
-                                }}>
-                                  {sg.divisions.length} division{sg.divisions.length !== 1 ? 's' : ''} ({sg.divisions.map(d => d.divisionName).join(', ')})
-                                </span>
-                                <svg
-                                  width="17"
-                                  height="17"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="#7c3aed"
-                                  strokeWidth="2.2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  style={{
-                                    transform: !isSubCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-                                    transition: 'transform .2s ease'
-                                  }}
-                                >
-                                  <polyline points="6 9 12 15 18 9" />
-                                </svg>
-                              </div>
-                            </div>
-
-                            {/* Dropdown Content: Divisions with Theory & Lab grouped */}
-                            {!isSubCollapsed && (
-                              <div style={{ overflowX: 'auto' }}>
-                                <table style={assignmentsTable}>
-                                  <thead>
-                                    <tr style={tableHeaderRow}>
-                                      <th style={{ ...thCell, width: '44px' }}>#</th>
-                                      <th style={{ ...thCell, width: '130px' }}>Division</th>
-                                      <th style={thCell}>Components</th>
-                                      <th style={{ ...thCell, textAlign: 'center', width: '220px' }}>Actions</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {sg.divisions.map((div, dIdx) => (
-                                      <tr key={div.divisionId} style={tableBodyRow}>
-                                        <td style={{ ...tdCell, color: '#64748b', fontWeight: 500 }}>
-                                          {dIdx + 1}
-                                        </td>
-                                        <td style={tdCell}>
-                                          <span style={divisionPill}>
-                                            Div {div.divisionName}
-                                          </span>
-                                        </td>
-                                        <td style={tdCell}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {div.theoryAssignment && (
-                                              <span style={typePill(false)}>
-                                                Theory
-                                              </span>
-                                            )}
-                                            {div.labAssignment && (
-                                              <span style={typePill(true)}>
-                                                Lab
-                                              </span>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td style={{ ...tdCell, textAlign: 'center' }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                            {div.theoryAssignment && (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  remove(div.theoryAssignment.assignment_id)
-                                                }}
-                                                style={actionRemoveBtn}
-                                                title="Remove Theory assignment"
-                                              >
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                  <polyline points="3 6 5 6 21 6" />
-                                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                                </svg>
-                                                <span>{div.labAssignment ? 'Theory' : 'Remove'}</span>
-                                              </button>
-                                            )}
-                                            {div.labAssignment && (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  remove(div.labAssignment.assignment_id)
-                                                }}
-                                                style={actionRemoveBtn}
-                                                title="Remove Lab assignment"
-                                              >
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                  <polyline points="3 6 5 6 21 6" />
-                                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                                </svg>
-                                                <span>{div.theoryAssignment ? 'Lab' : 'Remove'}</span>
-                                              </button>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {/* Bottom Summary Badge */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18 }}>
-              <div style={summaryBadge}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-                <span>
-                  {facultyGroups.length} Faculty Member{facultyGroups.length !== 1 ? 's' : ''} • {filteredAssignments.length} Assignment{filteredAssignments.length !== 1 ? 's' : ''}
-                </span>
+        {/* ═══════════ BLOCK 1 — FACULTY ═══════════ */}
+        <section className="fac-block">
+          <svg className="fac-block-bg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="9" cy="8" r="3.4" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /></svg>
+          <div className="fac-block-head">
+            <div className="fac-block-head-left">
+              <div className="fac-block-icon"><Icon name="faculty" size={22} /></div>
+              <div>
+                <h2>Faculty</h2>
+                <p>Global teachers, added once and reused across every department, year, and division.</p>
               </div>
             </div>
+            <button className="secondary-button" onClick={() => setShowDirectory(true)}>
+              <Icon name="faculty" size={14} /> &nbsp;View All Teachers
+            </button>
           </div>
-        )}
-      </section>
+
+          <div className="fac-block-body">
+            <form onSubmit={addTeacher} className="fac-add-row">
+              <Field label="Teacher name">
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Prof. Sharma" />
+              </Field>
+              <Field label="Maximum periods / day">
+                <input type="number" min="1" max="8" value={max} onChange={e => setMax(e.target.value)} />
+              </Field>
+              <button className="primary-button" type="submit"><Icon name="plus" size={16} /> Add Teacher</button>
+            </form>
+
+            {teachers.length ? (
+              <>
+                <div className="fac-teacher-preview-head">
+                  <span className="section-kicker">FACULTY PREVIEW</span>
+                  <span style={{ color: 'var(--as-muted)', fontSize: 11 }}>{teachers.length} teacher{teachers.length === 1 ? '' : 's'} total</span>
+                </div>
+                <div className="fac-teacher-grid">
+                  {teachers.slice(0, 7).map(t => (
+                    <div className="fac-teacher-chip" key={t.teacher_id}>
+                      <b>{t.teacher_name}</b>
+                      <span>{t.max_periods_per_day} max/day</span>
+                    </div>
+                  ))}
+                  {teachers.length > 7 && (
+                    <button className="fac-teacher-more" onClick={() => setShowDirectory(true)}>+{teachers.length - 7} more</button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="fac-empty">
+                <div className="fac-empty-icon"><Icon name="faculty" size={18} /></div>
+                <h3>No faculty members added yet.</h3>
+                <p>Add your first teacher using the form above.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ═══════════ BLOCK 2 — TEACHING ASSIGNMENTS ═══════════ */}
+        <section className="fac-block">
+          <svg className="fac-block-bg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M9 15 15 9" /><path d="M10.5 6.5 12 5a3.7 3.7 0 0 1 5.2 5.2l-1.5 1.5" /></svg>
+          <div className="fac-block-head">
+            <div className="fac-block-head-left">
+              <div className="fac-block-icon purple"><Icon name="link" size={22} /></div>
+              <div>
+                <h2>Teaching Assignments</h2>
+                <p>Assign faculty to subjects for specific departments, years, and divisions.</p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="secondary-button" onClick={() => setShowAssignments(true)}>
+                <Icon name="grid" size={14} /> &nbsp;View Assignments
+              </button>
+              <button className="primary-button" disabled={!teachers.length} style={{ opacity: teachers.length ? 1 : .5 }} onClick={() => { setWizardError(''); setShowWizard(true) }}>
+                <Icon name="plus" size={16} /> Add Assignment
+              </button>
+            </div>
+          </div>
+
+          <div className="fac-block-body">
+            {tree.length ? (
+              <div className="fac-assign-list">
+                {tree.slice(0, 4).map(t => (
+                  <div className="fac-assign-card" key={t.teacherId}>
+                    <div className="fac-assign-card-head">
+                      <div className="fac-assign-avatar">{initials(t.teacherName)}</div>
+                      <div>
+                        <b>{t.teacherName}</b>
+                        <small>{t.subjects.length} assignment{t.subjects.length === 1 ? '' : 's'}</small>
+                      </div>
+                    </div>
+                    {t.subjects.slice(0, 2).map(s => (
+                      <div className="fac-assign-subject-row" key={s.key}>
+                        <div className="fac-assign-subject-main">
+                          <div className="name">{s.subjectName} <SubjectTypeBadge name="" type={s.subjectType} showName={false} /></div>
+                          <div className="meta">{s.department} &middot; {yearLabel(s.yearOfStudy)}</div>
+                        </div>
+                        <div>{s.divisions.map(d => <span className="fac-div-pill" key={d.assignmentId}>{d.divisionName}</span>)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {tree.length > 4 && (
+                  <button className="secondary-button" style={{ justifySelf: 'start' }} onClick={() => setShowAssignments(true)}>
+                    View all {assignments.length} assignments
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="fac-empty">
+                <div className="fac-empty-icon"><Icon name="link" size={18} /></div>
+                <h3>No teaching assignments configured yet.</h3>
+                <p>Assign a teacher to their first subject to get started.</p>
+                <button className="primary-button" disabled={!teachers.length} style={{ opacity: teachers.length ? 1 : .5 }} onClick={() => setShowWizard(true)}>
+                  <Icon name="plus" size={16} /> Add Assignment
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* ── MODALS ─────────────────────────────────────────────────── */}
+
+      {showDirectory && (
+        <FacultyDirectoryModal
+          teachers={teachers}
+          assignmentCountByTeacher={assignmentCountByTeacher}
+          onClose={() => setShowDirectory(false)}
+          onRequestEdit={t => { setTeacherEditError(''); setEditTeacher(t) }}
+          onRequestDelete={t => setDeleteTeacherTarget(t)}
+        />
+      )}
+
+      {editTeacher && (
+        <TeacherEditModal
+          teacher={editTeacher}
+          onClose={() => setEditTeacher(null)}
+          onSave={saveTeacherEdit}
+          error={teacherEditError}
+        />
+      )}
+
+      <ConfirmModal
+        isOpen={!!deleteTeacherTarget}
+        title="Delete Faculty Member?"
+        itemName={deleteTeacherTarget?.teacher_name}
+        message={
+          deleteTeacherTarget && (assignmentCountByTeacher.get(deleteTeacherTarget.teacher_id) || 0) > 0
+            ? `This teacher currently has ${assignmentCountByTeacher.get(deleteTeacherTarget.teacher_id)} subject assignment(s). Deleting the teacher will remove those relationships.`
+            : 'Are you sure you want to delete this faculty member? This action cannot be undone.'
+        }
+        onCancel={() => setDeleteTeacherTarget(null)}
+        onConfirm={confirmDeleteTeacher}
+      />
+
+      {showWizard && (
+        <AddAssignmentWizardModal
+          teachers={teachers}
+          groups={groups}
+          onClose={() => setShowWizard(false)}
+          onSubmit={submitWizard}
+          submitError={wizardError}
+        />
+      )}
+
+      {showAssignments && (
+        <AssignmentsDirectoryModal
+          tree={tree}
+          departmentsList={departmentsList}
+          teachers={teachers}
+          onClose={() => setShowAssignments(false)}
+          onEditRow={row => { setAssignmentEditError(''); setEditAssignmentRow(row) }}
+          onDeleteRow={row => setDeleteAssignmentTarget(row)}
+        />
+      )}
+
+      {editAssignmentRow && (
+        <AssignmentEditModal
+          assignment={editAssignmentRow}
+          teachers={teachers}
+          onClose={() => setEditAssignmentRow(null)}
+          onSave={saveAssignmentEdit}
+          error={assignmentEditError}
+        />
+      )}
+
+      <ConfirmModal
+        isOpen={!!deleteAssignmentTarget}
+        title="Remove Assignment?"
+        itemName={deleteAssignmentTarget ? `${deleteAssignmentTarget.teacherName} \u2014 ${deleteAssignmentTarget.subjectName}` : ''}
+        message={deleteAssignmentTarget ? `Remove ${deleteAssignmentTarget.teacherName} from ${deleteAssignmentTarget.subjectName} \u00b7 ${deleteAssignmentTarget.department} \u00b7 ${yearLabel(deleteAssignmentTarget.yearOfStudy)} \u00b7 Div ${deleteAssignmentTarget.divisionName}?` : ''}
+        onCancel={() => setDeleteAssignmentTarget(null)}
+        onConfirm={confirmDeleteAssignment}
+      />
+
     </div>
   )
 }
-
-function Field({ label, children }) {
-  return (
-    <label style={{ display: 'grid', gap: 7, marginTop: 14 }}>
-      <span style={fieldLabel}>{label}</span>
-      {children}
-    </label>
-  )
-}
-
-/* ─── Styles ─────────────────────────────────────────────────────────── */
-const page        = { padding: '34px 38px', maxWidth: 1100, margin: '0 auto' }
-const hero        = { padding: '28px 30px', borderRadius: 18, background: 'linear-gradient(135deg,#eef5ff,#f7f4ff)', border: '1px solid #dbe5f5', marginBottom: 20 }
-const eyebrow     = { fontSize: 11, fontWeight: 800, letterSpacing: '.12em', color: '#4f46e5' }
-const title       = { fontSize: 32, margin: '8px 0 6px', color: '#172554' }
-const sub         = { margin: 0, color: '#64748b', fontSize: 15, lineHeight: 1.6 }
-const card        = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 26, marginBottom: 20, boxShadow: '0 5px 20px rgba(15,23,42,.04)' }
-const h2          = { fontSize: 19, color: '#172554', margin: '0 0 14px' }
-const grid        = { display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 14, alignItems: 'end' }
-const twoCol      = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }
-const inp         = { width: '100%', boxSizing: 'border-box', padding: '11px 12px', border: '1px solid #cbd5e1', borderRadius: 9, fontSize: 14, background: '#fff' }
-const button      = { padding: '11px 17px', border: 0, borderRadius: 9, background: 'linear-gradient(90deg,#2563eb,#6d28d9)', color: '#fff', fontWeight: 800, cursor: 'pointer' }
-const fieldLabel  = { fontSize: 11, fontWeight: 800, letterSpacing: '.08em', color: '#64748b', display: 'block', marginTop: 4 }
-const teacherList = { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginTop: 20 }
-const teacherCard = { padding: 11, border: '1px solid #e2e8f0', borderRadius: 9, display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }
-const assignmentRow = { display: 'grid', gridTemplateColumns: '1.4fr 1.4fr auto', gap: 10, alignItems: 'center', padding: 13, border: '1px solid #e2e8f0', borderRadius: 10 }
-const deleteBtn   = { border: 0, background: '#fee2e2', color: '#b91c1c', padding: '7px 10px', borderRadius: 7, cursor: 'pointer' }
-const muted       = { color: '#64748b', fontSize: 12 }
-const successBox  = { padding: 12, borderRadius: 9, background: '#ecfdf5', color: '#047857', marginBottom: 16 }
-const errorBox    = { padding: 12, borderRadius: 9, background: '#fef2f2', color: '#b91c1c', marginBottom: 16 }
-
-const pickerTrigger = (active, disabled = false) => ({
-  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-  padding: '11px 12px', border: `1.5px solid ${active ? '#6d28d9' : '#cbd5e1'}`,
-  borderRadius: 9, fontSize: 14,
-  background: disabled ? '#f8fafc' : active ? '#faf5ff' : '#fff',
-  color: disabled ? '#94a3b8' : active ? '#4c1d95' : '#64748b',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  fontWeight: active ? 600 : 400,
-  transition: 'all .15s',
-})
-const pickerArrow = { fontSize: 18, color: '#94a3b8', marginLeft: 'auto' }
-
-/* ─── Modal styles ───────────────────────────────────────────────────── */
-const overlay = {
-  position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(4px)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
-}
-const modal = {
-  background: '#fff', borderRadius: 20, width: 480, maxWidth: '92vw',
-  boxShadow: '0 24px 80px rgba(15,23,42,.18)', overflow: 'hidden',
-  display: 'flex', flexDirection: 'column',
-}
-const modalHeader = {
-  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-  padding: '22px 24px 0',
-}
-const modalEyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: '.12em', color: '#6d28d9', marginBottom: 4 }
-const modalTitle   = { fontSize: 20, fontWeight: 700, color: '#172554' }
-const closeBtn     = { border: 0, background: 'transparent', fontSize: 18, color: '#94a3b8', cursor: 'pointer', lineHeight: 1, padding: 4 }
-
-const stepRow = { display: 'flex', alignItems: 'center', gap: 0, padding: '18px 24px 0', position: 'relative' }
-const stepLine = { position: 'absolute', top: 27, left: 44, right: 44, height: 2, background: '#e2e8f0', zIndex: 0 }
-const stepDot = active => ({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flex: 1, position: 'relative', zIndex: 1 })
-const stepDotInner = (done, active) => ({
-  width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 13, fontWeight: 700,
-  background: done ? '#6d28d9' : active ? '#ede9fe' : '#f1f5f9',
-  color: done ? '#fff' : active ? '#6d28d9' : '#94a3b8',
-  border: active ? '2px solid #6d28d9' : '2px solid transparent',
-  transition: 'all .2s',
-})
-const stepDotLabel = active => ({ fontSize: 10, fontWeight: 700, color: active ? '#6d28d9' : '#94a3b8', letterSpacing: '.05em' })
-
-const stepContent = { padding: '16px 24px 8px', minHeight: 180 }
-const stepHint = { fontSize: 13, color: '#64748b', marginTop: 0, marginBottom: 14 }
-
-const optionGrid = { display: 'grid', gap: 8 }
-const optionBtn = active => ({
-  display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px',
-  border: `1.5px solid ${active ? '#6d28d9' : '#e2e8f0'}`,
-  borderRadius: 12, background: active ? '#faf5ff' : '#fff',
-  cursor: 'pointer', textAlign: 'left', transition: 'all .15s',
-})
-const optionIcon = { fontSize: 20 }
-const optionText = { fontSize: 14, fontWeight: 600, color: '#1e293b', flex: 1 }
-const optionMeta = { fontSize: 11, color: '#94a3b8' }
-
-const divGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }
-const divBtn = active => ({
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-  border: `1.5px solid ${active ? '#6d28d9' : '#e2e8f0'}`,
-  borderRadius: 12, background: active ? '#faf5ff' : '#fff',
-  cursor: 'pointer', transition: 'all .15s',
-})
-const divCheck = active => ({
-  width: 20, height: 20, borderRadius: 6, border: `2px solid ${active ? '#6d28d9' : '#cbd5e1'}`,
-  background: active ? '#6d28d9' : '#fff', color: '#fff', fontSize: 12,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s',
-})
-const divLabel = active => ({ fontSize: 14, fontWeight: active ? 700 : 500, color: active ? '#4c1d95' : '#374151' })
-
-const selectAllBtn = {
-  background: 'none', border: 'none', color: '#6d28d9', fontSize: 12,
-  fontWeight: 600, cursor: 'pointer', padding: '2px 4px', textDecoration: 'underline',
-}
-
-const subjectOptionCard = active => ({
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-  border: `1.5px solid ${active ? '#6d28d9' : '#e2e8f0'}`,
-  borderRadius: 12, background: active ? '#faf5ff' : '#fff',
-  cursor: 'pointer', textAlign: 'left', transition: 'all .15s', width: '100%',
-})
-const subjectCardTitle = active => ({
-  fontSize: 14, fontWeight: active ? 700 : 600, color: active ? '#4c1d95' : '#1e293b',
-})
-const typeBadge = isLab => ({
-  fontSize: 11, padding: '2px 8px', borderRadius: 999,
-  background: isLab ? '#fef3c7' : '#e0e7ff',
-  color: isLab ? '#92400e' : '#3730a3',
-  fontWeight: 600,
-})
-
-const selectionSummary = {
-  marginTop: 14, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8,
-  fontSize: 13, color: '#15803d', fontWeight: 600,
-}
-
-const modalFooter = { display: 'flex', alignItems: 'center', gap: 10, padding: '16px 24px 20px', borderTop: '1px solid #f1f5f9' }
-const backBtn    = { padding: '9px 15px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 13, color: '#64748b' }
-const cancelBtn  = { padding: '9px 15px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 13, color: '#64748b' }
-const confirmBtn = ok => ({
-  padding: '9px 18px', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
-  background: ok ? 'linear-gradient(90deg,#2563eb,#6d28d9)' : '#e2e8f0',
-  color: ok ? '#fff' : '#94a3b8', transition: 'all .15s',
-})
-
-/* ─── Current Assignments Redesign Styles ────────────────────────────── */
-const docIconBox = {
-  width: 42,
-  height: 42,
-  borderRadius: 11,
-  background: '#eff6ff',
-  border: '1px solid #dbeafe',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flexShrink: 0,
-}
-
-const searchInputStyle = {
-  width: '100%',
-  boxSizing: 'border-box',
-  padding: '9px 30px 9px 36px',
-  borderRadius: 9,
-  border: '1px solid #e2e8f0',
-  fontSize: 13,
-  background: '#fff',
-  color: '#0f172a',
-  outline: 'none',
-}
-
-const clearSearchBtn = {
-  position: 'absolute',
-  right: 9,
-  top: '50%',
-  transform: 'translateY(-50%)',
-  background: 'transparent',
-  border: 'none',
-  fontSize: 12,
-  color: '#94a3b8',
-  cursor: 'pointer',
-  padding: 4,
-  lineHeight: 1,
-}
-
-const deptSelectStyle = {
-  padding: '9px 32px 9px 13px',
-  borderRadius: 9,
-  border: '1px solid #e2e8f0',
-  fontSize: 13,
-  background: '#fff',
-  color: '#0f172a',
-  cursor: 'pointer',
-  outline: 'none',
-  appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 11px center',
-  fontWeight: 500,
-}
-
-const emptyStateBox = {
-  textAlign: 'center',
-  padding: '48px 20px',
-  background: '#f8fafc',
-  borderRadius: 14,
-  border: '1px dashed #cbd5e1',
-}
-
-const facultyCardContainer = {
-  border: '1px solid #e2e8f0',
-  borderRadius: 14,
-  overflow: 'hidden',
-  background: '#fff',
-  boxShadow: '0 1px 3px rgba(15,23,42,.03)',
-  transition: 'box-shadow .15s',
-}
-
-const facultyCardHeader = isCollapsed => ({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '16px 20px',
-  cursor: 'pointer',
-  background: '#fff',
-  borderBottom: isCollapsed ? 'none' : '1px solid #f1f5f9',
-  transition: 'background .15s',
-  userSelect: 'none',
-})
-
-const avatarCircle = {
-  width: 38,
-  height: 38,
-  borderRadius: '50%',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: 13,
-  fontWeight: 700,
-  letterSpacing: '.02em',
-  flexShrink: 0,
-}
-
-const chevronButton = {
-  border: 'none',
-  background: 'transparent',
-  cursor: 'pointer',
-  padding: 6,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 6,
-}
-
-const assignmentsTable = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  textAlign: 'left',
-  fontSize: 13,
-}
-
-const tableHeaderRow = {
-  background: '#f8fafc',
-  borderBottom: '1px solid #e2e8f0',
-}
-
-const thCell = {
-  padding: '11px 18px',
-  fontSize: 11,
-  fontWeight: 700,
-  color: '#64748b',
-  letterSpacing: '.02em',
-}
-
-const tableBodyRow = {
-  borderBottom: '1px solid #f1f5f9',
-  transition: 'background .15s',
-}
-
-const tdCell = {
-  padding: '13px 18px',
-  verticalAlign: 'middle',
-  fontSize: 13,
-}
-
-const divisionPill = {
-  display: 'inline-block',
-  background: '#eff6ff',
-  color: '#2563eb',
-  padding: '4px 10px',
-  borderRadius: 6,
-  fontSize: 12,
-  fontWeight: 600,
-}
-
-const typePill = isLab => ({
-  display: 'inline-block',
-  background: isLab ? '#ede9fe' : '#dcfce7',
-  color: isLab ? '#7c3aed' : '#16a34a',
-  padding: '4px 12px',
-  borderRadius: 6,
-  fontSize: 12,
-  fontWeight: 600,
-})
-
-const actionRemoveBtn = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 5,
-  border: '1px solid #fee2e2',
-  background: '#fef2f2',
-  color: '#ef4444',
-  padding: '5px 12px',
-  borderRadius: 7,
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: 'pointer',
-  transition: 'all .15s',
-}
-
-const summaryBadge = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '9px 22px',
-  borderRadius: 999,
-  background: '#eff6ff',
-  border: '1px solid #dbeafe',
-  color: '#2563eb',
-  fontSize: 13,
-  fontWeight: 600,
-}
-

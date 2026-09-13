@@ -1,0 +1,979 @@
+/* =========================================================
+   FACULTY & ASSIGNMENTS
+   Extends the shared "academic-page" design system defined in
+   AcademicStructureModern.css (hero, stat cards, modal, field,
+   primary/secondary buttons, danger-modal, global-notice).
+   Everything below is specific to this page's two blocks.
+========================================================= */
+
+.fac-hero-watermark {
+    position: absolute;
+    z-index: 0;
+    right: 22px;
+    bottom: -6px;
+    width: min(46%, 560px);
+    height: auto;
+    color: #7e9de4;
+    opacity: .13;
+    pointer-events: none;
+}
+
+[data-theme="dark"] .fac-hero-watermark {
+    color: #5574bb;
+    opacity: .16;
+}
+
+/* =========================================================
+   BLOCKS
+========================================================= */
+
+.fac-blocks {
+    display: grid;
+    gap: 18px;
+}
+
+.fac-block {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--as-border);
+    border-radius: 19px;
+    background: var(--as-card);
+    box-shadow: var(--as-shadow);
+}
+
+.fac-block-bg {
+    position: absolute;
+    z-index: 0;
+    right: -18px;
+    top: -18px;
+    width: 220px;
+    height: 220px;
+    color: #2563eb;
+    opacity: .05;
+    pointer-events: none;
+}
+
+[data-theme="dark"] .fac-block-bg {
+    color: #60a5fa;
+    opacity: .07;
+}
+
+.fac-block-head {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 22px;
+    border-bottom: 1px solid var(--as-border);
+}
+
+.fac-block-head-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.fac-block-icon {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 13px;
+    background: #edf3ff;
+    color: #2563eb;
+}
+
+.fac-block-icon.purple {
+    background: #f5f3ff;
+    color: #7c3aed;
+}
+
+[data-theme="dark"] .fac-block-icon {
+    background: #14213a;
+    color: #60a5fa;
+}
+
+[data-theme="dark"] .fac-block-icon.purple {
+    background: #1d1533;
+    color: #c084fc;
+}
+
+.fac-block-head h2 {
+    margin: 0;
+    color: var(--as-heading);
+    font-size: 18px;
+    line-height: 1.15;
+    font-weight: 850;
+    letter-spacing: -.02em;
+}
+
+.fac-block-head p {
+    margin: 3px 0 0;
+    color: var(--as-muted);
+    font-size: 11px;
+}
+
+.fac-block-body {
+    position: relative;
+    z-index: 1;
+    padding: 20px 22px 22px;
+}
+
+/* =========================================================
+   ADD TEACHER (compact inline row)
+========================================================= */
+
+.fac-add-row {
+    display: grid;
+    grid-template-columns: 1.6fr .9fr auto;
+    align-items: end;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.fac-add-row .field {
+    margin-bottom: 0;
+}
+
+.fac-add-row .primary-button {
+    min-height: 40px;
+    white-space: nowrap;
+}
+
+/* =========================================================
+   TEACHER PREVIEW GRID (compact chips inside Faculty block)
+========================================================= */
+
+.fac-teacher-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.fac-teacher-preview-head .section-kicker {
+    margin-bottom: 0;
+}
+
+.fac-teacher-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.fac-teacher-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 12px;
+    border: 1px solid var(--as-border);
+    border-radius: 12px;
+    background: var(--as-page);
+    transition: border-color .15s ease, transform .15s ease;
+}
+
+.fac-teacher-chip:hover {
+    border-color: #93c5fd;
+    transform: translateY(-2px);
+}
+
+.fac-teacher-chip b {
+    color: var(--as-heading);
+    font-size: 12px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fac-teacher-chip span {
+    color: var(--as-muted);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.fac-teacher-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed #93c5fd;
+    border-radius: 12px;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    background: transparent;
+}
+
+[data-theme="dark"] .fac-teacher-more {
+    border-color: #3730a3;
+    color: #818cf8;
+}
+
+/* =========================================================
+   SHARED SEARCH BOX (used in directory modals) — mirrors dept-search
+========================================================= */
+
+.fac-search {
+    width: 100%;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 12px;
+    border: 1px solid var(--as-border);
+    border-radius: 11px;
+    background: var(--as-page);
+    color: var(--as-muted);
+    margin-bottom: 16px;
+}
+
+.fac-search:focus-within {
+    border-color: #9ab8f4;
+    background: var(--as-card);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .06);
+}
+
+.fac-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--as-text);
+    font-size: 12px;
+}
+
+.fac-search input::placeholder {
+    color: var(--as-muted);
+}
+
+.fac-search button {
+    display: flex;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+/* =========================================================
+   FACULTY DIRECTORY TABLE
+========================================================= */
+
+.fac-table-wrap {
+    border: 1px solid var(--as-border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.fac-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.fac-table thead th {
+    padding: 10px 14px;
+    text-align: left;
+    background: var(--as-page);
+    color: var(--as-muted);
+    font-size: 9.5px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--as-border);
+}
+
+.fac-table tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--as-border);
+    color: var(--as-text);
+    font-size: 12.5px;
+    vertical-align: middle;
+}
+
+.fac-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.fac-table tbody tr:hover {
+    background: var(--as-page);
+}
+
+.fac-table .name-cell {
+    font-weight: 800;
+    color: var(--as-heading);
+}
+
+.fac-max-badge {
+    display: inline-flex;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+[data-theme="dark"] .fac-max-badge {
+    background: #14213a;
+    color: #60a5fa;
+}
+
+.fac-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+/* =========================================================
+   MODAL SIZE VARIANTS
+========================================================= */
+
+.fac-modal-lg {
+    width: min(640px, 100%);
+}
+
+.fac-modal-xl {
+    width: min(860px, 100%);
+    max-height: min(90vh, 820px);
+}
+
+/* =========================================================
+   ASSIGNMENT WIZARD — STEP INDICATOR
+========================================================= */
+
+.fac-steps {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0 22px;
+    padding: 0 4px;
+}
+
+.fac-steps::before {
+    content: "";
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    top: 15px;
+    height: 2px;
+    background: var(--as-border);
+    z-index: 0;
+}
+
+.fac-step {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.fac-step-dot {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--as-card);
+    border: 2px solid var(--as-border);
+    color: var(--as-muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.fac-step.active .fac-step-dot {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+.fac-step.done .fac-step-dot {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.fac-step-label {
+    color: var(--as-muted);
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-align: center;
+}
+
+.fac-step.active .fac-step-label {
+    color: var(--as-heading);
+}
+
+/* =========================================================
+   WIZARD — TEACHER PICK (searchable radio list)
+========================================================= */
+
+.fac-radio-list {
+    display: grid;
+    gap: 7px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.fac-radio-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid var(--as-border);
+    border-radius: 12px;
+    background: var(--as-page);
+    color: var(--as-text);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.fac-radio-row:hover {
+    border-color: #93c5fd;
+}
+
+.fac-radio-row.selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+[data-theme="dark"] .fac-radio-row.selected {
+    background: #14213a;
+    color: #93c5fd;
+}
+
+.fac-radio-dot {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 17px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fac-radio-row.selected .fac-radio-dot {
+    border-color: #2563eb;
+}
+
+.fac-radio-dot-inner {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #2563eb;
+}
+
+.fac-radio-sub {
+    margin-left: auto;
+    color: var(--as-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.fac-selected-banner {
+    margin-top: 12px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 11.5px;
+    font-weight: 750;
+}
+
+[data-theme="dark"] .fac-selected-banner {
+    background: #14213a;
+    color: #93c5fd;
+}
+
+/* =========================================================
+   WIZARD — DEPARTMENT MULTI-SELECT
+========================================================= */
+
+.fac-dept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.fac-dept-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 14px;
+    border: 1.5px solid var(--as-border);
+    border-radius: 13px;
+    background: var(--as-page);
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.fac-dept-card:hover {
+    border-color: #93c5fd;
+}
+
+.fac-dept-card.checked {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+[data-theme="dark"] .fac-dept-card.checked {
+    background: #14213a;
+}
+
+.fac-checkbox {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    border-radius: 6px;
+    border: 2px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+.fac-dept-card.checked .fac-checkbox,
+.fac-subject-row.checked .fac-checkbox {
+    border-color: #2563eb;
+    background: #2563eb;
+}
+
+.fac-dept-card span,
+.fac-subject-row .fac-subject-name {
+    font-size: 12.5px;
+    font-weight: 750;
+    color: var(--as-text);
+}
+
+.chip-row.wrap {
+    flex-wrap: wrap;
+}
+
+/* =========================================================
+   WIZARD — SMART SUBJECT REVEAL
+========================================================= */
+
+.fac-subject-groups {
+    display: grid;
+    gap: 14px;
+}
+
+.fac-subject-group {
+    border: 1px solid var(--as-border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.fac-subject-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 11px 14px;
+    background: var(--as-page);
+    border-bottom: 1px solid var(--as-border);
+}
+
+.fac-subject-group-title {
+    color: var(--as-heading);
+    font-size: 12.5px;
+    font-weight: 850;
+}
+
+.fac-subject-group-title small {
+    display: block;
+    margin-top: 1px;
+    color: var(--as-muted);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.fac-div-toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.fac-div-toggle {
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 7px;
+    border: 1px solid var(--as-border);
+    background: var(--as-card);
+    color: var(--as-muted);
+    font-size: 10px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.fac-div-toggle.on {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+}
+
+.fac-subject-list {
+    padding: 8px;
+    display: grid;
+    gap: 4px;
+}
+
+.fac-subject-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .12s ease;
+}
+
+.fac-subject-row:hover {
+    background: var(--as-page);
+}
+
+.fac-subject-row.checked {
+    background: #f7faff;
+}
+
+[data-theme="dark"] .fac-subject-row.checked {
+    background: #101c33;
+}
+
+.fac-subject-row .fac-subject-name {
+    flex: 1;
+}
+
+.fac-subject-group-empty {
+    padding: 14px;
+    color: var(--as-muted);
+    font-size: 11px;
+    font-style: italic;
+}
+
+/* =========================================================
+   SELECTED SUBJECT CHIPS SUMMARY
+========================================================= */
+
+.fac-selection-summary {
+    margin-top: 14px;
+    padding: 12px 13px;
+    border: 1px dashed var(--as-border);
+    border-radius: 12px;
+    background: var(--as-page);
+}
+
+.fac-selection-summary-count {
+    color: var(--as-heading);
+    font-size: 11.5px;
+    font-weight: 850;
+    margin-bottom: 8px;
+}
+
+/* =========================================================
+   REVIEW STEP
+========================================================= */
+
+.fac-review-card {
+    border: 1px solid var(--as-border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.fac-review-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 14px;
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--as-border);
+}
+
+.fac-review-row:last-child {
+    border-bottom: 0;
+}
+
+.fac-review-row .label {
+    color: var(--as-muted);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding-top: 2px;
+}
+
+.fac-review-row .value {
+    color: var(--as-heading);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.6;
+}
+
+.fac-review-sub {
+    display: block;
+    color: var(--as-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+}
+
+/* =========================================================
+   ASSIGNMENTS DIRECTORY — FILTER BAR
+========================================================= */
+
+.fac-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.fac-filter-select {
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--as-border);
+    border-radius: 9px;
+    background: var(--as-card);
+    color: var(--as-text);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+/* =========================================================
+   ASSIGNMENTS DIRECTORY — TEACHER-GROUPED CARDS
+========================================================= */
+
+.fac-assign-list {
+    display: grid;
+    gap: 12px;
+}
+
+.fac-assign-card {
+    border: 1px solid var(--as-border);
+    border-radius: 15px;
+    overflow: hidden;
+    background: var(--as-card);
+}
+
+.fac-assign-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 15px;
+    cursor: pointer;
+    background: var(--as-page);
+}
+
+.fac-assign-avatar {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.fac-assign-card-head b {
+    display: block;
+    color: var(--as-heading);
+    font-size: 13px;
+    font-weight: 850;
+}
+
+.fac-assign-card-head small {
+    color: var(--as-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.fac-assign-card-head .chev {
+    margin-left: auto;
+    color: var(--as-muted);
+    display: flex;
+    transition: transform .15s ease;
+}
+
+.fac-assign-card-head .chev.open {
+    transform: rotate(180deg);
+}
+
+.fac-assign-subject-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 15px;
+    border-top: 1px solid var(--as-border);
+}
+
+.fac-assign-subject-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.fac-assign-subject-main .name {
+    color: var(--as-heading);
+    font-size: 12.5px;
+    font-weight: 800;
+}
+
+.fac-assign-subject-main .meta {
+    margin-top: 2px;
+    color: var(--as-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.fac-div-pill {
+    display: inline-flex;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #f5f3ff;
+    color: #7c3aed;
+    font-size: 10px;
+    font-weight: 800;
+    margin-right: 4px;
+}
+
+[data-theme="dark"] .fac-div-pill {
+    background: #1d1533;
+    color: #c084fc;
+}
+
+.fac-assign-actions {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.fac-icon-btn {
+    width: 29px;
+    height: 29px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--as-border);
+    border-radius: 8px;
+    background: var(--as-card);
+    color: var(--as-muted);
+    cursor: pointer;
+}
+
+.fac-icon-btn:hover {
+    border-color: #2563eb;
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.fac-icon-btn.danger:hover {
+    border-color: #fecaca;
+    color: #dc2626;
+    background: #fff1f2;
+}
+
+[data-theme="dark"] .fac-icon-btn:hover {
+    background: #14213a;
+}
+
+[data-theme="dark"] .fac-icon-btn.danger:hover {
+    background: #2b141d;
+    border-color: #55202d;
+    color: #fb7185;
+}
+
+/* =========================================================
+   EMPTY STATE (generic, reused across both blocks/modals)
+========================================================= */
+
+.fac-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 34px 20px;
+    text-align: center;
+    border: 1px dashed var(--as-border);
+    border-radius: 15px;
+    background: var(--as-page);
+}
+
+.fac-empty .fac-empty-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: #eef4ff;
+    color: #2563eb;
+}
+
+[data-theme="dark"] .fac-empty .fac-empty-icon {
+    background: #14213a;
+    color: #60a5fa;
+}
+
+.fac-empty h3 {
+    margin: 0;
+    color: var(--as-heading);
+    font-size: 13.5px;
+    font-weight: 850;
+}
+
+.fac-empty p {
+    margin: 3px 0 12px;
+    color: var(--as-muted);
+    font-size: 11px;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 900px) {
+    .fac-add-row {
+        grid-template-columns: 1fr;
+    }
+
+    .fac-modal-xl {
+        width: 100%;
+    }
+}
+
+@media (max-width: 700px) {
+    .fac-block-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .fac-steps {
+        padding: 0;
+    }
+
+    .fac-review-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}
