@@ -8,3 +8,118 @@
 @media (max-width: 700px) {
   .academic-stats { margin-bottom: 104px !important; }
 }
+
+/* =========================================================
+   DEPARTMENT PAGE REFINEMENTS
+   - Remove the irrelevant Total Years statistic.
+   - Give the remaining statistics equal width.
+   - Improve readability inside department cards.
+   - Rotate through distinct accent families by card order so
+     departments do not accidentally reuse the same color.
+========================================================= */
+
+.academic-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.academic-stats .stat-green {
+  display: none !important;
+}
+
+.dept-meta {
+  font-size: 13px !important;
+  line-height: 1.35;
+  font-weight: 750 !important;
+}
+
+.dept-year-row {
+  font-size: 12.5px !important;
+}
+
+.dept-year-row span {
+  font-weight: 700 !important;
+}
+
+.dept-year-row b {
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+/* Use the six existing visual families in a guaranteed sequence. */
+.dept-grid > .dept-card:nth-child(6n + 1) {
+  --accent: #2563eb;
+  --accent-light: #60a5fa;
+  --accent-soft: #eef5ff;
+  --accent-glow: rgba(96, 165, 250, .13);
+  --accent-wave: rgba(37, 99, 235, .13);
+  --accent-border: #c8dcff;
+}
+
+.dept-grid > .dept-card:nth-child(6n + 2) {
+  --accent: #7c3aed;
+  --accent-light: #a78bfa;
+  --accent-soft: #f5f0ff;
+  --accent-glow: rgba(167, 139, 250, .14);
+  --accent-wave: rgba(124, 58, 237, .13);
+  --accent-border: #dfd0ff;
+}
+
+.dept-grid > .dept-card:nth-child(6n + 3) {
+  --accent: #059669;
+  --accent-light: #34d399;
+  --accent-soft: #ecfbf5;
+  --accent-glow: rgba(52, 211, 153, .13);
+  --accent-wave: rgba(5, 150, 105, .12);
+  --accent-border: #c5efdc;
+}
+
+.dept-grid > .dept-card:nth-child(6n + 4) {
+  --accent: #d97706;
+  --accent-light: #fbbf24;
+  --accent-soft: #fff8e9;
+  --accent-glow: rgba(251, 191, 36, .13);
+  --accent-wave: rgba(217, 119, 6, .12);
+  --accent-border: #f5dfb2;
+}
+
+.dept-grid > .dept-card:nth-child(6n + 5) {
+  --accent: #db2777;
+  --accent-light: #f472b6;
+  --accent-soft: #fff1f7;
+  --accent-glow: rgba(244, 114, 182, .13);
+  --accent-wave: rgba(219, 39, 119, .11);
+  --accent-border: #f6cfe1;
+}
+
+.dept-grid > .dept-card:nth-child(6n + 6) {
+  --accent: #0891b2;
+  --accent-light: #22d3ee;
+  --accent-soft: #ecfbff;
+  --accent-glow: rgba(34, 211, 238, .13);
+  --accent-wave: rgba(8, 145, 178, .11);
+  --accent-border: #c6edf5;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 1) {
+  --accent: #60a5fa; --accent-light: #93c5fd; --accent-soft: #101c33; --accent-border: #24406f;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 2) {
+  --accent: #a78bfa; --accent-light: #c4b5fd; --accent-soft: #1a1530; --accent-border: #3c2c62;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 3) {
+  --accent: #34d399; --accent-light: #6ee7b7; --accent-soft: #0d2019; --accent-border: #1b4b37;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 4) {
+  --accent: #fbbf24; --accent-light: #fcd34d; --accent-soft: #241a0c; --accent-border: #4d3814;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 5) {
+  --accent: #f472b6; --accent-light: #f9a8d4; --accent-soft: #260f1b; --accent-border: #4e2037;
+}
+
+[data-theme="dark"] .dept-grid > .dept-card:nth-child(6n + 6) {
+  --accent: #22d3ee; --accent-light: #67e8f9; --accent-soft: #0c2028; --accent-border: #1b4652;
+}
