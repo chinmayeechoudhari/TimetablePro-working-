@@ -55,7 +55,7 @@ export default function App() {
       {!enteredApp && <LandingScreen onEnter={() => setEnteredApp(true)} />}
       <div style={{ display:'flex', height:'100vh', width:'100%', overflow:'hidden', background:'var(--bg-page)', fontFamily:"'Inter','Segoe UI',sans-serif", opacity:enteredApp?1:0, transition:'opacity .4s ease' }}>
         <Navbar />
-        <div style={{ flex:1, height:'100vh', overflowY:'auto', overflowX:'hidden', background:'var(--bg-page)' }}>
+        <div className="app-main-scroll" style={{ flex:1, height:'100vh', overflowY:'auto', overflowX:'hidden', background:'var(--bg-page)' }}>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<StatusDashboard />} />
