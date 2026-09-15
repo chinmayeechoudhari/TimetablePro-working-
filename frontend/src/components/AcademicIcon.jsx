@@ -17,6 +17,8 @@ export default function AcademicIcon({ name, size = 18, stroke = 1.9 }) {
         beaker: <><path d="M9 2v6.2L4.5 17a2 2 0 0 0 1.8 2.9h11.4a2 2 0 0 0 1.8-2.9L15 8.2V2" /><path d="M8 2h8" /><path d="M7 15h10" /></>,
         chevronRight: <path d="m9 6 6 6-6 6" />,
         arrowRight: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
+        'arrow-left': <><path d="M19 12H5" /><path d="m11 18-6-6 6-6" /></>,
+        calendar: <><rect x="3.5" y="5" width="17" height="16" rx="2" /><path d="M7 3v4M17 3v4M3.5 10h17" /><path d="M8 14h3M13 14h3M8 17h3" /></>,
     }
     return <svg {...common}>{paths[name]}</svg>
 }
