@@ -197,7 +197,7 @@ export default function RoomForm() {
     } catch (err) {
       setError(
         err.response?.data?.detail ||
-          'Could not save the room. Please try again.'
+        'Could not save the room. Please try again.'
       )
     } finally {
       setIsSaving(false)
@@ -232,7 +232,7 @@ export default function RoomForm() {
     } catch (err) {
       setError(
         err.response?.data?.detail ||
-          'Could not delete the room.'
+        'Could not delete the room.'
       )
     } finally {
       setIsDeleting(false)
@@ -447,9 +447,8 @@ export default function RoomForm() {
       <section className="category-tabs">
 
         <button
-          className={`category-tab ${
-            activeTab === 'classroom' ? 'active classroom-active' : ''
-          }`}
+          className={`category-tab ${activeTab === 'classroom' ? 'active classroom-active' : ''
+            }`}
           onClick={() => {
             setActiveTab('classroom')
             setSearch('')
@@ -469,9 +468,8 @@ export default function RoomForm() {
 
 
         <button
-          className={`category-tab ${
-            activeTab === 'lab' ? 'active lab-active' : ''
-          }`}
+          className={`category-tab ${activeTab === 'lab' ? 'active lab-active' : ''
+            }`}
           onClick={() => {
             setActiveTab('lab')
             setSearch('')
@@ -509,9 +507,8 @@ export default function RoomForm() {
             <div className="directory-title-row">
 
               <div
-                className={`directory-main-icon ${
-                  isLab ? 'directory-lab-icon' : ''
-                }`}
+                className={`directory-main-icon ${isLab ? 'directory-lab-icon' : ''
+                  }`}
               >
                 <Icon
                   name={isLab ? 'lab' : 'building'}
@@ -545,8 +542,8 @@ export default function RoomForm() {
                   ? 'laboratory'
                   : 'laboratories'
                 : currentCount === 1
-                ? 'classroom'
-                : 'classrooms'}
+                  ? 'classroom'
+                  : 'classrooms'}
             </div>
 
             <button
@@ -627,11 +624,10 @@ export default function RoomForm() {
                       <div className="room-name-cell">
 
                         <div
-                          className={`room-icon ${
-                            room.room_type === 'lab'
+                          className={`room-icon ${room.room_type === 'lab'
                               ? 'room-icon-lab'
                               : 'room-icon-classroom'
-                          }`}
+                            }`}
                         >
                           <Icon
                             name={
@@ -665,11 +661,10 @@ export default function RoomForm() {
                       <div className="role-cell">
 
                         <span
-                          className={`role-badge ${
-                            room.room_type === 'lab'
+                          className={`role-badge ${room.room_type === 'lab'
                               ? 'role-lab'
                               : 'role-theory'
-                          }`}
+                            }`}
                         >
                           {room.room_type === 'lab'
                             ? 'LAB'
@@ -722,8 +717,8 @@ export default function RoomForm() {
                   ? 'laboratory'
                   : 'laboratories'
                 : currentCount === 1
-                ? 'classroom'
-                : 'classrooms'}
+                  ? 'classroom'
+                  : 'classrooms'}
             </div>
 
           </div>
@@ -733,9 +728,8 @@ export default function RoomForm() {
           <div className="empty-state">
 
             <div
-              className={`empty-icon ${
-                isLab ? 'empty-icon-lab' : ''
-              }`}
+              className={`empty-icon ${isLab ? 'empty-icon-lab' : ''
+                }`}
             >
               <Icon
                 name={isLab ? 'lab' : 'building'}
@@ -752,9 +746,8 @@ export default function RoomForm() {
             <p>
               {search
                 ? 'Try a different room number.'
-                : `Add your first ${
-                    isLab ? 'laboratory' : 'classroom'
-                  } to start building your timetable resources.`}
+                : `Add your first ${isLab ? 'laboratory' : 'classroom'
+                } to start building your timetable resources.`}
             </p>
 
             {!search && (
@@ -799,11 +792,10 @@ export default function RoomForm() {
               <div className="modal-title-group">
 
                 <div
-                  className={`modal-icon ${
-                    roomType === 'lab'
+                  className={`modal-icon ${roomType === 'lab'
                       ? 'modal-icon-lab'
                       : ''
-                  }`}
+                    }`}
                 >
                   <Icon
                     name={
@@ -884,11 +876,10 @@ export default function RoomForm() {
 
                   <button
                     type="button"
-                    className={`type-option ${
-                      roomType === 'classroom'
+                    className={`type-option ${roomType === 'classroom'
                         ? 'selected classroom-option'
                         : ''
-                    }`}
+                      }`}
                     onClick={() =>
                       setRoomType('classroom')
                     }
@@ -913,11 +904,10 @@ export default function RoomForm() {
 
                   <button
                     type="button"
-                    className={`type-option ${
-                      roomType === 'lab'
+                    className={`type-option ${roomType === 'lab'
                         ? 'selected lab-option'
                         : ''
-                    }`}
+                      }`}
                     onClick={() =>
                       setRoomType('lab')
                     }
@@ -1169,14 +1159,15 @@ export default function RoomForm() {
           cursor: not-allowed;
           transform: none;
         }
-
-        .hero-add-button {
-          position: relative;
-          z-index: 3;
-          min-width: 140px;
-          min-height: 48px;
-          font-size: 14px;
-        }
+.hero-add-button {
+  position: relative;
+  z-index: 3;
+  width: auto;
+  min-width: 140px;
+  min-height: 48px;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
 
         /* =========================
            STATS
