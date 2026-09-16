@@ -51,6 +51,13 @@ export default function AcademicStructureV2() {
   }
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    if (!modal) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [modal])
+
   const departments = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
   const departmentRows = useMemo(() => departments.map(name => {
     const rows = groups.filter(g => g.department === name)
@@ -145,8 +152,13 @@ export default function AcademicStructureV2() {
   }
   const isEdit = modal && modal.type === 'edit'
 
+  const pageStyle = modal ? {
+    position: 'fixed', inset: 0, width: '100vw', maxWidth: 'none', height: '100vh',
+    overflow: 'hidden', zIndex: 1000,
+  } : undefined
+
   return (
-    <div className={`academic-page ${modal ? 'academic-page-modal-open' : ''}`}>
+    <div className={`academic-page ${modal ? 'academic-page-modal-open' : ''}`} style={pageStyle}>
       <section className="academic-hero">
         <svg className="academic-hero-watermark" viewBox="0 0 620 220" fill="none" aria-hidden="true">
           <path d="M70 185V92l105-58 105 58v93" stroke="currentColor" strokeWidth="2" /><path d="M112 185v-58h54v58M203 185v-58h54v58" stroke="currentColor" strokeWidth="2" /><path d="M145 92h60M145 116h60" stroke="currentColor" strokeWidth="2" /><path d="M315 185V62l85-43 85 43v123" stroke="currentColor" strokeWidth="2" /><path d="M350 185v-55h38v55M407 185v-55h38v55" stroke="currentColor" strokeWidth="2" /><path d="M368 82h64M368 105h64" stroke="currentColor" strokeWidth="2" /><path d="M40 185h540" stroke="currentColor" strokeWidth="2" />
@@ -181,7 +193,7 @@ export default function AcademicStructureV2() {
         <button className="legacy-strip" onClick={() => setLegacyOpen(!legacyOpen)}>
           <span className="legacy-icon"><Icon name="archive" size={18} /></span>
           <span className="legacy-strip-copy"><b>Legacy classes</b><small>{legacyClasses.length} older class record{legacyClasses.length === 1 ? '' : 's'} not linked to the current academic structure</small></span>
-          <span className="legacy-count">{legacyClasses.length} remaining</span><strong>{legacyOpen ? '\u2212' : '+'}</strong>
+          <span className="legacy-count">{legacyClasses.length} remaining</span><strong>{legacyOpen ? '−' : '+'}</strong>
         </button>
         {legacyOpen && <div className="legacy-panel">
           <div className="legacy-panel-head"><div><div className="legacy-kicker">LEGACY DATA CLEANUP</div><h3>Remove old classes</h3><p>These records are not linked to the current academic structure. Select one or more classes to permanently remove them.</p></div><span className="legacy-status"><Icon name="archive" size={13} /> {legacyClasses.length} old records</span></div>
@@ -194,7 +206,7 @@ export default function AcademicStructureV2() {
           <div className="legacy-list">
             {legacyClasses.map(c => <div className={`legacy-row ${selectedLegacyIds.includes(c.class_id) ? 'selected' : ''}`} key={c.class_id}>
               <label className="legacy-row-check"><input type="checkbox" checked={selectedLegacyIds.includes(c.class_id)} onChange={() => toggleLegacy(c.class_id)} /><span className="legacy-checkbox" /></label>
-              <div className="legacy-row-main"><b>{c.class_name}</b><small>Class ID {c.class_id} &middot; legacy record</small></div>
+              <div className="legacy-row-main"><b>{c.class_name}</b><small>Class ID {c.class_id} · legacy record</small></div>
               <button className="legacy-delete" onClick={() => { setError(''); setLegacyTarget(c) }}><Icon name="trash" size={14} /> Remove</button>
             </div>)}
           </div>
