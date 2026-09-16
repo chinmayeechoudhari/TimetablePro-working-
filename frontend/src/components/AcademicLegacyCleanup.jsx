@@ -10,6 +10,8 @@ export default function AcademicLegacyCleanup() {
   const [groups, setGroups] = useState([])
   const [open, setOpen] = useState(true)
   const [target, setTarget] = useState(null)
+  const [bulkTarget, setBulkTarget] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -36,17 +38,35 @@ export default function AcademicLegacyCleanup() {
     () => classes.filter(c => !activeClassIds.has(c.class_id)),
     [classes, activeClassIds],
   )
+  const allSelected = legacyClasses.length > 0 && selectedIds.length === legacyClasses.length
+
+  function toggleSelected(id) {
+    setSelectedIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])
+  }
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? [] : legacyClasses.map(c => c.class_id))
+  }
+
+  async function removeSelected(ids) {
+    if (!ids.length) return
+    try {
+      for (const id of ids) await axios.delete(`${BASE}/classes/${id}`)
+      const removed = new Set(ids)
+      setSelectedIds([])
+      setBulkTarget(false)
+      setTarget(null)
+      setMessage(`${ids.length} old class${ids.length === 1 ? '' : 'es'} permanently removed.`)
+      setClasses(prev => prev.filter(c => !removed.has(c.class_id)))
+      await load()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not remove the selected old classes.')
+    }
+  }
 
   async function removeClass() {
     if (!target) return
-    try {
-      await axios.delete(`${BASE}/classes/${target.class_id}`)
-      setMessage(`${target.class_name} was removed.`)
-      setTarget(null)
-      await load()
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Could not remove the old class.')
-    }
+    await removeSelected([target.class_id])
   }
 
   return (
@@ -67,7 +87,7 @@ export default function AcademicLegacyCleanup() {
             <div>
               <div className="academic-legacy-kicker">LEGACY DATA CLEANUP</div>
               <h3>Old class records</h3>
-              <p>These classes are not linked to the current Academic Structure. Remove them only when you no longer need their old data.</p>
+              <p>These classes are not linked to the current Academic Structure. Select individual records or select all to permanently remove them.</p>
             </div>
             <div className="academic-legacy-status">
               <Icon name={legacyClasses.length ? 'archive' : 'check'} size={16} />
@@ -76,18 +96,45 @@ export default function AcademicLegacyCleanup() {
           </div>
 
           {message && <div className="academic-legacy-message success"><Icon name="check" size={15} />{message}<button onClick={() => setMessage('')}><Icon name="close" size={13} /></button></div>}
-          {error && <div className="academic-legacy-message error"><Icon name="alert" size={15} />{error}<button onClick={() => setError('')}><Icon name="close" size={13} /></button></div>}
+          {error && <div className="academic-legacy-message error"><Icon name="info" size={15} />{error}<button onClick={() => setError('')}><Icon name="close" size={13} /></button></div>}
 
           {legacyClasses.length ? (
-            <div className="academic-legacy-list">
-              {legacyClasses.map(c => (
-                <div className="academic-legacy-row" key={c.class_id}>
-                  <div className="academic-legacy-row-icon"><Icon name="archive" size={16} /></div>
-                  <div className="academic-legacy-row-info"><b>{c.class_name}</b><small>Class ID {c.class_id} · old record</small></div>
-                  <button className="academic-legacy-remove" onClick={() => { setError(''); setTarget(c) }}><Icon name="trash" size={15} /> Remove old class</button>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="academic-legacy-bulkbar">
+                <label className="academic-legacy-select-all">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                  <span className="academic-legacy-checkbox" />
+                  <span className="academic-legacy-select-label">Select all</span>
+                  <span className="academic-legacy-selected-count">{selectedIds.length} selected</span>
+                </label>
+                <span className="academic-legacy-divider" />
+                <button
+                  className="academic-legacy-bulk-remove"
+                  disabled={!selectedIds.length}
+                  onClick={() => { setError(''); setBulkTarget(true) }}
+                >
+                  <Icon name="trash" size={14} /> Remove selected
+                </button>
+                <span className="academic-legacy-bulk-help">Deletion is permanent.</span>
+              </div>
+
+              <div className="academic-legacy-list">
+                {legacyClasses.map(c => {
+                  const selected = selectedIds.includes(c.class_id)
+                  return (
+                    <div className={`academic-legacy-row ${selected ? 'selected' : ''}`} key={c.class_id}>
+                      <label className="academic-legacy-row-check" aria-label={`Select ${c.class_name}`}>
+                        <input type="checkbox" checked={selected} onChange={() => toggleSelected(c.class_id)} />
+                        <span className="academic-legacy-checkbox" />
+                      </label>
+                      <div className="academic-legacy-row-icon"><Icon name="archive" size={16} /></div>
+                      <div className="academic-legacy-row-info"><b>{c.class_name}</b><small>Class ID {c.class_id} · old record</small></div>
+                      <button className="academic-legacy-remove" onClick={() => { setError(''); setTarget(c) }}><Icon name="trash" size={15} /> Remove old class</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           ) : (
             <div className="academic-legacy-empty">
               <div className="academic-legacy-empty-icon"><Icon name="check" size={18} /></div>
@@ -97,16 +144,16 @@ export default function AcademicLegacyCleanup() {
         </div>
       )}
 
-      {target && (
-        <div className="academic-legacy-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setTarget(null)}>
+      {(target || bulkTarget) && (
+        <div className="academic-legacy-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && (target ? setTarget(null) : setBulkTarget(false))}>
           <div className="academic-legacy-modal">
             <div className="academic-legacy-modal-icon"><Icon name="trash" size={20} /></div>
-            <div className="academic-legacy-kicker">CONFIRM REMOVAL</div>
-            <h3>Remove {target.class_name}?</h3>
-            <p>This will permanently remove the old class and its associated legacy data. This action cannot be undone.</p>
+            <div className="academic-legacy-kicker">CONFIRM PERMANENT REMOVAL</div>
+            <h3>{target ? `Remove ${target.class_name}?` : `Remove ${selectedIds.length} old classes?`}</h3>
+            <p>{target ? 'This will permanently remove the old class and its associated legacy data. This action cannot be undone.' : `This will permanently remove ${selectedIds.length} selected old class records and their associated legacy data. This action cannot be undone.`}</p>
             <div className="academic-legacy-modal-actions">
-              <button className="academic-legacy-cancel" onClick={() => setTarget(null)}>Cancel</button>
-              <button className="academic-legacy-confirm" onClick={removeClass}><Icon name="trash" size={15} /> Remove permanently</button>
+              <button className="academic-legacy-cancel" onClick={() => { setTarget(null); setBulkTarget(false) }}>Cancel</button>
+              <button className="academic-legacy-confirm" onClick={target ? removeClass : () => removeSelected(selectedIds)}><Icon name="trash" size={15} /> {target ? 'Remove permanently' : 'Remove selected'}</button>
             </div>
           </div>
         </div>
