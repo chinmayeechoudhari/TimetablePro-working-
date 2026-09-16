@@ -1,0 +1,35 @@
+/* SUBJECT DIRECTORY — dedicated visual layer. UI only. */
+
+.subject-directory-card .subject-table-wrap{padding:0 18px 18px!important}
+.subject-directory-card .subject-table-header{display:grid!important;grid-template-columns:56px minmax(300px,2.4fr) minmax(170px,1.15fr) minmax(205px,1.35fr) minmax(150px,1fr) 92px!important;align-items:center!important;gap:20px!important;min-height:52px!important;padding:0 20px!important;border:1px solid #dce5ef!important;border-bottom:0!important;border-radius:14px 14px 0 0!important;background:#f6f8fb!important;color:#71809a!important;font-size:10px!important;font-weight:900!important;letter-spacing:.1em!important}
+.subject-directory-card .subject-list{display:flex!important;flex-direction:column!important;gap:0!important;padding:0!important;border:1px solid #dce5ef!important;border-radius:0 0 14px 14px!important;overflow:hidden!important;background:#fff!important}
+.subject-directory-card .subject-card{display:grid!important;grid-template-columns:56px minmax(300px,2.4fr) minmax(170px,1.15fr) minmax(205px,1.35fr) minmax(150px,1fr) 92px!important;align-items:center!important;gap:20px!important;width:100%!important;min-height:94px!important;box-sizing:border-box!important;margin:0!important;padding:16px 20px!important;border:0!important;border-bottom:1px solid #e7edf4!important;border-radius:0!important;background:#fff!important;box-shadow:none!important;transform:none!important}
+.subject-directory-card .subject-card:last-child{border-bottom:0!important}
+.subject-directory-card .subject-card:hover{background:linear-gradient(90deg,#fbfdff 0%,#f7faff 100%)!important;box-shadow:inset 3px 0 0 #3473f3!important}
+.subject-directory-card .subject-card-index{width:40px!important;height:40px!important;margin:0!important;border-radius:11px!important;background:#eef4ff!important;border:1px solid #d7e5fb!important;color:#2f67c8!important;font-size:10px!important;font-weight:900!important}
+.subject-directory-card .subject-card-name{font-size:15px!important;line-height:1.3!important;font-weight:900!important;color:#172746!important}
+.subject-directory-card .subject-card-subtitle{margin-top:5px!important;font-size:11px!important;color:#8b99ad!important;font-weight:600!important}
+.subject-directory-card .subject-card-badges{display:flex!important;align-items:center!important;gap:7px!important;flex-wrap:wrap!important}
+.subject-directory-card .subject-type-pill{min-width:76px!important;height:34px!important;box-sizing:border-box!important;padding:0 12px!important;border-radius:9px!important;font-size:11px!important;font-weight:900!important}
+.subject-directory-card .subject-card-load{font-size:12px!important;line-height:1.45!important;color:#65748d!important}
+.subject-directory-card .subject-card-load b{font-size:13px!important;color:#1d2d4c!important;font-weight:900!important}
+.subject-directory-card .subject-card-divisions{display:flex!important;align-items:center!important;gap:10px!important;font-size:12px!important;color:#65748d!important;white-space:nowrap!important}
+.subject-directory-card .subject-card-divisions b{display:grid!important;place-items:center!important;width:32px!important;height:32px!important;min-width:32px!important;padding:0!important;border-radius:9px!important;background:#f0f4f9!important;border:1px solid #dce5ef!important;color:#41536f!important;font-size:10px!important;font-weight:900!important}
+.subject-directory-card .subject-card-actions{display:flex!important;justify-content:flex-end!important;align-items:center!important;gap:8px!important}
+.subject-directory-card .subject-icon-btn{width:38px!important;height:38px!important;border-radius:10px!important;border:1px solid #d8e2ed!important;background:#fff!important;color:#62738d!important}
+.subject-directory-card .subject-icon-btn:hover{background:#eef5ff!important;border-color:#a9c5f5!important;color:#2563eb!important}
+.subject-directory-card .subject-table-footer{padding:13px 20px!important;font-size:11px!important;background:#f7f9fc!important;border-top:0!important}
+
+/* Give the filter row the visual weight of a real toolbar. */
+.subject-directory-card .subject-filter-bar{min-height:62px!important;padding:12px 20px!important;background:#fbfcfe!important;border-top:1px solid #e2e8f0!important;border-bottom:1px solid #dce5ef!important}
+.subject-directory-card .subject-filter-chip{min-height:36px!important;padding:0 14px!important;border-radius:10px!important;font-size:11px!important;font-weight:850!important}
+
+@media(max-width:1100px){
+ .subject-directory-card .subject-table-header,.subject-directory-card .subject-card{grid-template-columns:48px minmax(230px,2fr) 145px minmax(160px,1.2fr) 120px 82px!important;gap:13px!important}
+ .subject-directory-card .subject-card{min-height:88px!important;padding:14px 16px!important}
+}
+
+@media(max-width:850px){
+ .subject-directory-card .subject-table-wrap{overflow-x:auto!important;padding:0 12px 12px!important}
+ .subject-directory-card .subject-table-header,.subject-directory-card .subject-card{min-width:900px!important}
+}
