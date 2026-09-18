@@ -81,19 +81,16 @@ export default function ChatBubble() {
   const [classes, setClasses] = useState([])
 
   const messagesEndRef = useRef(null)
-  const hasFetchedRef = useRef(false)
+  const inputRef = useRef(null)
   useEffect(() => {
-    if (isOpen && !hasFetchedRef.current) {
-      hasFetchedRef.current = true
+    if (isOpen) {
       fetchContextData()
+      setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [isOpen])
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
-  useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
-  }, [isOpen])
 
   async function fetchContextData(forceRefresh = false) {
     try {
@@ -169,7 +166,7 @@ export default function ChatBubble() {
   }
 
   async function queryGeminiApi(promptText, history) {
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash']
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite']
     const systemPrompt = `You are a helpful AI Assistant for an automated College/School Timetable Generator application.
     Current Teachers in system: ${teachers.map(t => t.teacher_name).join(', ') || 'None'}.
     Available Days: Monday to Saturday.
@@ -238,12 +235,20 @@ export default function ChatBubble() {
     }
   }
 
-  function getWorkloadSummary() {
-    if (!timetable || timetable.length === 0)
+  async function getWorkloadSummary() {
+    // Always fetch fresh timetable data before computing
+    let freshTimetable = timetable
+    try {
+      const res = await apiGet(`${BASE_URL}/timetable`, { forceRefresh: true }).catch(() => ({ data: [] }))
+      freshTimetable = res.data || []
+      setTimetable(freshTimetable)
+    } catch (e) { /* use cached */ }
+
+    if (!freshTimetable || freshTimetable.length === 0)
       return '📊 **Teacher Workload & Conflict Analyzer**:\nNo timetable generated yet! Go to the **Generate** tab first.'
     const teacherCountMap = {}, teacherDayMap = {}, conflicts = []
     const unavailableSet = new Set(availabilities.filter(a => !a.is_available).map(a => `${a.teacher_id}_${a.slot_id}`))
-    timetable.forEach(entry => {
+    freshTimetable.forEach(entry => {
       const tId = entry.teacher_id
       teacherCountMap[tId] = (teacherCountMap[tId] || 0) + 1
       const slot = timeslots.find(s => s.slot_id === entry.slot_id)
@@ -342,7 +347,8 @@ export default function ChatBubble() {
 
     // 2. Workload
     if (/workload|teacher load|busiest|conflicts|highest load/i.test(lower)) {
-      addBotMessage(getWorkloadSummary())
+      const summary = await getWorkloadSummary()
+      addBotMessage(summary)
       setIsTyping(false)
       return
     }

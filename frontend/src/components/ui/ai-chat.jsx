@@ -159,7 +159,7 @@ export default function AIChatCard({ className, onClose }) {
   }
 
   async function queryGeminiApi(promptText, history) {
-    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+    const modelsToTry = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
     const systemPrompt = `You are a helpful AI Assistant for an automated College/School Timetable Generator application.
     Current Teachers in system: ${teachers.map(t => t.teacher_name).join(", ") || "None"}.
     Available Days: Monday to Saturday.
@@ -189,7 +189,7 @@ export default function AIChatCard({ className, onClose }) {
           return response.data.candidates[0].content.parts[0].text;
         }
       } catch (e) {
-        console.warn(`Gemini API call failed with model ${model}:`, e?.response?.data || e.message);
+        console.warn(`Gemini API call failed with model ${model} (HTTP ${e?.response?.status}):`, e?.response?.data || e.message);
       }
     }
     return null;
