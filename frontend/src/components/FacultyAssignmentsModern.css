@@ -977,3 +977,15 @@
         gap: 4px;
     }
 }
+
+/* FACULTY MODAL — full viewport shell, matching the Departments/Subjects modal behavior. */
+.academic-page:has(.faculty-modal-root){position:fixed!important;inset:0!important;width:100vw!important;max-width:none!important;height:100vh!important;min-height:100vh!important;margin:0!important;padding:0!important;overflow:hidden!important;z-index:2147482999!important;animation:none!important;transform:none!important}
+.academic-page:has(.faculty-modal-root) .faculty-modal-root{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;min-height:100vh!important;margin:0!important;padding:22px!important;box-sizing:border-box!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;z-index:2147483000!important}
+body:has(.faculty-modal-root) .app-main-scroll{overflow:hidden!important;scrollbar-width:none!important}
+body:has(.faculty-modal-root) .app-main-scroll::-webkit-scrollbar{display:none!important}
+html:has(.faculty-modal-root),body:has(.faculty-modal-root){overflow:hidden!important}
+.academic-page:has(.faculty-modal-root) .faculty-modal-root .academic-modal{box-sizing:border-box!important;margin:0!important}
+.academic-page:has(.faculty-modal-root) .faculty-modal-root .fac-modal-lg{width:min(900px,calc(100vw - 44px))!important;max-width:900px!important;max-height:min(88vh,760px)!important}
+.academic-page:has(.faculty-modal-root) .faculty-modal-root .fac-modal-xl{width:min(1180px,calc(100vw - 44px))!important;max-width:1180px!important;max-height:min(90vh,820px)!important}
+.academic-page:has(.faculty-modal-root) .faculty-modal-root .fac-modal-xl .fac-radio-list{max-height:min(32vh,280px)!important}
+@media(max-width:700px){.academic-page:has(.faculty-modal-root) .faculty-modal-root{padding:12px!important}.academic-page:has(.faculty-modal-root) .faculty-modal-root .fac-modal-lg,.academic-page:has(.faculty-modal-root) .faculty-modal-root .fac-modal-xl{width:calc(100vw - 24px)!important;max-width:none!important;max-height:calc(100vh - 24px)!important}}
