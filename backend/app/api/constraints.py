@@ -114,7 +114,7 @@ def _bound_subject_candidates(db: Session, context: dict):
 
 def _global_no_class_day_constraint(text: str) -> GeneratedConstraint | None:
     normalized = re.sub(r"\s+", " ", text.strip().lower())
-    match = re.fullmatch(r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\.?", normalized)
+    match = re.fullmatch(r"(?:no|none|nothing)\s+(?:classes?|lectures?|teaching|periods?)\s+(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\.?", normalized)
     if not match:
         return None
     day = match.group(1).capitalize()

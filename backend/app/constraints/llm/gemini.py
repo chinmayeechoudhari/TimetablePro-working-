@@ -1,7 +1,8 @@
-import json
 import os
+import time
 
 from google import genai
+from google.genai import errors as genai_errors
 from pydantic import ValidationError
 
 from app.constraints.schemas import GeneratedConstraint
@@ -143,6 +144,62 @@ Output:
 }
 """
 
+# ---------------------------------------------------------------------------
+# Fallback models & retry configuration
+# ---------------------------------------------------------------------------
+FALLBACK_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+]
+
+
+def _call_gemini_with_fallback(client, preferred_model: str, contents: str) -> str:
+    """
+    Call Gemini with automatic fallback across multiple models and retries
+    on 503 UNAVAILABLE (high demand) or 404 NOT_FOUND (model decommissioned).
+    """
+    # Build candidate model list with preferred_model first, deduplicated
+    models_to_try = [preferred_model] + [m for m in FALLBACK_MODELS if m != preferred_model]
+    
+    last_exc = None
+    for model in models_to_try:
+        # For each candidate model, attempt up to 2 times
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config={"response_mime_type": "application/json"},
+                )
+                return response.text
+            except genai_errors.ServerError as exc:
+                last_exc = exc
+                # 503 UNAVAILABLE: brief pause, then retry or fallback to next model
+                if "503" in str(exc) or "UNAVAILABLE" in str(exc):
+                    if attempt == 0:
+                        time.sleep(1.0)
+                        continue
+                    # On second 503 for this model, fall through to try next model in pool
+                    break
+                else:
+                    raise RuntimeError(f"Gemini server error ({model}): {exc}") from exc
+            except genai_errors.ClientError as exc:
+                last_exc = exc
+                # 404 NOT_FOUND: model name decommissioned or unavailable, try next candidate model
+                if "404" in str(exc) or "NOT_FOUND" in str(exc):
+                    break
+                # Other 4xx (e.g. invalid API key, bad request) fail immediately
+                raise RuntimeError(
+                    f"Gemini API error (check your API key). Details: {exc}"
+                ) from exc
+
+    raise RuntimeError(
+        "All AI models are currently experiencing high demand. "
+        f"Please try again in a few moments. Details: {last_exc}"
+    )
+
 
 class GeminiProvider(LLMProvider):
     def __init__(self):
@@ -150,7 +207,7 @@ class GeminiProvider(LLMProvider):
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
         self.client = genai.Client(api_key=api_key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
     def generate_constraint(self, user_text: str) -> GeneratedConstraint:
         prompt = f"""{SYSTEM_PROMPT}
@@ -160,13 +217,8 @@ User requirement:
 
 Generate the corresponding GeneratedConstraint JSON.
 """
-        # First attempt
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config={"response_mime_type": "application/json"},
-        )
-        raw = response.text
+        # Call with automatic fallback across models
+        raw = _call_gemini_with_fallback(self.client, self.model, prompt)
 
         try:
             return GeneratedConstraint.model_validate_json(raw)
@@ -185,9 +237,6 @@ Raw output that failed:
 
 Please correct the JSON so it satisfies the schema exactly. Return ONLY the corrected JSON object.
 """
-            retry_response = self.client.models.generate_content(
-                model=self.model,
-                contents=retry_prompt,
-                config={"response_mime_type": "application/json"},
-            )
-            return GeneratedConstraint.model_validate_json(retry_response.text)
+            retry_raw = _call_gemini_with_fallback(self.client, self.model, retry_prompt)
+            return GeneratedConstraint.model_validate_json(retry_raw)
+
