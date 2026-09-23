@@ -120,7 +120,7 @@ function FacultyDirectoryModal({ teachers, assignmentCountByTeacher, onClose, on
   }, [teachers, search])
 
   return (
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="faculty-modal-root"><div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal fac-modal-lg">
         <div className="modal-header">
           <div className="modal-title">
@@ -175,7 +175,7 @@ function FacultyDirectoryModal({ teachers, assignmentCountByTeacher, onClose, on
           </div>
         )}
       </div>
-    </div>
+    </div></div>
   )
 }
 
