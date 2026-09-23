@@ -120,7 +120,7 @@ function FacultyDirectoryModal({ teachers, assignmentCountByTeacher, onClose, on
   }, [teachers, search])
 
   return (
-    <div className="faculty-modal-root"><div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-backdrop faculty-modal-root" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal fac-modal-lg">
         <div className="modal-header">
           <div className="modal-title">
@@ -175,7 +175,7 @@ function FacultyDirectoryModal({ teachers, assignmentCountByTeacher, onClose, on
           </div>
         )}
       </div>
-    </div></div>
+    </div>
   )
 }
 
@@ -187,7 +187,7 @@ function TeacherEditModal({ teacher, onSave, onClose, error }) {
   const [max, setMax] = useState(teacher.max_periods_per_day)
 
   return (
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-backdrop faculty-modal-root" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal" style={{ width: 'min(440px, 100%)' }}>
         <div className="modal-header">
           <div className="modal-title">
@@ -330,7 +330,7 @@ function AddAssignmentWizardModal({ teachers, groups, onClose, onSubmit, submitE
   }
 
   return (
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-backdrop faculty-modal-root" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal fac-modal-xl">
         <div className="modal-header">
           <div className="modal-title">
@@ -535,7 +535,7 @@ function AssignmentEditModal({ assignment, teachers, onSave, onClose, error }) {
   }, [teachers, search])
 
   return (
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-backdrop faculty-modal-root" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal" style={{ width: 'min(480px, 100%)' }}>
         <div className="modal-header">
           <div className="modal-title">
@@ -614,7 +614,7 @@ function AssignmentsDirectoryModal({ tree, departmentsList, teachers, onClose, o
   function toggle(key) { setCollapsed(c => ({ ...c, [key]: !c[key] })) }
 
   return (
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-backdrop faculty-modal-root" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="academic-modal fac-modal-xl">
         <div className="modal-header">
           <div className="modal-title">
