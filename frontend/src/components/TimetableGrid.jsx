@@ -96,6 +96,20 @@ function Icon({ name, size = 20, stroke = 1.9 }) {
   return <svg {...common}>{paths[name]}</svg>
 }
 
+// ── Parse a class name like "AIDS 2nd Year - B" into { dept, year, division }
+function parseClassName(name) {
+  // Match: <DEPT words> <N><st|nd|rd|th> Year - <DIV>
+  const m = name.match(/^(.+?)\s+(\d+)(?:st|nd|rd|th)\s+Year\s+-\s+(\S+)$/i)
+  if (m) return { dept: m[1].trim(), year: parseInt(m[2], 10), division: m[3].trim() }
+  // Fallback – treat entire name as dept, year 1, div A
+  return { dept: name, year: 1, division: 'A' }
+}
+
+function yearLabel(n) {
+  const sfx = ['', 'st', 'nd', 'rd']
+  return `${n}${sfx[n] || 'th'} Year`
+}
+
 export default function TimetableGrid() {
   const [timetable, setTimetable] = useState([])
   const [teachers, setTeachers] = useState({})
@@ -111,6 +125,10 @@ export default function TimetableGrid() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [subjectsList, setSubjectsList] = useState([])
+
+  // Hierarchical drill-down state for class view
+  const [selDept, setSelDept] = useState(null)
+  const [selYear, setSelYear] = useState(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -135,9 +153,45 @@ export default function TimetableGrid() {
       setRooms(roomMap); setClasses(classMap); setSubjectColors(colors)
       setAllClasses(cRes.data); setAllTeachers(tRes.data); setAllRooms(rRes.data)
       setSlots(slRes.data)
-      if (cRes.data.length > 0) setSelected(cRes.data[0].class_id)
+
+      if (cRes.data.length > 0) {
+        const first = cRes.data[0]
+        const parsed = parseClassName(first.class_name)
+        setSelDept(parsed.dept)
+        setSelYear(parsed.year)
+        setSelected(first.class_id)
+      }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
+  }
+
+  // Derived hierarchical data
+  const parsedClasses = allClasses.map(c => ({ ...c, ...parseClassName(c.class_name) }))
+  const depts = [...new Set(parsedClasses.map(c => c.dept))].sort()
+  const yearsInDept = selDept
+    ? [...new Set(parsedClasses.filter(c => c.dept === selDept).map(c => c.year))].sort((a, b) => a - b)
+    : []
+  const divsInYear = (selDept && selYear != null)
+    ? parsedClasses.filter(c => c.dept === selDept && c.year === selYear)
+    : []
+
+  const handleDeptSelect = (dept) => {
+    setSelDept(dept)
+    const years = [...new Set(parsedClasses.filter(c => c.dept === dept).map(c => c.year))].sort((a, b) => a - b)
+    const firstYear = years[0]
+    setSelYear(firstYear)
+    const firstDiv = parsedClasses.find(c => c.dept === dept && c.year === firstYear)
+    if (firstDiv) setSelected(firstDiv.class_id)
+  }
+
+  const handleYearSelect = (year) => {
+    setSelYear(year)
+    const firstDiv = parsedClasses.find(c => c.dept === selDept && c.year === year)
+    if (firstDiv) setSelected(firstDiv.class_id)
+  }
+
+  const handleDivSelect = (classId) => {
+    setSelected(classId)
   }
 
   const getSlotId = (day, period) => {
@@ -153,13 +207,18 @@ export default function TimetableGrid() {
 
   const switchView = (v) => {
     setView(v)
-    if (v === 'class' && allClasses.length > 0) setSelected(allClasses[0].class_id)
+    if (v === 'class' && allClasses.length > 0) {
+      const first = allClasses[0]
+      const parsed = parseClassName(first.class_name)
+      setSelDept(parsed.dept)
+      setSelYear(parsed.year)
+      setSelected(first.class_id)
+    }
     if (v === 'teacher' && allTeachers.length > 0) setSelected(allTeachers[0].teacher_id)
     if (v === 'room' && allRooms.length > 0) setSelected(allRooms[0].room_id)
   }
 
   const filterOptions = () => {
-    if (view === 'class') return allClasses.map(c => ({ id: c.class_id, label: c.class_name }))
     if (view === 'teacher') return allTeachers.map(t => ({ id: t.teacher_id, label: t.teacher_name }))
     if (view === 'room') return allRooms.map(r => ({ id: r.room_id, label: r.room_number }))
     return []
@@ -436,18 +495,92 @@ export default function TimetableGrid() {
           </div>
         </div>
 
-        <div className="filter-chip-row no-print">
-          {filterOptions().map(opt => (
-            <button
-              key={opt.id}
-              type="button"
-              className={`filter-chip ${selected === opt.id ? 'active' : ''}`}
-              onClick={() => setSelected(opt.id)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* ── Class hierarchical drill-down ── */}
+        {view === 'class' && (
+          <div className="class-drill-down no-print">
+
+            {/* Level 1 – Departments */}
+            <div className="drill-level">
+              <span className="drill-level-label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V5.5L12 2l7 3.5V21M9 21v-5h6v5"/></svg>
+                Department
+              </span>
+              <div className="drill-chips">
+                {depts.map(dept => (
+                  <button
+                    key={dept}
+                    type="button"
+                    className={`drill-chip dept-chip ${selDept === dept ? 'active' : ''}`}
+                    onClick={() => handleDeptSelect(dept)}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Level 2 – Years */}
+            {selDept && (
+              <div className="drill-level">
+                <span className="drill-level-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  Year
+                </span>
+                <div className="drill-chips">
+                  {yearsInDept.map(yr => (
+                    <button
+                      key={yr}
+                      type="button"
+                      className={`drill-chip year-chip ${selYear === yr ? 'active' : ''}`}
+                      onClick={() => handleYearSelect(yr)}
+                    >
+                      {yearLabel(yr)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Level 3 – Divisions */}
+            {selDept && selYear != null && (
+              <div className="drill-level">
+                <span className="drill-level-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  Division
+                </span>
+                <div className="drill-chips">
+                  {divsInYear.map(cls => (
+                    <button
+                      key={cls.class_id}
+                      type="button"
+                      className={`drill-chip div-chip ${selected === cls.class_id ? 'active' : ''}`}
+                      onClick={() => handleDivSelect(cls.class_id)}
+                    >
+                      Division {cls.division}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* Teacher / Room flat chips */}
+        {view !== 'class' && (
+          <div className="filter-chip-row no-print">
+            {filterOptions().map(opt => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`filter-chip ${selected === opt.id ? 'active' : ''}`}
+                onClick={() => setSelected(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {selected && (
           <div id="print-area" className="tt-grid-wrapper" key={`${view}-${selected}`}>
@@ -860,6 +993,111 @@ export default function TimetableGrid() {
           background: #eff6ff;
           color: #1d4ed8;
           box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
+        }
+
+        /* =========================
+           CLASS DRILL-DOWN
+        ========================= */
+
+        .class-drill-down {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          border-bottom: 1px solid #eef1f6;
+        }
+
+        .drill-level {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 10px 24px;
+          border-bottom: 1px solid #f1f5f9;
+          animation: drillIn 0.22s ease both;
+        }
+
+        .drill-level:last-child {
+          border-bottom: none;
+        }
+
+        @keyframes drillIn {
+          from { opacity: 0; transform: translateX(-6px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .drill-level-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          flex-shrink: 0;
+          min-width: 100px;
+          color: #94a3b8;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+
+        .drill-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .drill-chip {
+          padding: 6px 14px;
+          border-radius: 999px;
+          border: 1.5px solid #e2e8f0;
+          background: #f8faff;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.13s ease;
+          white-space: nowrap;
+        }
+
+        /* Department chips – blue accent */
+        .drill-chip.dept-chip:hover {
+          border-color: #93c5fd;
+          background: #eff6ff;
+          color: #1d4ed8;
+        }
+        .drill-chip.dept-chip.active {
+          border-color: #2563eb;
+          background: linear-gradient(135deg, #eff6ff, #dbeafe);
+          color: #1d4ed8;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.13);
+        }
+
+        /* Year chips – indigo accent */
+        .drill-chip.year-chip:hover {
+          border-color: #a5b4fc;
+          background: #eef2ff;
+          color: #4338ca;
+        }
+        .drill-chip.year-chip.active {
+          border-color: #4f46e5;
+          background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+          color: #3730a3;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.13);
+        }
+
+        /* Division chips – teal accent */
+        .drill-chip.div-chip {
+          padding: 6px 18px;
+          font-size: 13px;
+        }
+        .drill-chip.div-chip:hover {
+          border-color: #5eead4;
+          background: #f0fdfa;
+          color: #0d9488;
+        }
+        .drill-chip.div-chip.active {
+          border-color: #0d9488;
+          background: linear-gradient(135deg, #f0fdfa, #ccfbf1);
+          color: #0f766e;
+          box-shadow: 0 4px 12px rgba(13, 148, 136, 0.15);
+          font-weight: 800;
         }
 
         /* =========================
