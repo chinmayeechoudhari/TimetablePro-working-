@@ -432,17 +432,17 @@ export default function StatusDashboard() {
           <QuickActionCard
             icon={SVG.teacherAdd}
             badgeBg="var(--badge-teacher)"
-            title="Add Teacher"
-            description="Register a new faculty member."
+            title="Faculty & Assignments"
+            description="Manage teachers and their subject assignments."
             linkColor="#2563eb"
-            onClick={() => navigate('/teachers')}
+            onClick={() => navigate('/faculty-assignments')}
           />
 
           <QuickActionCard
             icon={SVG.roomDoor}
             badgeBg="var(--badge-classroom)"
-            title="Add Room"
-            description="Create classrooms and labs."
+            title="Rooms"
+            description="Add and manage classrooms and labs."
             linkColor="#10b981"
             onClick={() => navigate('/rooms')}
           />
@@ -450,17 +450,17 @@ export default function StatusDashboard() {
           <QuickActionCard
             icon={SVG.classes}
             badgeBg="var(--badge-class)"
-            title="Add Class"
-            description="Configure student classes."
+            title="Academic Structure"
+            description="Configure departments, programs and classes."
             linkColor="#f97316"
-            onClick={() => navigate('/classes')}
+            onClick={() => navigate('/academic-structure')}
           />
 
           <QuickActionCard
             icon={SVG.subjects}
             badgeBg="var(--badge-lab)"
-            title="Add Subject"
-            description="Create theory & lab subjects."
+            title="Subjects"
+            description="Add and manage theory & lab subjects."
             linkColor="#8b5cf6"
             onClick={() => navigate('/subjects')}
           />

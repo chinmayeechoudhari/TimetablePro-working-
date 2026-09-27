@@ -6,12 +6,8 @@ import StatusDashboard from './components/StatusDashboard.jsx'
 import ChatBubble from './components/ChatBubble.jsx'
 
 // Lazy-load non-dashboard routes to keep initial bundle small and fast
-const TeacherForm = lazy(() => import('./components/TeacherForm.jsx'))
 const RoomForm = lazy(() => import('./components/RoomForm.jsx'))
-const ClassForm = lazy(() => import('./components/ClassForm.jsx'))
-const SubjectForm = lazy(() => import('./components/SubjectForm.jsx'))
 const TimeSlotForm = lazy(() => import('./components/TimeSlotForm.jsx'))
-const TeacherSubjectForm = lazy(() => import('./components/TeacherSubjectForm.jsx'))
 const TeacherAvailabilityForm = lazy(() => import('./components/TeacherAvailabilityForm.jsx'))
 const GenerateTimetable = lazy(() => import('./components/GenerateTimetable.jsx'))
 const TimetableGrid = lazy(() => import('./components/TimetableGrid.jsx'))
@@ -62,12 +58,8 @@ export default function App() {
               <Route path="/academic-structure" element={<AcademicStructurePage />} />
               <Route path="/subjects" element={<AcademicSubjects />} />
               <Route path="/faculty-assignments" element={<FacultyAssignments />} />
-              <Route path="/teachers" element={<TeacherForm />} />
               <Route path="/rooms" element={<RoomForm />} />
-              <Route path="/classes" element={<ClassForm />} />
-              <Route path="/legacy-subjects" element={<SubjectForm />} />
               <Route path="/timeslots" element={<TimeSlotForm />} />
-              <Route path="/teacher-subjects" element={<TeacherSubjectForm />} />
               <Route path="/teacher-availability" element={<TeacherAvailabilityForm />} />
               <Route path="/constraints" element={<ConstraintsPage />} />
               <Route path="/generate" element={<GenerateTimetable />} />
