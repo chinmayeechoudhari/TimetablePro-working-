@@ -418,6 +418,24 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
     return {"imported": imported, "skipped": skipped, "problems": problems[:20], "source": file.filename, "message": f"Imported {imported} entries as pending review; {skipped} duplicates skipped."}
 
 
+@router.delete("/terms/{term_id}/events/imported")
+def delete_imported_events(term_id: int, db: Session = Depends(get_db)):
+    """Bulk-remove imported entries for a term while preserving manual additions."""
+    get_term_or_404(db, term_id)
+    imported_sources = (
+        CalendarEvent.source.like("Uploaded institution calendar:%"),
+        CalendarEvent.source.like("Regional public holidays%"),
+        CalendarEvent.source == "College Academic Activity Calendar AY 2026-27 Sem I",
+    )
+    query = db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id).filter(
+        __import__("sqlalchemy").or_(*imported_sources)
+    )
+    count = query.count()
+    query.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": count, "message": f"Removed {count} imported calendar entries. Manually added events were preserved."}
+
+
 @router.get("/terms/{term_id}/events")
 def list_events(term_id: int, from_date: date | None = Query(default=None), to_date: date | None = Query(default=None), db: Session = Depends(get_db)):
     get_term_or_404(db, term_id)
