@@ -125,12 +125,29 @@ export default function TimetableGrid() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [subjectsList, setSubjectsList] = useState([])
+  const [calendarEvents, setCalendarEvents] = useState([])
+  const [activeTerm, setActiveTerm] = useState(null)
+  const [today] = useState(() => new Date())
 
   // Hierarchical drill-down state for class view
   const [selDept, setSelDept] = useState(null)
   const [selYear, setSelYear] = useState(null)
 
   useEffect(() => { fetchAll() }, [])
+
+  useEffect(() => {
+    let alive = true
+    axios.get(`${BASE}/calendar/terms`).then(async response => {
+      const term = response.data.find(item => item.status === 'active') || response.data[0]
+      if (!term || !alive) return
+      setActiveTerm(term)
+      const eventsResponse = await axios.get(`${BASE}/calendar/terms/${term.term_id}/events`)
+      if (alive) setCalendarEvents(eventsResponse.data.filter(item => item.approval_status === 'approved'))
+    }).catch(() => { if (alive) { setActiveTerm(null); setCalendarEvents([]) } })
+    return () => { alive = false }
+  }, [])
+
+
 
   async function fetchAll() {
     try {
@@ -232,7 +249,17 @@ export default function TimetableGrid() {
   }
 
   const filterKey = view === 'class' ? 'class_id' : view === 'teacher' ? 'teacher_id' : 'room_id'
-  const activeDays = DAYS.filter(day => slots.some(s => s.day === day))
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const mondayThisWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+  const dateForWeekday = (weekday) => {
+    const date = new Date(mondayThisWeek)
+    date.setDate(date.getDate() + DAYS.indexOf(weekday))
+    return date
+  }
+  const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const eventsForDate = (date) => calendarEvents.filter(event => event.start_date <= dateKey(date) && event.end_date >= dateKey(date))
+
+    const activeDays = DAYS.filter(day => slots.some(s => s.day === day))
   const activePeriods = PERIODS.filter(p => slots.some(s => s.period_number === p))
   const visibleSubjectIds = new Set(
     timetable
@@ -296,7 +323,14 @@ export default function TimetableGrid() {
           <tr key={day}>
 
             {/* DAY LABEL */}
-            <td className="tt-day-cell">{day}</td>
+            <td className="tt-day-cell" style={dateKey(dateForWeekday(day)) === todayKey ? { background: '#dbeafe', color: '#1d4ed8', fontWeight: 800 } : undefined}>
+              <div>{day}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, marginTop: 4, color: dateKey(dateForWeekday(day)) === todayKey ? '#1d4ed8' : '#64748b' }}>
+                {dateForWeekday(day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                {dateKey(dateForWeekday(day)) === todayKey ? ' · TODAY' : ''}
+              </div>
+              {eventsForDate(dateForWeekday(day)).filter(event => event.is_closure).map(event => <div key={event.event_id} title={event.title} style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#ffe4e6', color: '#9f1239' }}>{event.title}</div>)}
+            </td>
 
             {/* PERIOD CELLS */}
             {activePeriods.map((period, pi) => {
@@ -403,6 +437,12 @@ export default function TimetableGrid() {
             <h1>Timetable</h1>
             <div className="hero-subtitle">Generated Schedule</div>
             <p>Browse the generated schedule by class, teacher, or room.</p>
+            <div style={{ marginTop: 8, fontSize: 13, fontWeight: 650, color: '#1d4ed8' }}>
+              Today: {today.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+            <div style={{ marginTop: 3, fontSize: 11, color: '#64748b' }}>
+              Showing dates for the current week{activeTerm ? ` · ${activeTerm.academic_year} ${activeTerm.term_name}` : ''}. Calendar closures appear under the day.
+            </div>
           </div>
         </div>
 
