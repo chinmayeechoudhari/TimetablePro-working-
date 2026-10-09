@@ -48,6 +48,8 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
   const [events, setEvents] = useState([])
+  const [termSchedule, setTermSchedule] = useState(null)
+  const [scheduleLoading, setScheduleLoading] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState('2026-07')
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
@@ -123,6 +125,17 @@ export default function CalendarPage() {
       .catch(() => { if (alive) setError('Could not load calendar events for this term.') })
     return () => { alive = false }
   }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedId) { setTermSchedule(null); return }
+    let alive = true
+    setScheduleLoading(true)
+    axios.get(`${API}/calendar/terms/${selectedId}/schedule`)
+      .then(response => { if (alive) setTermSchedule(response.data) })
+      .catch(() => { if (alive) setTermSchedule(null) })
+      .finally(() => { if (alive) setScheduleLoading(false) })
+    return () => { alive = false }
+  }, [selectedId, events])
 
   async function createTerm(event) {
     event.preventDefault()
@@ -252,6 +265,37 @@ export default function CalendarPage() {
         </div>
       </form>
     </section>}
+
+    <section style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, background: 'var(--bg-card, #fff)', padding: 18, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Dated timetable for this term</h2>
+          <p style={{ margin: '5px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 12 }}>Expands the generated weekly timetable across the selected term, skipping approved closures and non-working days.</p>
+        </div>
+        {scheduleLoading && <span style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>Updating…</span>}
+      </div>
+      {termSchedule && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 14 }}>
+        <div style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 10, padding: 12 }}><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)' }}>Scheduled sessions</div><strong style={{ display: 'block', fontSize: 22, marginTop: 4 }}>{termSchedule.total_sessions}</strong></div>
+        <div style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 10, padding: 12 }}><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)' }}>Holiday-affected sessions</div><strong style={{ display: 'block', fontSize: 22, marginTop: 4 }}>{termSchedule.cancelled_sessions}</strong></div>
+      </div>}
+      {termSchedule?.sessions?.length > 0 && <div style={{ overflowX: 'auto', marginTop: 14 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr>{['Date', 'Day', 'Period', 'Class ID', 'Subject ID', 'Status', 'Replacement suggestion'].map(label => <th key={label} style={{ textAlign: 'left', padding: '9px 8px', borderBottom: '1px solid var(--border-color, #e2e8f0)', color: 'var(--text-secondary, #64748b)', whiteSpace: 'nowrap' }}>{label}</th>)}</tr></thead>
+          <tbody>{termSchedule.sessions.slice(0, 150).map((session, index) => <tr key={`${session.date}-${session.class_id}-${session.slot_id}-${index}`}>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)', whiteSpace: 'nowrap' }}>{dateLabel(session.date)}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)' }}>{session.weekday}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)' }}>P{session.period_number}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)' }}>{session.class_id}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)' }}>{session.subject_id}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)', color: session.status === 'scheduled' ? '#15803d' : '#be123c' }}>{session.status === 'scheduled' ? 'Scheduled' : `Cancelled: ${(session.event_titles || []).join(', ') || 'Closure'}`}</td>
+            <td style={{ padding: '9px 8px', borderBottom: '1px solid var(--border-color, #edf2f7)', whiteSpace: 'nowrap' }}>{session.suggested_replacement_date ? `${dateLabel(session.suggested_replacement_date)} · approval required` : '—'}</td>
+          </tr>)}</tbody>
+        </table>
+        {termSchedule.sessions.length > 150 && <p style={{ color: 'var(--text-secondary, #64748b)', fontSize: 11 }}>Showing first 150 sessions of {termSchedule.sessions.length}.</p>}
+      </div>}
+      {!scheduleLoading && !termSchedule && <p style={{ marginBottom: 0, color: 'var(--text-secondary, #64748b)', fontSize: 12 }}>Save a term and generate a weekly timetable to preview dated sessions here.</p>}
+      {termSchedule && <p style={{ marginBottom: 0, color: 'var(--text-secondary, #64748b)', fontSize: 11, lineHeight: 1.5 }}>{termSchedule.note}</p>}
+    </section>
 
     <section style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, background: 'var(--bg-card, #fff)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: 18, borderBottom: '1px solid var(--border-color, #e2e8f0)', flexWrap: 'wrap' }}>
