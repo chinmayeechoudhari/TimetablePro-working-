@@ -212,6 +212,20 @@ export default function CalendarPage() {
     } finally { setSavingEvent(false) }
   }
 
+  async function removeImportedEvents() {
+    if (!selectedTerm) return
+    const confirmed = window.confirm('Remove all imported regional, college-template, and uploaded calendar entries for this term? Manually added events will be kept. This cannot be undone.')
+    if (!confirmed) return
+    setError(''); setNotice('')
+    try {
+      const response = await axios.delete(`${API}/calendar/terms/${selectedTerm.term_id}/events/imported`)
+      await loadEvents(selectedTerm.term_id)
+      setNotice(response.data.message || `Removed ${response.data.deleted} imported entries.`)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not remove imported calendar entries.')
+    }
+  }
+
   async function removeEvent(eventId) {
     if (!window.confirm('Delete this calendar event?')) return
     setError(''); setNotice('')
@@ -251,6 +265,7 @@ export default function CalendarPage() {
         <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importRegionalHolidays}>{importingHolidays ? 'Loading…' : 'Load regional holidays'}</button>
         <button type="button" style={{ ...buttonStyle, background: '#475569' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Loading…' : 'Load college template'}</button>
         <button type="button" style={buttonStyle} disabled={!selectedTerm} onClick={() => setShowEventForm(value => !value)}>+ Add college event</button>
+        <button type="button" style={{ ...buttonStyle, background: '#be123c' }} disabled={!selectedTerm || !events.some(event => String(event.source || '').startsWith('Uploaded institution calendar:') || String(event.source || '').startsWith('Regional public holidays') || event.source === 'College Academic Activity Calendar AY 2026-27 Sem I')} onClick={removeImportedEvents}>Remove imported entries</button>
       </div>
     </div>
 
