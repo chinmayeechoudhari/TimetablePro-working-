@@ -172,43 +172,119 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
 
 @router.post("/terms/{term_id}/holidays/import")
 def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
-    """Import India public holidays for the configured term from Nager.Date."""
+    """Load the college's AY 2026-27 Semester I calendar, then add public holidays when available."""
     from urllib.error import URLError, HTTPError
     from urllib.request import Request, urlopen
 
     term = get_term_or_404(db, term_id)
-    years = range(term.start_date.year, term.end_date.year + 1)
-    region = (term.holiday_region or "").lower()
-    maharashtra = "maharashtra" in region
-    imported = 0
+    # Transcribed from the college-issued Academic Activity Calendar AY 2026-27 SEM I.
+    # Events outside the configured term are naturally skipped.
+    college_events = [
+        ("2026-08-15", "Independence Day", "holiday", True),
+        ("2026-08-26", "Eid-e-Milad", "holiday", True),
+        ("2026-08-31", "Foundation Day", "event", False),
+        ("2026-09-07", "MSE", "exam", False),
+        ("2026-09-08", "MSE", "exam", False),
+        ("2026-09-09", "MSE", "exam", False),
+        ("2026-09-10", "MSE", "exam", False),
+        ("2026-09-11", "MSE", "exam", False),
+        ("2026-09-12", "MSE", "exam", False),
+        ("2026-09-18", "Gauri Pujan", "holiday", True),
+        ("2026-09-25", "Anant Chaturdashi", "holiday", True),
+        ("2026-10-02", "Gandhi Jayanti / Dasara (college calendar)", "holiday", True),
+        ("2026-10-20", "Vijaya Dashmi / Dasara", "holiday", True),
+        ("2026-11-06", "Diwali break", "vacation", True),
+        ("2026-11-07", "Diwali break", "vacation", True),
+        ("2026-11-08", "Diwali break", "vacation", True),
+        ("2026-11-09", "Diwali break", "vacation", True),
+        ("2026-11-10", "Diwali break", "vacation", True),
+        ("2026-11-11", "Diwali break", "vacation", True),
+        ("2026-11-12", "Diwali break", "vacation", True),
+        ("2026-11-16", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-17", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-18", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-19", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-20", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-21", "Internal Assessment GD/PPT, CP", "exam", False),
+        ("2026-11-23", "PL", "event", False),
+        ("2026-11-24", "Guru Nanak Jayanti", "holiday", True),
+        ("2026-11-25", "PL", "event", False),
+        ("2026-11-26", "ESE", "exam", False),
+        ("2026-11-27", "ESE", "exam", False),
+        ("2026-11-28", "ESE", "exam", False),
+        ("2026-12-01", "ESE", "exam", False),
+        ("2026-12-02", "ESE", "exam", False),
+        ("2026-12-03", "ESE", "exam", False),
+        ("2026-12-04", "ESE", "exam", False),
+        ("2026-12-05", "ESE", "exam", False),
+        ("2026-12-07", "ESE", "exam", False),
+        ("2026-12-08", "ESE", "exam", False),
+        ("2026-12-09", "ESE", "exam", False),
+        ("2026-12-10", "ESE", "exam", False),
+        ("2026-12-11", "ESE", "exam", False),
+        ("2026-12-12", "ESE", "exam", False),
+        ("2026-12-14", "ESE", "exam", False),
+        ("2026-12-15", "ESE", "exam", False),
+        ("2026-12-25", "Christmas", "holiday", True),
+    ]
+    imported_college = 0
     skipped = 0
 
-    for year in years:
-        url = f"https://date.nager.at/api/v3/PublicHolidays/{year}/IN"
-        request = Request(url, headers={"User-Agent": "TimetablePro/1.0"})
+    for date_text, title, event_type, is_closure in college_events:
+        event_date = date.fromisoformat(date_text)
+        if not term.start_date <= event_date <= term.end_date:
+            continue
+        exists = db.query(CalendarEvent).filter(
+            CalendarEvent.term_id == term_id,
+            CalendarEvent.start_date == event_date,
+            CalendarEvent.title == title,
+        ).first()
+        if exists:
+            skipped += 1
+            continue
+        db.add(CalendarEvent(
+            term_id=term_id,
+            title=title,
+            event_type=event_type,
+            start_date=event_date,
+            end_date=event_date,
+            is_closure=is_closure,
+            is_working_day_override=False,
+            source="College Academic Activity Calendar AY 2026-27 SEM I",
+            approval_status="approved",
+            notes="Loaded from the college-issued semester calendar. Verify against any later official circular.",
+        ))
+        imported_college += 1
+
+    # Supplement with national/state public holidays if the external service is reachable.
+    imported_public = 0
+    public_feed_available = True
+    for year in range(term.start_date.year, term.end_date.year + 1):
         try:
-            with urlopen(request, timeout=8) as response:
+            request = Request(
+                f"https://date.nager.at/api/v3/PublicHolidays/{year}/IN",
+                headers={"User-Agent": "TimetablePro/1.0"},
+            )
+            with urlopen(request, timeout=4) as response:
                 holidays = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-            raise HTTPException(status_code=502, detail=f"Could not retrieve public holidays for {year}. Check server internet access and retry.") from exc
+        except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+            public_feed_available = False
+            continue
 
         for holiday in holidays:
             try:
-                holiday_date = date.fromisoformat(holiday["date"])
+                event_date = date.fromisoformat(holiday["date"])
             except (KeyError, ValueError):
                 continue
-            if not term.start_date <= holiday_date <= term.end_date:
+            if not term.start_date <= event_date <= term.end_date:
                 continue
             counties = holiday.get("counties") or []
-            # Keep national holidays and Maharashtra-specific entries, but do
-            # not import entries scoped only to another Indian state.
-            if maharashtra and counties and "IN-MH" not in counties:
-                skipped += 1
+            if "maharashtra" in (term.holiday_region or "").lower() and counties and "IN-MH" not in counties:
                 continue
             title = holiday.get("localName") or holiday.get("name") or "Public holiday"
             exists = db.query(CalendarEvent).filter(
                 CalendarEvent.term_id == term_id,
-                CalendarEvent.start_date == holiday_date,
+                CalendarEvent.start_date == event_date,
                 CalendarEvent.title == title,
             ).first()
             if exists:
@@ -218,22 +294,27 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
                 term_id=term_id,
                 title=title,
                 event_type="holiday",
-                start_date=holiday_date,
-                end_date=holiday_date,
+                start_date=event_date,
+                end_date=event_date,
                 is_closure=True,
                 is_working_day_override=False,
                 source="Nager.Date public holiday API",
                 approval_status="approved",
-                notes=f"Imported public holiday. English name: {holiday.get('name', title)}",
+                notes="Public holiday feed entry; verify local applicability.",
             ))
-            imported += 1
+            imported_public += 1
 
     db.commit()
     return {
-        "imported": imported,
+        "imported": imported_college + imported_public,
+        "college_calendar_imported": imported_college,
+        "public_holidays_imported": imported_public,
         "skipped": skipped,
-        "source": "Nager.Date public holiday API",
-        "message": f"Imported {imported} public holidays for {term.holiday_region}. Review local college-specific holidays separately.",
+        "public_feed_available": public_feed_available,
+        "message": (
+            f"Loaded {imported_college} college-calendar entries and {imported_public} public holidays."
+            + ("" if public_feed_available else " The public-holiday service was unavailable, but the built-in college calendar was loaded.")
+        ),
     }
 
 
