@@ -53,6 +53,7 @@ export default function CalendarPage() {
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
   const [importingHolidays, setImportingHolidays] = useState(false)
+  const [calendarFile, setCalendarFile] = useState(null)
   const [showTermForm, setShowTermForm] = useState(false)
   const [editingTerm, setEditingTerm] = useState(false)
   const [showEventForm, setShowEventForm] = useState(false)
@@ -154,6 +155,47 @@ export default function CalendarPage() {
     } finally { setImportingHolidays(false) }
   }
 
+  async function importRegionalHolidays() {
+    if (!selectedTerm) return
+    setError(''); setNotice(''); setImportingHolidays(true)
+    try {
+      const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/region`)
+      await loadEvents(selectedTerm.term_id)
+      setNotice(response.data.message || `Loaded ${response.data.imported} regional holiday suggestions. Please verify the dates.`)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Regional holiday import failed. You can upload a calendar or add dates manually.')
+    } finally { setImportingHolidays(false) }
+  }
+
+  async function uploadCalendar(event) {
+    event.preventDefault()
+    if (!selectedTerm || !calendarFile) return
+    setError(''); setNotice(''); setImportingHolidays(true)
+    try {
+      const form = new FormData()
+      form.append('file', calendarFile)
+      const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/upload`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      await loadEvents(selectedTerm.term_id)
+      setNotice(response.data.message + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : ''))
+      setCalendarFile(null)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not import the calendar file.')
+    } finally { setImportingHolidays(false) }
+  }
+
+  async function approveImportedEvent(event) {
+    try {
+      await axios.patch(`${API}/calendar/events/${event.event_id}`, {
+        title: event.title, event_type: event.event_type, start_date: event.start_date,
+        end_date: event.end_date, is_closure: event.is_closure,
+        is_working_day_override: event.is_working_day_override,
+        source: event.source, approval_status: 'approved', notes: event.notes,
+      })
+      await loadEvents(selectedTerm.term_id)
+      setNotice(`Approved "${event.title}".`)
+    } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
+  }
+
   async function saveEvent(event) {
     event.preventDefault()
     if (!selectedTerm) return
@@ -206,7 +248,8 @@ export default function CalendarPage() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setEditingTerm(false); setTermForm(DEFAULT_TERM); setShowTermForm(value => !value) }}>+ New term</button>
         <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} disabled={!selectedTerm} onClick={() => { setEditingTerm(true); setTermForm({ ...selectedTerm }); setShowTermForm(true) }}>Edit term</button>
-        <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Importing holidays…' : 'Load college holidays'}</button>
+        <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importRegionalHolidays}>{importingHolidays ? 'Loading…' : 'Load regional holidays'}</button>
+        <button type="button" style={{ ...buttonStyle, background: '#475569' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Loading…' : 'Load college template'}</button>
         <button type="button" style={buttonStyle} disabled={!selectedTerm} onClick={() => setShowEventForm(value => !value)}>+ Add college event</button>
       </div>
     </div>
@@ -246,6 +289,16 @@ export default function CalendarPage() {
         ['Holiday region', selectedTerm.holiday_region, selectedTerm.timezone],
         ['Calendar events', String(events.length), 'College calendar and additions'],
       ].map(([title, value, sub]) => <div key={title} style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 14, padding: 15, background: 'var(--bg-card, #fff)' }}><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginBottom: 8 }}>{title}</div><div style={{ fontSize: 18, fontWeight: 750, overflowWrap: 'anywhere' }}>{value}</div><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 5 }}>{sub}</div></div>)}
+    </section>}
+
+    {selectedTerm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 14, padding: 16, marginBottom: 18 }}>
+      <h2 style={{ fontSize: 16, margin: '0 0 6px' }}>Upload your institution calendar</h2>
+      <p style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', margin: '0 0 12px' }}>Upload an Excel (.xlsx) or CSV file with Date and Title/Event columns. Optional columns: End Date, Type, Closure. Imported entries wait for your review.</p>
+      <form onSubmit={uploadCalendar} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input type="file" accept=".xlsx,.csv" onChange={e => setCalendarFile(e.target.files?.[0] || null)} style={{ maxWidth: '100%', fontSize: 12 }} />
+        <button type="submit" style={buttonStyle} disabled={!calendarFile || importingHolidays}>{importingHolidays ? 'Importing…' : 'Upload and preview'}</button>
+        {calendarFile && <span style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)' }}>{calendarFile.name}</span>}
+      </form>
     </section>}
 
     {showEventForm && selectedTerm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, padding: 20, marginBottom: 22 }}>
@@ -299,6 +352,7 @@ export default function CalendarPage() {
         <div style={{ width: 4, alignSelf: 'stretch', minHeight: 34, borderRadius: 9, background: event.event_type === 'holiday' || event.event_type === 'closure' ? '#e11d48' : event.event_type === 'exam' ? '#7c3aed' : event.event_type === 'working_day' ? '#059669' : '#2563eb' }} />
         <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{event.title}</div><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>{EVENT_TYPES.find(type => type.value === event.event_type)?.label || event.event_type} · {event.source}{event.is_closure ? ' · No regular classes' : ''}</div>{event.notes && <div style={{ fontSize: 12, marginTop: 4 }}>{event.notes}</div>}</div>
         <span style={{ borderRadius: 20, padding: '4px 8px', background: event.approval_status === 'approved' ? '#dcfce7' : '#fef3c7', color: event.approval_status === 'approved' ? '#166534' : '#92400e', fontSize: 10, fontWeight: 750 }}>{event.approval_status}</span>
+        {event.approval_status === 'pending' && <button type="button" onClick={() => approveImportedEvent(event)} style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#166534', borderRadius: 8, padding: '7px 9px', cursor: 'pointer', fontSize: 12 }}>Approve</button>}
         <button type="button" aria-label={`Delete ${event.title}`} onClick={() => removeEvent(event.event_id)} style={{ border: '1px solid var(--border-color, #e2e8f0)', background: 'transparent', color: '#be123c', borderRadius: 8, padding: '7px 9px', cursor: 'pointer', fontSize: 12 }}>Delete</button>
       </div>)}</div>)}</div>}
     </section>
