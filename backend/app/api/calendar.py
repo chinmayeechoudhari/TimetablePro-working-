@@ -169,6 +169,74 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
     return None
 
 
+
+@router.post("/terms/{term_id}/holidays/import")
+def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
+    """Import India public holidays for the configured term from Nager.Date."""
+    from urllib.error import URLError, HTTPError
+    from urllib.request import Request, urlopen
+
+    term = get_term_or_404(db, term_id)
+    years = range(term.start_date.year, term.end_date.year + 1)
+    region = (term.holiday_region or "").lower()
+    maharashtra = "maharashtra" in region
+    imported = 0
+    skipped = 0
+
+    for year in years:
+        url = f"https://date.nager.at/api/v3/PublicHolidays/{year}/IN"
+        request = Request(url, headers={"User-Agent": "TimetablePro/1.0"})
+        try:
+            with urlopen(request, timeout=8) as response:
+                holidays = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"Could not retrieve public holidays for {year}. Check server internet access and retry.") from exc
+
+        for holiday in holidays:
+            try:
+                holiday_date = date.fromisoformat(holiday["date"])
+            except (KeyError, ValueError):
+                continue
+            if not term.start_date <= holiday_date <= term.end_date:
+                continue
+            counties = holiday.get("counties") or []
+            # Keep national holidays and Maharashtra-specific entries, but do
+            # not import entries scoped only to another Indian state.
+            if maharashtra and counties and "IN-MH" not in counties:
+                skipped += 1
+                continue
+            title = holiday.get("localName") or holiday.get("name") or "Public holiday"
+            exists = db.query(CalendarEvent).filter(
+                CalendarEvent.term_id == term_id,
+                CalendarEvent.start_date == holiday_date,
+                CalendarEvent.title == title,
+            ).first()
+            if exists:
+                skipped += 1
+                continue
+            db.add(CalendarEvent(
+                term_id=term_id,
+                title=title,
+                event_type="holiday",
+                start_date=holiday_date,
+                end_date=holiday_date,
+                is_closure=True,
+                is_working_day_override=False,
+                source="Nager.Date public holiday API",
+                approval_status="approved",
+                notes=f"Imported public holiday. English name: {holiday.get('name', title)}",
+            ))
+            imported += 1
+
+    db.commit()
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "source": "Nager.Date public holiday API",
+        "message": f"Imported {imported} public holidays for {term.holiday_region}. Review local college-specific holidays separately.",
+    }
+
+
 @router.get("/terms/{term_id}/events")
 def list_events(term_id: int, from_date: date | None = Query(default=None), to_date: date | None = Query(default=None), db: Session = Depends(get_db)):
     get_term_or_404(db, term_id)
