@@ -288,8 +288,28 @@ def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
         try:
             with urlopen(request, timeout=10) as response:
                 holidays = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-            raise HTTPException(status_code=502, detail=f"Regional holiday service is unavailable for {year}. You can upload your institution calendar or add dates manually.") from exc
+        except (HTTPError, URLError, TimeoutError, ValueError):
+            # Offline fallback for Maharashtra: dates taken from the Maharashtra
+            # Government's 2026 public-holiday notification. Do not silently
+            # claim this fallback is complete for other regions/years.
+            maharashtra_2026 = [
+                ("2026-08-15", "Independence Day"),
+                ("2026-08-26", "Eid-e-Milad"),
+                ("2026-09-14", "Ganesh Chaturthi"),
+                ("2026-10-02", "Mahatma Gandhi Jayanti"),
+                ("2026-10-20", "Dasara"),
+                ("2026-11-08", "Diwali Amavasya (Laxmi Pujan)"),
+                ("2026-11-10", "Diwali (Bali Pratipada)"),
+                ("2026-11-24", "Guru Nanak Jayanti"),
+                ("2026-12-25", "Christmas"),
+            ]
+            if country == "IN" and "maharashtra" in region and year == 2026:
+                holidays = [
+                    {"date": day, "localName": title, "name": title, "counties": ["IN-MH"]}
+                    for day, title in maharashtra_2026
+                ]
+            else:
+                raise HTTPException(status_code=502, detail=f"Regional holiday service is unavailable for {year}. No offline fallback is configured for this region/year. Upload your institution calendar or add dates manually.")
         for item in holidays:
             try:
                 event_date = date.fromisoformat(item["date"])
