@@ -334,7 +334,8 @@ export default function TimetableGrid() {
 
             {/* PERIOD CELLS */}
             {activePeriods.map((period, pi) => {
-              const entry = getCell(fKey, fVal, day, period)
+              const closureEvents = eventsForDate(dateForWeekday(day)).filter(event => event.is_closure)
+              const entry = closureEvents.length ? null : getCell(fKey, fVal, day, period)
               const color = entry
                 ? (subjectColors[entry.subject_id] || COLORS[0])
                 : null
@@ -373,6 +374,8 @@ export default function TimetableGrid() {
                         </div>
                       )}
                     </div>
+                  ) : closureEvents.length ? (
+                    <div className="tt-empty-cell" style={{ background: '#fff1f2', color: '#9f1239', fontSize: 11, fontWeight: 650, padding: 6, borderRadius: 6 }}>{closureEvents[0].title}</div>
                   ) : (
                     <div className="tt-empty-cell">—</div>
                   )}
