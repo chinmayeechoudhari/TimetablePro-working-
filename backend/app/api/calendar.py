@@ -1,6 +1,5 @@
-from datetime import datetime
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
@@ -273,9 +272,16 @@ def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
 
     term = get_term_or_404(db, term_id)
     region = (term.holiday_region or "").lower()
-    country = "IN" if "india" in region or "bharat" in region else None
+    country_map = {
+        "india": "IN", "bharat": "IN", "united states": "US", "usa": "US",
+        "united kingdom": "GB", "uk": "GB", "canada": "CA", "australia": "AU",
+        "united arab emirates": "AE", "uae": "AE", "germany": "DE",
+        "france": "FR", "singapore": "SG", "new zealand": "NZ", "ireland": "IE",
+        "netherlands": "NL", "spain": "ES", "italy": "IT", "south africa": "ZA",
+    }
+    country = next((code for name, code in country_map.items() if name in region), None)
     if not country:
-        raise HTTPException(status_code=422, detail="Regional holiday feed currently supports India. You can still upload or add holidays manually.")
+        raise HTTPException(status_code=422, detail="No regional feed is configured for this country yet. Upload your institution calendar or add dates manually.")
     imported = skipped = 0
     for year in range(term.start_date.year, term.end_date.year + 1):
         request = Request(f"https://date.nager.at/api/v3/PublicHolidays/{year}/{country}", headers={"User-Agent": "TimetablePro/1.0"})
