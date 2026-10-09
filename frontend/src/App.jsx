@@ -16,6 +16,7 @@ const AcademicStructure = lazy(() => import('./components/AcademicStructureV2.js
 const AcademicLegacyCleanup = lazy(() => import('./components/AcademicLegacyCleanup.jsx'))
 const AcademicSubjects = lazy(() => import('./components/AcademicSubjects.jsx'))
 const FacultyAssignments = lazy(() => import('./components/FacultyAssignments.jsx'))
+const CalendarPage = lazy(() => import('./components/CalendarPage.jsx'))
 
 function AcademicStructurePage() {
   return (
@@ -64,6 +65,7 @@ export default function App() {
               <Route path="/constraints" element={<ConstraintsPage />} />
               <Route path="/generate" element={<GenerateTimetable />} />
               <Route path="/timetable" element={<TimetableGrid />} />
+              <Route path="/calendar" element={<CalendarPage />} />
             </Routes>
           </Suspense>
         </div>
