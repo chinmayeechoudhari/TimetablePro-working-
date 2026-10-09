@@ -38,6 +38,9 @@ function toDate(value) {
 function dateLabel(value) {
   return toDate(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
+function localDateKey(date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+}
 
 export default function CalendarPage() {
   const [terms, setTerms] = useState([])
@@ -45,6 +48,7 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
   const [events, setEvents] = useState([])
+  const [calendarMonth, setCalendarMonth] = useState('2026-07')
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
@@ -55,6 +59,26 @@ export default function CalendarPage() {
   const [error, setError] = useState('')
 
   const selectedTerm = useMemo(() => terms.find(term => String(term.term_id) === String(selectedId)), [terms, selectedId])
+  const monthDate = useMemo(() => toDate(`${calendarMonth}-01`), [calendarMonth])
+  const monthDays = useMemo(() => {
+    const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1, 12)
+    const offset = (first.getDay() + 6) % 7
+    const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 12).getDate()
+    return [...Array(offset).fill(null), ...Array.from({ length: count }, (_, index) => new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1, 12))]
+  }, [monthDate])
+  const eventsByDate = useMemo(() => {
+    const result = {}
+    for (const event of events) {
+      let day = toDate(event.start_date)
+      const end = toDate(event.end_date)
+      while (day <= end) {
+        const key = localDateKey(day)
+        ;(result[key] ||= []).push(event)
+        day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 12)
+      }
+    }
+    return result
+  }, [events])
   const setTermField = (key, value) => setTermForm(current => ({ ...current, [key]: value }))
   const setEventField = (key, value) => setEventForm(current => ({ ...current, [key]: value }))
 
@@ -65,6 +89,7 @@ export default function CalendarPage() {
     const active = response.data.find(term => term.status === 'active')
     const next = preferred || active || response.data[0]
     setSelectedId(next ? String(next.term_id) : '')
+    if (next) setCalendarMonth(next.start_date.slice(0, 7))
     return next
   }
 
@@ -230,9 +255,28 @@ export default function CalendarPage() {
 
     <section style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, background: 'var(--bg-card, #fff)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: 18, borderBottom: '1px solid var(--border-color, #e2e8f0)', flexWrap: 'wrap' }}>
-        <div><h2 style={{ margin: 0, fontSize: 18 }}>Term events</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 12 }}>Holidays, closures, exams and special working days</p></div>
+        <div><h2 style={{ margin: 0, fontSize: 18 }}>Term calendar</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 12 }}>Holidays, closures, exams and special working days</p></div>
         <select aria-label="Select academic term" style={{ ...inputStyle, width: 'auto', minWidth: 210 }} value={selectedId} onChange={e => setSelectedId(e.target.value)} disabled={!terms.length}>{terms.length ? terms.map(term => <option key={term.term_id} value={term.term_id}>{term.academic_year} · {term.term_name}</option>) : <option value="">No terms created</option>}</select>
       </div>
+      {selectedTerm && <div style={{ padding: 18, borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1, 12)).slice(0, 7))} style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }}>←</button>
+          <h3 style={{ margin: 0, fontSize: 16 }}>{monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</h3>
+          <button type="button" aria-label="Next month" onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1, 12)).slice(0, 7))} style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }}>→</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 5 }}>
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div key={day} style={{ padding: '7px 2px', textAlign: 'center', fontSize: 11, fontWeight: 750, color: 'var(--text-secondary, #64748b)' }}>{day}</div>)}
+          {monthDays.map((day, index) => {
+            const key = day ? localDateKey(day) : `empty-${index}`
+            const dayEvents = day ? (eventsByDate[localDateKey(day)] || []) : []
+            const insideTerm = day && day >= toDate(selectedTerm.start_date) && day <= toDate(selectedTerm.end_date)
+            return <div key={key} style={{ minHeight: 76, minWidth: 0, border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 8, padding: 5, background: !day ? 'transparent' : insideTerm ? 'var(--bg-card, #fff)' : 'var(--bg-subtle, #f8fafc)', opacity: insideTerm ? 1 : .48 }}>
+              {day && <><div style={{ fontSize: 11, fontWeight: dayEvents.length ? 800 : 550, marginBottom: 4 }}>{day.getDate()}</div><div style={{ display: 'grid', gap: 3 }}>{dayEvents.slice(0, 2).map((event, i) => <div key={`${event.event_id}-${i}`} title={event.title} style={{ background: event.is_closure ? '#ffe4e6' : event.event_type === 'exam' ? '#ede9fe' : '#dbeafe', color: event.is_closure ? '#9f1239' : event.event_type === 'exam' ? '#5b21b6' : '#1d4ed8', fontSize: 9, lineHeight: 1.25, borderRadius: 4, padding: '3px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</div>)}{dayEvents.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-secondary, #64748b)' }}>+{dayEvents.length - 2} more</div>}</div></>}
+            </div>
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12, fontSize: 10, color: 'var(--text-secondary, #64748b)' }}><span>🟥 Closure / holiday</span><span>🟪 Exam</span><span>🟦 Other event</span><span>Faded dates are outside this term</span></div>
+      </div>}
       {loading ? <div style={{ padding: 36, textAlign: 'center', color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>Loading calendar…</div>
       : !terms.length ? <div style={{ padding: 40, textAlign: 'center' }}><div style={{ fontSize: 30, marginBottom: 10 }}>▦</div><h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Create your first academic term</h3><p style={{ color: 'var(--text-secondary, #64748b)', fontSize: 13, margin: '0 auto 18px', maxWidth: 430 }}>Use the prefilled Semester 1 configuration or enter a different academic term to start managing its calendar.</p><button type="button" style={buttonStyle} onClick={() => setShowTermForm(true)}>Configure first term</button></div>
       : !events.length ? <div style={{ padding: 38, textAlign: 'center' }}><h3 style={{ margin: '0 0 8px', fontSize: 16 }}>No events added yet</h3><p style={{ color: 'var(--text-secondary, #64748b)', fontSize: 13, margin: '0 auto 18px', maxWidth: 430 }}>Add public holidays, college closures, vacations or exam dates. Automatic official-holiday imports will be a later phase.</p><button type="button" style={buttonStyle} onClick={() => setShowEventForm(true)}>Add first event</button></div>
