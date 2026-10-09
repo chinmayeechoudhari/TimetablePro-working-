@@ -1,8 +1,9 @@
+from datetime import datetime
 import json
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -261,6 +262,134 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
         "source": "College Academic Activity Calendar AY 2026-27 Sem I",
         "message": f"Imported {imported} college calendar entries. Please verify dates against the latest college circular.",
     }
+
+
+
+@router.post("/terms/{term_id}/holidays/region")
+def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
+    """Load country/region public holidays, preferring the selected region."""
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError, URLError
+
+    term = get_term_or_404(db, term_id)
+    region = (term.holiday_region or "").lower()
+    country = "IN" if "india" in region or "bharat" in region else None
+    if not country:
+        raise HTTPException(status_code=422, detail="Regional holiday feed currently supports India. You can still upload or add holidays manually.")
+    imported = skipped = 0
+    for year in range(term.start_date.year, term.end_date.year + 1):
+        request = Request(f"https://date.nager.at/api/v3/PublicHolidays/{year}/{country}", headers={"User-Agent": "TimetablePro/1.0"})
+        try:
+            with urlopen(request, timeout=10) as response:
+                holidays = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"Regional holiday service is unavailable for {year}. You can upload your institution calendar or add dates manually.") from exc
+        for item in holidays:
+            try:
+                event_date = date.fromisoformat(item["date"])
+            except (KeyError, ValueError):
+                continue
+            if not term.start_date <= event_date <= term.end_date:
+                continue
+            subdivisions = item.get("counties") or []
+            if "maharashtra" in region and subdivisions and "IN-MH" not in subdivisions:
+                continue
+            title = item.get("localName") or item.get("name") or "Public holiday"
+            exists = db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id, CalendarEvent.start_date == event_date, CalendarEvent.title == title).first()
+            if exists:
+                skipped += 1
+                continue
+            db.add(CalendarEvent(term_id=term_id, title=title, event_type="holiday", start_date=event_date, end_date=event_date, is_closure=True, is_working_day_override=False, source=f"Regional public holidays ({term.holiday_region})", approval_status="approved", notes="Imported regional public-holiday suggestion. Verify against the relevant government notice."))
+            imported += 1
+    db.commit()
+    return {"imported": imported, "skipped": skipped, "source": term.holiday_region, "message": f"Loaded {imported} regional holiday dates. Please review before relying on them."}
+
+
+@router.post("/terms/{term_id}/holidays/upload")
+async def upload_institution_calendar(term_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Import date/title rows from an institution-issued XLSX or CSV calendar."""
+    import csv
+    import io
+    from openpyxl import load_workbook
+
+    term = get_term_or_404(db, term_id)
+    filename = (file.filename or "").lower()
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Calendar file must be 10 MB or smaller.")
+    rows = []
+    try:
+        if filename.endswith(".csv"):
+            text = raw.decode("utf-8-sig")
+            rows = list(csv.reader(io.StringIO(text)))
+        elif filename.endswith(".xlsx"):
+            workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            sheet = workbook.active
+            rows = [[cell for cell in row] for row in sheet.iter_rows(values_only=True)]
+        else:
+            raise HTTPException(status_code=415, detail="Upload an .xlsx or .csv file. PDF import is not supported yet.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not read this calendar file. Check that it is a valid .xlsx or UTF-8 CSV.") from exc
+
+    def parse_date(value):
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, (int, float)):
+            from openpyxl.utils.datetime import from_excel
+            return from_excel(value).date()
+        value = str(value or "").strip()
+        if not value:
+            return None
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                pass
+        return None
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="The file has no rows.")
+    normalized = [str(value or "").strip().lower() for value in rows[0]]
+    date_index = next((i for i, value in enumerate(normalized) if value in {"date", "start date", "start_date", "day/date"}), None)
+    title_index = next((i for i, value in enumerate(normalized) if value in {"title", "event", "holiday", "description", "activity", "occasion"}), None)
+    if date_index is None or title_index is None:
+        raise HTTPException(status_code=422, detail="Use a table with column headers Date and Title (or Event/Description). Optional columns: End Date, Type, Closure.")
+    end_index = next((i for i, value in enumerate(normalized) if value in {"end date", "end_date", "to"}), None)
+    type_index = next((i for i, value in enumerate(normalized) if value in {"type", "event type"}), None)
+    closure_index = next((i for i, value in enumerate(normalized) if value in {"closure", "no classes", "is closure"}), None)
+    imported = skipped = 0
+    problems = []
+    for line, row in enumerate(rows[1:], start=2):
+        if max(date_index, title_index) >= len(row):
+            continue
+        start_date = parse_date(row[date_index])
+        title = str(row[title_index] or "").strip()
+        if not start_date or not title:
+            continue
+        end_date = parse_date(row[end_index]) if end_index is not None and end_index < len(row) else start_date
+        end_date = end_date or start_date
+        if end_date < start_date or start_date < term.start_date or end_date > term.end_date:
+            problems.append(f"Row {line}: date range is invalid or outside this term.")
+            continue
+        event_type = str(row[type_index] or "holiday").strip().lower() if type_index is not None and type_index < len(row) else "holiday"
+        type_aliases = {"break": "vacation", "vacation": "vacation", "exam": "exam", "examination": "exam", "event": "event", "working day": "working_day", "working_day": "working_day", "closure": "closure", "holiday": "holiday"}
+        event_type = type_aliases.get(event_type, "holiday")
+        raw_closure = str(row[closure_index] or "").strip().lower() if closure_index is not None and closure_index < len(row) else ""
+        is_closure = event_type == "working_day" or raw_closure in {"yes", "true", "1", "y"} if closure_index is not None else event_type in {"holiday", "vacation", "closure", "working_day"}
+        if event_type in {"exam", "event"} and closure_index is None:
+            is_closure = False
+        exists = db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id, CalendarEvent.start_date == start_date, CalendarEvent.title == title).first()
+        if exists:
+            skipped += 1
+            continue
+        db.add(CalendarEvent(term_id=term_id, title=title, event_type=event_type, start_date=start_date, end_date=end_date, is_closure=is_closure, is_working_day_override=event_type == "working_day", source=f"Uploaded institution calendar: {file.filename}", approval_status="pending", notes="Imported from institution file. Review and approve this entry in the calendar."))
+        imported += 1
+    db.commit()
+    return {"imported": imported, "skipped": skipped, "problems": problems[:20], "source": file.filename, "message": f"Imported {imported} entries as pending review; {skipped} duplicates skipped."}
 
 
 @router.get("/terms/{term_id}/events")
