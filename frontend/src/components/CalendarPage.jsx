@@ -49,6 +49,7 @@ export default function CalendarPage() {
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
   const [showTermForm, setShowTermForm] = useState(false)
+  const [editingTerm, setEditingTerm] = useState(false)
   const [showEventForm, setShowEventForm] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -102,11 +103,14 @@ export default function CalendarPage() {
     event.preventDefault()
     setError(''); setNotice(''); setSavingTerm(true)
     try {
-      const response = await axios.post(`${API}/calendar/terms`, termForm)
-      const created = response.data
-      await loadTerms(created.term_id)
+      const response = editingTerm && selectedTerm
+        ? await axios.patch(`${API}/calendar/terms/${selectedTerm.term_id}`, termForm)
+        : await axios.post(`${API}/calendar/terms`, termForm)
+      const saved = response.data
+      await loadTerms(saved.term_id)
       setShowTermForm(false)
-      setNotice('Academic term created. You can now add holidays and other calendar events.')
+      setEditingTerm(false)
+      setNotice(editingTerm ? 'Academic term updated.' : 'Academic term created. You can now add holidays and other calendar events.')
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not create the academic term.')
     } finally { setSavingTerm(false) }
@@ -162,7 +166,8 @@ export default function CalendarPage() {
         <p style={{ margin: '8px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 14, maxWidth: 680, lineHeight: 1.6 }}>Configure a semester, manage holidays and exceptions, and prepare the calendar foundation for date-aware timetables.</p>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setTermForm(DEFAULT_TERM); setShowTermForm(value => !value) }}>+ New term</button>
+        <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setEditingTerm(false); setTermForm(DEFAULT_TERM); setShowTermForm(value => !value) }}>+ New term</button>
+        <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} disabled={!selectedTerm} onClick={() => { setEditingTerm(true); setTermForm({ ...selectedTerm }); setShowTermForm(true) }}>Edit term</button>
         <button type="button" style={buttonStyle} disabled={!selectedTerm} onClick={() => setShowEventForm(value => !value)}>+ Add event</button>
       </div>
     </div>
@@ -171,7 +176,7 @@ export default function CalendarPage() {
     {error && <div style={{ marginBottom: 14 }}><Notice error>{error}</Notice></div>}
 
     {showTermForm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, padding: 20, marginBottom: 22, boxShadow: '0 4px 18px rgba(15,23,42,.04)' }}>
-      <h2 style={{ fontSize: 18, margin: '0 0 5px' }}>Term configuration</h2>
+      <h2 style={{ fontSize: 18, margin: '0 0 5px' }}>{editingTerm ? 'Edit term configuration' : 'Term configuration'}</h2>
       <p style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)', margin: '0 0 18px' }}>The first term is prefilled with your proposed Semester 1 dates. Adjust any field before saving.</p>
       <form onSubmit={createTerm}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
@@ -189,8 +194,8 @@ export default function CalendarPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{WEEKDAYS.map(day => <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid var(--border-color, #dbe2ea)', borderRadius: 9, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}><input type="checkbox" checked={termForm.working_days.includes(day)} onChange={() => toggleWorkingDay(day)} />{day.slice(0, 3)}</label>)}</div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button type="button" style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => setShowTermForm(false)}>Cancel</button>
-          <button type="submit" style={buttonStyle} disabled={savingTerm}>{savingTerm ? 'Saving…' : 'Save term'}</button>
+          <button type="button" style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setShowTermForm(false); setEditingTerm(false) }}>Cancel</button>
+          <button type="submit" style={buttonStyle} disabled={savingTerm}>{savingTerm ? 'Saving…' : editingTerm ? 'Save changes' : 'Save term'}</button>
         </div>
       </form>
     </section>}
