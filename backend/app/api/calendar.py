@@ -193,6 +193,118 @@ def create_event(term_id: int, payload: EventCreate, db: Session = Depends(get_d
     return serialize_event(event)
 
 
+
+@router.get("/terms/{term_id}/schedule")
+def get_term_schedule(term_id: int, db: Session = Depends(get_db)):
+    """Expand the generated weekly pattern into dated classes for a term.
+
+    Approved closures and non-working weekdays suppress regular classes.
+    Classes that fall on closures are returned as cancelled occurrences with
+    an optional replacement-date suggestion; suggestions are never applied
+    automatically.
+    """
+    from datetime import timedelta
+    from app.models.models import Timetable, TimeSlot
+
+    term = get_term_or_404(db, term_id)
+    weekly_rows = db.query(Timetable).all()
+    slots = {slot.slot_id: slot for slot in db.query(TimeSlot).all()}
+    events = (
+        db.query(CalendarEvent)
+        .filter(
+            CalendarEvent.term_id == term_id,
+            CalendarEvent.approval_status == "approved",
+        )
+        .order_by(CalendarEvent.start_date, CalendarEvent.event_id)
+        .all()
+    )
+    working_days = set(json.loads(term.working_days_json or "[]"))
+
+    def events_for(day):
+        return [event for event in events if event.start_date <= day <= event.end_date]
+
+    def day_state(day):
+        day_events = events_for(day)
+        force_working = any(event.is_working_day_override is True for event in day_events)
+        is_closed = any(event.is_closure for event in day_events) and not force_working
+        is_working = force_working or day.strftime("%A") in working_days
+        return is_working and not is_closed, day_events, is_closed
+
+    def conflicts(candidate_date, row, slot):
+        for other in weekly_rows:
+            other_slot = slots.get(other.slot_id)
+            if not other_slot or other_slot.day != candidate_date.strftime("%A"):
+                continue
+            if other_slot.period_number != slot.period_number:
+                continue
+            if (
+                other.class_id == row.class_id
+                or other.teacher_id == row.teacher_id
+                or other.room_id == row.room_id
+            ):
+                return True
+        return False
+
+    results = []
+    day = term.start_date
+    while day <= term.end_date:
+        is_working, day_events, is_closed = day_state(day)
+        matching_rows = [
+            (row, slots.get(row.slot_id))
+            for row in weekly_rows
+            if slots.get(row.slot_id) and slots[row.slot_id].day == day.strftime("%A")
+        ]
+        if is_working:
+            for row, slot in matching_rows:
+                results.append({
+                    "date": day.isoformat(),
+                    "weekday": day.strftime("%A"),
+                    "status": "scheduled",
+                    "class_id": row.class_id,
+                    "subject_id": row.subject_id,
+                    "teacher_id": row.teacher_id,
+                    "room_id": row.room_id,
+                    "slot_id": row.slot_id,
+                    "period_number": slot.period_number,
+                    "event_titles": [event.title for event in day_events],
+                    "suggested_replacement_date": None,
+                })
+        elif is_closed:
+            for row, slot in matching_rows:
+                suggestion = None
+                if term.reschedule_policy == "suggest":
+                    candidate = day + timedelta(days=1)
+                    while candidate <= term.end_date:
+                        candidate_working, _, candidate_closed = day_state(candidate)
+                        if candidate_working and not candidate_closed and not conflicts(candidate, row, slot):
+                            suggestion = candidate.isoformat()
+                            break
+                        candidate += timedelta(days=1)
+                results.append({
+                    "date": day.isoformat(),
+                    "weekday": day.strftime("%A"),
+                    "status": "cancelled_holiday",
+                    "class_id": row.class_id,
+                    "subject_id": row.subject_id,
+                    "teacher_id": row.teacher_id,
+                    "room_id": row.room_id,
+                    "slot_id": row.slot_id,
+                    "period_number": slot.period_number,
+                    "event_titles": [event.title for event in day_events],
+                    "suggested_replacement_date": suggestion,
+                    "requires_admin_approval": bool(suggestion),
+                })
+        day += timedelta(days=1)
+
+    return {
+        "term": serialize_term(term),
+        "total_sessions": sum(item["status"] == "scheduled" for item in results),
+        "cancelled_sessions": sum(item["status"] == "cancelled_holiday" for item in results),
+        "sessions": results,
+        "note": "Replacement dates are suggestions only and are not applied without administrator approval.",
+    }
+
+
 @router.patch("/events/{event_id}")
 def update_event(event_id: int, payload: EventCreate, db: Session = Depends(get_db)):
     event = db.query(CalendarEvent).filter(CalendarEvent.event_id == event_id).first()
