@@ -48,7 +48,7 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
   const [events, setEvents] = useState([])
-  const [calendarMonth, setCalendarMonth] = useState('2026-07')
+  const [calendarMonth, setCalendarMonth] = useState(() => localDateKey(new Date()).slice(0, 7))
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
@@ -90,7 +90,7 @@ export default function CalendarPage() {
     const active = response.data.find(term => term.status === 'active')
     const next = preferred || active || response.data[0]
     setSelectedId(next ? String(next.term_id) : '')
-    if (next) setCalendarMonth(next.start_date.slice(0, 7))
+    if (next) { const today = localDateKey(new Date()); setCalendarMonth(today >= next.start_date && today <= next.end_date ? today.slice(0, 7) : next.start_date.slice(0, 7)) }
     return next
   }
 
@@ -108,7 +108,7 @@ export default function CalendarPage() {
         const list = response.data
         setTerms(list)
         const chosen = list.find(term => term.status === 'active') || list[0]
-        if (chosen) setSelectedId(String(chosen.term_id))
+        if (chosen) { setSelectedId(String(chosen.term_id)); const today = localDateKey(new Date()); setCalendarMonth(today >= chosen.start_date && today <= chosen.end_date ? today.slice(0, 7) : chosen.start_date.slice(0, 7)) }
         else setShowTermForm(true)
       })
       .catch(() => { if (alive) setError('Could not load the academic calendar. Check that the backend is running.') })
@@ -148,7 +148,7 @@ export default function CalendarPage() {
     try {
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/import`)
       await loadEvents(selectedTerm.term_id)
-      setNotice(`Imported ${response.data.imported} public holidays. ${response.data.skipped} duplicates or out-of-region entries were skipped. Please review local college-specific holidays separately.`)
+      setNotice(`Imported ${response.data.imported} college calendar entries. ${response.data.skipped} duplicates or out-of-region entries were skipped. Please review local college-specific holidays separately.`)
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not import public holidays. Check backend internet access and try again.')
     } finally { setImportingHolidays(false) }
@@ -201,12 +201,12 @@ export default function CalendarPage() {
       <div>
         <div style={{ fontSize: 11, letterSpacing: '.12em', fontWeight: 750, color: '#2563eb', marginBottom: 8 }}>SCHEDULE · CALENDAR</div>
         <h1 style={{ margin: 0, fontSize: 'clamp(24px, 3vw, 32px)', letterSpacing: '-.03em' }}>Academic Calendar</h1>
-        <p style={{ margin: '8px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 14, maxWidth: 680, lineHeight: 1.6 }}>Set your semester dates, import public holidays, and review them on one calendar. Approved closures will be excluded from the term schedule.</p>
+        <p style={{ margin: '8px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 14, maxWidth: 680, lineHeight: 1.6 }}>Configure your semester, load the college-provided activity calendar, and add any extra holidays or events. Today is highlighted in the calendar.</p>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setEditingTerm(false); setTermForm(DEFAULT_TERM); setShowTermForm(value => !value) }}>+ New term</button>
         <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} disabled={!selectedTerm} onClick={() => { setEditingTerm(true); setTermForm({ ...selectedTerm }); setShowTermForm(true) }}>Edit term</button>
-        <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Importing holidays…' : 'Import public holidays'}</button>
+        <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Importing holidays…' : 'Load college holidays'}</button>
         <button type="button" style={buttonStyle} disabled={!selectedTerm} onClick={() => setShowEventForm(value => !value)}>+ Add college event</button>
       </div>
     </div>
@@ -244,7 +244,7 @@ export default function CalendarPage() {
         ['Selected term', selectedTerm.term_name, selectedTerm.academic_year],
         ['Term dates', dateLabel(selectedTerm.start_date), `Through ${dateLabel(selectedTerm.end_date)}`],
         ['Holiday region', selectedTerm.holiday_region, selectedTerm.timezone],
-        ['Calendar events', String(events.length), 'Public and college events'],
+        ['Calendar events', String(events.length), 'College calendar and additions'],
       ].map(([title, value, sub]) => <div key={title} style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 14, padding: 15, background: 'var(--bg-card, #fff)' }}><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginBottom: 8 }}>{title}</div><div style={{ fontSize: 18, fontWeight: 750, overflowWrap: 'anywhere' }}>{value}</div><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 5 }}>{sub}</div></div>)}
     </section>}
 
@@ -284,8 +284,8 @@ export default function CalendarPage() {
             const key = day ? localDateKey(day) : `empty-${index}`
             const dayEvents = day ? (eventsByDate[localDateKey(day)] || []) : []
             const insideTerm = day && day >= toDate(selectedTerm.start_date) && day <= toDate(selectedTerm.end_date)
-            return <div key={key} style={{ minHeight: 76, minWidth: 0, border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 8, padding: 5, background: !day ? 'transparent' : insideTerm ? 'var(--bg-card, #fff)' : 'var(--bg-subtle, #f8fafc)', opacity: insideTerm ? 1 : .48 }}>
-              {day && <><div style={{ fontSize: 11, fontWeight: dayEvents.length ? 800 : 550, marginBottom: 4 }}>{day.getDate()}</div><div style={{ display: 'grid', gap: 3 }}>{dayEvents.slice(0, 2).map((event, i) => <div key={`${event.event_id}-${i}`} title={event.title} style={{ background: event.is_closure ? '#ffe4e6' : event.event_type === 'exam' ? '#ede9fe' : '#dbeafe', color: event.is_closure ? '#9f1239' : event.event_type === 'exam' ? '#5b21b6' : '#1d4ed8', fontSize: 9, lineHeight: 1.25, borderRadius: 4, padding: '3px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</div>)}{dayEvents.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-secondary, #64748b)' }}>+{dayEvents.length - 2} more</div>}</div></>}
+            return <div key={key} style={{ minHeight: 76, minWidth: 0, border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 8, padding: 5, background: !day ? 'transparent' : day && localDateKey(day) === localDateKey(new Date()) ? '#eff6ff' : insideTerm ? 'var(--bg-card, #fff)' : 'var(--bg-subtle, #f8fafc)', borderColor: day && localDateKey(day) === localDateKey(new Date()) ? '#2563eb' : 'var(--border-color, #e2e8f0)', boxShadow: day && localDateKey(day) === localDateKey(new Date()) ? 'inset 0 0 0 1px #2563eb' : 'none', opacity: insideTerm ? 1 : .48 }}>
+              {day && <><div style={{ fontSize: 11, fontWeight: dayEvents.length || localDateKey(day) === localDateKey(new Date()) ? 800 : 550, marginBottom: 4, color: localDateKey(day) === localDateKey(new Date()) ? '#1d4ed8' : 'inherit' }}>{day.getDate()}{localDateKey(day) === localDateKey(new Date()) ? ' · TODAY' : ''}</div><div style={{ display: 'grid', gap: 3 }}>{dayEvents.slice(0, 2).map((event, i) => <div key={`${event.event_id}-${i}`} title={event.title} style={{ background: event.is_closure ? '#ffe4e6' : event.event_type === 'exam' ? '#ede9fe' : '#dbeafe', color: event.is_closure ? '#9f1239' : event.event_type === 'exam' ? '#5b21b6' : '#1d4ed8', fontSize: 9, lineHeight: 1.25, borderRadius: 4, padding: '3px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</div>)}{dayEvents.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-secondary, #64748b)' }}>+{dayEvents.length - 2} more</div>}</div></>}
             </div>
           })}
         </div>
@@ -302,6 +302,6 @@ export default function CalendarPage() {
         <button type="button" aria-label={`Delete ${event.title}`} onClick={() => removeEvent(event.event_id)} style={{ border: '1px solid var(--border-color, #e2e8f0)', background: 'transparent', color: '#be123c', borderRadius: 8, padding: '7px 9px', cursor: 'pointer', fontSize: 12 }}>Delete</button>
       </div>)}</div>)}</div>}
     </section>
-    <p style={{ marginTop: 16, color: 'var(--text-secondary, #64748b)', fontSize: 12, lineHeight: 1.6 }}>Public holiday dates are imported from an external calendar feed and should be verified before relying on them. Add institution-specific holidays and closures as college events. The regular weekly timetable pattern remains unchanged; this page manages term dates and calendar exceptions.</p>
+    <p style={{ marginTop: 16, color: 'var(--text-secondary, #64748b)', fontSize: 12, lineHeight: 1.6 }}>Built-in entries come from the college-provided AY 2026–27 Semester I activity calendar. Please compare dates with the latest circular. Add any revised or additional holidays using “Add college event”.</p>
   </main>
 }
