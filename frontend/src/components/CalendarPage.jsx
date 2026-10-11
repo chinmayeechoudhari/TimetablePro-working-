@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
 const API = 'http://localhost:8000'
@@ -22,33 +23,75 @@ const EVENT_TYPES = [
   { value: 'closure', label: 'Institution closure' },
   { value: 'working_day', label: 'Special working day' },
 ]
-const inputStyle = { width: '100%', boxSizing: 'border-box', border: '1px solid var(--border-color, #dbe2ea)', borderRadius: 9, padding: '10px 11px', background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', font: 'inherit', fontSize: 13 }
-const labelStyle = { display: 'block', fontSize: 12, fontWeight: 650, marginBottom: 6, color: 'var(--text-secondary, #475569)' }
-const buttonStyle = { border: 0, borderRadius: 9, padding: '10px 14px', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 650, cursor: 'pointer' }
 
-function Field({ label, children }) {
-  return <label style={{ display: 'block', minWidth: 0 }}><span style={labelStyle}>{label}</span>{children}</label>
-}
-function Notice({ children, error = false }) {
-  return <div role="status" style={{ padding: '10px 12px', borderRadius: 9, background: error ? '#fff1f2' : '#eff6ff', color: error ? '#be123c' : '#1d4ed8', fontSize: 13 }}>{children}</div>
-}
 function toDate(value) {
   return new Date(value + 'T12:00:00')
 }
 function dateLabel(value) {
-  return toDate(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  if (!value) return ''
+  return toDate(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 function localDateKey(date) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
 }
 
+/* ─── SVG Icons ─── */
+const PlusIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+const SparklesIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg>
+const CapIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 6 3 6 3s6-1 6-3v-5"/></svg>
+const CalendarIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+const PinIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+const ChevronDown = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+const ChevronLeft = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+const ChevronRight = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+const BookIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+const CheckCalendarIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
+const TagCalendarIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="15" r="2"/></svg>
+const ClockIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+const UploadIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+const FileDocIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+const EditIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+const RefreshIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+const TemplateIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+const TrashIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+const CheckCircleIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10" fill="#10b981"/><path d="m8.5 12 2.5 2.5 5-5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+const AlertTriangleIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#f59e0b"><path d="m10.29 3.86-8.6 15A2 2 0 0 0 3.43 22h17.14a2 2 0 0 0 1.74-3.14l-8.6-15a2 2 0 0 0-3.42 0z" fill="#f59e0b"/><line x1="12" y1="9" x2="12" y2="13" stroke="#fff" strokeWidth="2" strokeLinecap="round"/><circle cx="12" cy="17" r="1" fill="#fff"/></svg>
+const ArrowRightIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+
+/* ─── Field Input Helper ─── */
+function FieldInput({ label, children }) {
+  return (
+    <label style={{ display: 'block', minWidth: 0 }}>
+      <span style={{
+        display: 'block', fontSize: 11, fontWeight: 700,
+        letterSpacing: '.04em', marginBottom: 6,
+        color: 'var(--text-muted, #64748b)',
+      }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const inputCls = {
+  width: '100%', boxSizing: 'border-box',
+  border: '1px solid #dbe2ea', borderRadius: 9,
+  padding: '9px 12px', background: '#fff',
+  color: 'var(--text-main, #172033)', font: 'inherit', fontSize: 13,
+  outline: 'none', transition: 'border-color .15s',
+}
+
 export default function CalendarPage() {
+  const navigate = useNavigate()
   const [terms, setTerms] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
-  const [eventForm, setEventForm] = useState({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
+  const [eventForm, setEventForm] = useState({
+    title: '', event_type: 'holiday', start_date: '', end_date: '',
+    is_closure: true, approval_status: 'approved', source: 'manual', notes: ''
+  })
   const [events, setEvents] = useState([])
-  const [calendarMonth, setCalendarMonth] = useState(() => localDateKey(new Date()).slice(0, 7))
+  const [calendarMonth, setCalendarMonth] = useState('2026-10')
+  const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
@@ -59,15 +102,47 @@ export default function CalendarPage() {
   const [showEventForm, setShowEventForm] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef(null)
 
   const selectedTerm = useMemo(() => terms.find(term => String(term.term_id) === String(selectedId)), [terms, selectedId])
   const monthDate = useMemo(() => toDate(`${calendarMonth}-01`), [calendarMonth])
+
+  // Full calendar grid with previous and next month dates to fill complete weeks
   const monthDays = useMemo(() => {
-    const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1, 12)
-    const offset = (first.getDay() + 6) % 7
-    const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 12).getDate()
-    return [...Array(offset).fill(null), ...Array.from({ length: count }, (_, index) => new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1, 12))]
+    const year = monthDate.getFullYear()
+    const month = monthDate.getMonth()
+    const firstDay = new Date(year, month, 1, 12)
+    const offset = (firstDay.getDay() + 6) % 7 // Monday = 0
+    const daysInMonth = new Date(year, month + 1, 0, 12).getDate()
+    const daysInPrevMonth = new Date(year, month, 0, 12).getDate()
+
+    const days = []
+    // Previous month padding
+    for (let i = offset - 1; i >= 0; i--) {
+      days.push({
+        date: new Date(year, month - 1, daysInPrevMonth - i, 12),
+        isCurrentMonth: false,
+      })
+    }
+    // Current month
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({
+        date: new Date(year, month, i, 12),
+        isCurrentMonth: true,
+      })
+    }
+    // Next month padding to complete 35 or 42 cells
+    const remaining = (7 - (days.length % 7)) % 7
+    for (let i = 1; i <= remaining; i++) {
+      days.push({
+        date: new Date(year, month + 1, i, 12),
+        isCurrentMonth: false,
+      })
+    }
+    return days
   }, [monthDate])
+
   const eventsByDate = useMemo(() => {
     const result = {}
     for (const event of events) {
@@ -81,6 +156,21 @@ export default function CalendarPage() {
     }
     return result
   }, [events])
+
+  const upcomingEvents = useMemo(() => {
+    return [...events]
+      .sort((a, b) => a.start_date.localeCompare(b.start_date))
+      .slice(0, 5)
+  }, [events])
+
+  const holidaysClosuresCount = useMemo(() => {
+    return events.filter(e => e.is_closure || e.event_type === 'holiday' || e.event_type === 'closure').length
+  }, [events])
+
+  const pendingReviewsCount = useMemo(() => {
+    return events.filter(e => e.approval_status === 'pending').length
+  }, [events])
+
   const setTermField = (key, value) => setTermForm(current => ({ ...current, [key]: value }))
   const setEventField = (key, value) => setEventForm(current => ({ ...current, [key]: value }))
 
@@ -91,7 +181,10 @@ export default function CalendarPage() {
     const active = response.data.find(term => term.status === 'active')
     const next = preferred || active || response.data[0]
     setSelectedId(next ? String(next.term_id) : '')
-    if (next) { const today = localDateKey(new Date()); setCalendarMonth(today >= next.start_date && today <= next.end_date ? today.slice(0, 7) : next.start_date.slice(0, 7)) }
+    if (next) {
+      const today = localDateKey(new Date())
+      setCalendarMonth(today >= next.start_date && today <= next.end_date ? today.slice(0, 7) : next.start_date.slice(0, 7))
+    }
     return next
   }
 
@@ -109,11 +202,20 @@ export default function CalendarPage() {
         const list = response.data
         setTerms(list)
         const chosen = list.find(term => term.status === 'active') || list[0]
-        if (chosen) { setSelectedId(String(chosen.term_id)); const today = localDateKey(new Date()); setCalendarMonth(today >= chosen.start_date && today <= chosen.end_date ? today.slice(0, 7) : chosen.start_date.slice(0, 7)) }
-        else setShowTermForm(true)
+        if (chosen) {
+          setSelectedId(String(chosen.term_id))
+          const today = localDateKey(new Date())
+          setCalendarMonth(today >= chosen.start_date && today <= chosen.end_date ? today.slice(0, 7) : chosen.start_date.slice(0, 7))
+        } else {
+          setShowTermForm(true)
+        }
       })
-      .catch(() => { if (alive) setError('Could not load the academic calendar. Check that the backend is running.') })
-      .finally(() => { if (alive) setLoading(false) })
+      .catch(() => {
+        if (alive) setError('Could not load the academic calendar. Check that the backend is running.')
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
     return () => { alive = false }
   }, [])
 
@@ -149,9 +251,9 @@ export default function CalendarPage() {
     try {
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/import`)
       await loadEvents(selectedTerm.term_id)
-      setNotice(`Imported ${response.data.imported} college calendar entries. ${response.data.skipped} duplicates or out-of-region entries were skipped. Please review local college-specific holidays separately.`)
+      setNotice(`Imported ${response.data.imported} college calendar entries. ${response.data.skipped} duplicates or out-of-region entries were skipped.`)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not import public holidays. Check backend internet access and try again.')
+      setError(err.response?.data?.detail || 'Could not import public holidays.')
     } finally { setImportingHolidays(false) }
   }
 
@@ -161,14 +263,14 @@ export default function CalendarPage() {
     try {
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/region`)
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message || `Loaded ${response.data.imported} regional holiday suggestions. Please verify the dates.`)
+      setNotice(response.data.message || `Loaded ${response.data.imported} regional holiday suggestions.`)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Regional holiday import failed. You can upload a calendar or add dates manually.')
+      setError(err.response?.data?.detail || 'Regional holiday import failed.')
     } finally { setImportingHolidays(false) }
   }
 
   async function uploadCalendar(event) {
-    event.preventDefault()
+    if (event) event.preventDefault()
     if (!selectedTerm || !calendarFile) return
     setError(''); setNotice(''); setImportingHolidays(true)
     try {
@@ -214,7 +316,7 @@ export default function CalendarPage() {
 
   async function removeImportedEvents() {
     if (!selectedTerm) return
-    const confirmed = window.confirm('Remove all imported regional, college-template, and uploaded calendar entries for this term? Manually added events will be kept. This cannot be undone.')
+    const confirmed = window.confirm('Remove all imported regional, college-template, and uploaded calendar entries for this term? Manually added events will be kept.')
     if (!confirmed) return
     setError(''); setNotice('')
     try {
@@ -242,6 +344,15 @@ export default function CalendarPage() {
       : [...termForm.working_days, day])
   }
 
+  function handleFileDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.csv'))) {
+      setCalendarFile(file)
+    }
+  }
+
   const groupedEvents = useMemo(() => {
     const map = new Map()
     for (const event of events) {
@@ -252,125 +363,1490 @@ export default function CalendarPage() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [events])
 
-  return <main style={{ maxWidth: 1320, margin: '0 auto', padding: '28px clamp(16px, 3vw, 36px) 48px', color: 'var(--text-primary, #172033)' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-      <div>
-        <div style={{ fontSize: 11, letterSpacing: '.12em', fontWeight: 750, color: '#2563eb', marginBottom: 8 }}>SCHEDULE · CALENDAR</div>
-        <h1 style={{ margin: 0, fontSize: 'clamp(24px, 3vw, 32px)', letterSpacing: '-.03em' }}>Academic Calendar</h1>
-        <p style={{ margin: '8px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 14, maxWidth: 680, lineHeight: 1.6 }}>Configure your semester, load the college-provided activity calendar, and add any extra holidays or events. Today is highlighted in the calendar.</p>
-      </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setEditingTerm(false); setTermForm(DEFAULT_TERM); setShowTermForm(value => !value) }}>+ New term</button>
-        <button type="button" style={{ ...buttonStyle, background: 'var(--bg-card, #fff)', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }} disabled={!selectedTerm} onClick={() => { setEditingTerm(true); setTermForm({ ...selectedTerm }); setShowTermForm(true) }}>Edit term</button>
-        <button type="button" style={{ ...buttonStyle, background: '#0f766e' }} disabled={!selectedTerm || importingHolidays} onClick={importRegionalHolidays}>{importingHolidays ? 'Loading…' : 'Load regional holidays'}</button>
-        <button type="button" style={{ ...buttonStyle, background: '#475569' }} disabled={!selectedTerm || importingHolidays} onClick={importHolidays}>{importingHolidays ? 'Loading…' : 'Load college template'}</button>
-        <button type="button" style={buttonStyle} disabled={!selectedTerm} onClick={() => setShowEventForm(value => !value)}>+ Add college event</button>
-        <button type="button" style={{ ...buttonStyle, background: '#be123c' }} disabled={!selectedTerm || !events.some(event => String(event.source || '').startsWith('Uploaded institution calendar:') || String(event.source || '').startsWith('Regional public holidays') || event.source === 'College Academic Activity Calendar AY 2026-27 Sem I')} onClick={removeImportedEvents}>Remove imported entries</button>
-      </div>
-    </div>
+  return (
+    <>
+      <style>{`
+        .cal-page-wrap {
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: 24px 32px 50px;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          color: var(--text-main, #172033);
+        }
 
-    {notice && <div style={{ marginBottom: 14 }}><Notice>{notice}</Notice></div>}
-    {error && <div style={{ marginBottom: 14 }}><Notice error>{error}</Notice></div>}
+        /* ─── Breadcrumb & Header ─── */
+        .cal-breadcrumb {
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: .08em;
+          color: #2563eb;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+        }
+        .cal-header-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 22px;
+          flex-wrap: wrap;
+        }
+        .cal-title {
+          margin: 0;
+          font-size: 29px;
+          font-weight: 800;
+          letter-spacing: -.03em;
+          color: var(--text-main, #111827);
+          line-height: 1.2;
+        }
+        .cal-subtitle {
+          margin: 5px 0 0;
+          font-size: 13.5px;
+          color: var(--text-muted, #64748b);
+          line-height: 1.45;
+        }
+        .cal-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .cal-btn-add {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 9px 16px;
+          border-radius: 8px;
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #1f2937;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all .15s ease;
+          box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        }
+        .cal-btn-add:hover {
+          background: #f9fafb;
+          border-color: #9ca3af;
+        }
+        .cal-btn-generate {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 9px 18px;
+          border-radius: 8px;
+          border: none;
+          background: #2563eb;
+          color: #ffffff;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all .15s ease;
+          box-shadow: 0 2px 8px rgba(37,99,235,.28);
+        }
+        .cal-btn-generate:hover {
+          background: #1d4ed8;
+          box-shadow: 0 4px 12px rgba(37,99,235,.35);
+        }
 
-    {showTermForm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, padding: 20, marginBottom: 22, boxShadow: '0 4px 18px rgba(15,23,42,.04)' }}>
-      <h2 style={{ fontSize: 18, margin: '0 0 5px' }}>{editingTerm ? 'Edit term configuration' : 'Term configuration'}</h2>
-      <p style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)', margin: '0 0 18px' }}>The first term is prefilled with your proposed Semester 1 dates. Adjust any field before saving.</p>
-      <form onSubmit={createTerm}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <Field label="Academic year"><input style={inputStyle} value={termForm.academic_year} onChange={e => setTermField('academic_year', e.target.value)} required /></Field>
-          <Field label="Term name"><input style={inputStyle} value={termForm.term_name} onChange={e => setTermField('term_name', e.target.value)} required /></Field>
-          <Field label="Start date"><input style={inputStyle} type="date" value={termForm.start_date} onChange={e => setTermField('start_date', e.target.value)} required /></Field>
-          <Field label="End date"><input style={inputStyle} type="date" min={termForm.start_date} value={termForm.end_date} onChange={e => setTermField('end_date', e.target.value)} required /></Field>
-          <Field label="Holiday region"><input style={inputStyle} value={termForm.holiday_region} onChange={e => setTermField('holiday_region', e.target.value)} required /></Field>
-          <Field label="Time zone"><select style={inputStyle} value={termForm.timezone} onChange={e => setTermField('timezone', e.target.value)}><option value="Asia/Kolkata">India Standard Time (Asia/Kolkata)</option><option value="UTC">UTC</option><option value="Asia/Dubai">Asia/Dubai</option><option value="Europe/London">Europe/London</option><option value="America/New_York">America/New_York</option></select></Field>
-          <Field label="Rescheduling policy"><select style={inputStyle} value={termForm.reschedule_policy} onChange={e => setTermField('reschedule_policy', e.target.value)}><option value="cancel">Mark cancelled; no replacement</option><option value="suggest">Suggest replacements for approval</option><option value="automatic">Automatic rescheduling (future capability)</option></select></Field>
-          <Field label="Term status"><select style={inputStyle} value={termForm.status} onChange={e => setTermField('status', e.target.value)}><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></Field>
-        </div>
-        <div style={{ marginTop: 18 }}>
-          <div style={labelStyle}>Weekly working days</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{WEEKDAYS.map(day => <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid var(--border-color, #dbe2ea)', borderRadius: 9, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}><input type="checkbox" checked={termForm.working_days.includes(day)} onChange={() => toggleWorkingDay(day)} />{day.slice(0, 3)}</label>)}</div>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button type="button" style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => { setShowTermForm(false); setEditingTerm(false) }}>Cancel</button>
-          <button type="submit" style={buttonStyle} disabled={savingTerm}>{savingTerm ? 'Saving…' : editingTerm ? 'Save changes' : 'Save term'}</button>
-        </div>
-      </form>
-    </section>}
+        /* ─── Filter & View Switcher Row ─── */
+        .cal-filter-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+        }
+        .cal-pills-group {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .cal-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 9px;
+          padding: 9px 16px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text-main, #1e293b);
+          box-shadow: 0 1px 3px rgba(15,23,42,.03);
+          cursor: pointer;
+          transition: all .15s;
+          user-select: none;
+        }
+        .cal-pill:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 2px 6px rgba(15,23,42,.06);
+        }
+        .cal-pill select {
+          border: none;
+          background: transparent;
+          font: inherit;
+          color: inherit;
+          font-weight: 600;
+          outline: none;
+          cursor: pointer;
+          appearance: none;
+          padding-right: 4px;
+        }
+        .cal-view-tabs {
+          display: inline-flex;
+          align-items: center;
+          padding: 3px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          box-shadow: 0 1px 3px rgba(15,23,42,.03);
+        }
+        .cal-tab-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 15px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted, #64748b);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all .15s;
+        }
+        .cal-tab-btn.active {
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 1px 4px rgba(37,99,235,.25);
+        }
 
-    {selectedTerm && <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: 12, marginBottom: 22 }}>
-      {[
-        ['Selected term', selectedTerm.term_name, selectedTerm.academic_year],
-        ['Term dates', dateLabel(selectedTerm.start_date), `Through ${dateLabel(selectedTerm.end_date)}`],
-        ['Holiday region', selectedTerm.holiday_region, selectedTerm.timezone],
-        ['Calendar events', String(events.length), 'College calendar and additions'],
-      ].map(([title, value, sub]) => <div key={title} style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 14, padding: 15, background: 'var(--bg-card, #fff)' }}><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginBottom: 8 }}>{title}</div><div style={{ fontSize: 18, fontWeight: 750, overflowWrap: 'anywhere' }}>{value}</div><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 5 }}>{sub}</div></div>)}
-    </section>}
+        /* ─── Info Cards ─── */
+        .cal-metric-cards {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
+          margin-bottom: 20px;
+        }
+        @media (max-width: 1024px) {
+          .cal-metric-cards { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 600px) {
+          .cal-metric-cards { grid-template-columns: 1fr; }
+        }
+        .cal-metric-card {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 16px 18px;
+          background: #ffffff;
+          border: 1px solid #e8edf3;
+          border-radius: 14px;
+          box-shadow: 0 1px 3px rgba(15,23,42,.02);
+        }
+        .cal-metric-icon-box {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .cal-metric-label {
+          font-size: 11.5px;
+          color: var(--text-muted, #64748b);
+          margin-bottom: 2px;
+          font-weight: 500;
+        }
+        .cal-metric-value {
+          font-size: 17px;
+          font-weight: 800;
+          color: var(--text-main, #111827);
+          line-height: 1.25;
+        }
+        .cal-metric-sub {
+          font-size: 11px;
+          color: var(--text-muted, #94a3b8);
+          margin-top: 2px;
+        }
 
-    {selectedTerm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 14, padding: 16, marginBottom: 18 }}>
-      <h2 style={{ fontSize: 16, margin: '0 0 6px' }}>Upload your institution calendar</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', margin: '0 0 12px' }}>Upload an Excel (.xlsx) or CSV file with Date and Title/Event columns. Optional columns: End Date, Type, Closure. Imported entries wait for your review.</p>
-      <form onSubmit={uploadCalendar} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="file" accept=".xlsx,.csv" onChange={e => setCalendarFile(e.target.files?.[0] || null)} style={{ maxWidth: '100%', fontSize: 12 }} />
-        <button type="submit" style={buttonStyle} disabled={!calendarFile || importingHolidays}>{importingHolidays ? 'Importing…' : 'Upload and preview'}</button>
-        {calendarFile && <span style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)' }}>{calendarFile.name}</span>}
-      </form>
-    </section>}
+        /* ─── Import & Management Box ─── */
+        .cal-import-card {
+          background: #ffffff;
+          border: 1px solid #e8edf3;
+          border-radius: 14px;
+          padding: 18px 22px;
+          margin-bottom: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          box-shadow: 0 1px 3px rgba(15,23,42,.02);
+          flex-wrap: wrap;
+        }
+        .cal-import-left {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex: 1;
+          min-width: 280px;
+        }
+        .cal-import-icon-box {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          background: #eff6ff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .cal-import-title {
+          font-size: 14.5px;
+          font-weight: 700;
+          color: var(--text-main, #111827);
+        }
+        .cal-import-desc {
+          font-size: 11.5px;
+          color: var(--text-muted, #64748b);
+          margin-top: 3px;
+          line-height: 1.4;
+        }
+        .cal-dropzone {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding: 8px 14px;
+          border: 1.5px dashed #bfdbfe;
+          border-radius: 12px;
+          background: #f8fafc;
+          transition: all .15s;
+          flex-wrap: wrap;
+        }
+        .cal-dropzone.active {
+          border-color: #2563eb;
+          background: #eff6ff;
+        }
+        .cal-dropzone-info {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .cal-dropzone-text {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-main, #1e293b);
+        }
+        .cal-dropzone-sub {
+          font-size: 10.5px;
+          color: #94a3b8;
+        }
+        .cal-btn-choose {
+          padding: 6px 12px;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 7px;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: #334155;
+          cursor: pointer;
+        }
+        .cal-btn-upload {
+          padding: 7px 14px;
+          background: #2563eb;
+          border: none;
+          border-radius: 7px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #ffffff;
+          cursor: pointer;
+          transition: all .15s;
+        }
+        .cal-btn-upload:hover {
+          background: #1d4ed8;
+        }
+        .cal-btn-upload:disabled {
+          opacity: .6;
+          cursor: not-allowed;
+        }
 
-    {showEventForm && selectedTerm && <section style={{ background: 'var(--bg-card, #fff)', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, padding: 20, marginBottom: 22 }}>
-      <h2 style={{ fontSize: 18, margin: '0 0 16px' }}>Add calendar event</h2>
-      <form onSubmit={saveEvent}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-          <Field label="Event title"><input style={inputStyle} value={eventForm.title} onChange={e => setEventField('title', e.target.value)} placeholder="e.g. College Foundation Day" required /></Field>
-          <Field label="Event type"><select style={inputStyle} value={eventForm.event_type} onChange={e => { setEventField('event_type', e.target.value); setEventField('is_closure', e.target.value !== 'exam' && e.target.value !== 'event' && e.target.value !== 'working_day') }} >{EVENT_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
-          <Field label="Start date"><input style={inputStyle} type="date" min={selectedTerm.start_date} max={selectedTerm.end_date} value={eventForm.start_date} onChange={e => { setEventField('start_date', e.target.value); if (!eventForm.end_date || eventForm.end_date < e.target.value) setEventField('end_date', e.target.value) }} required /></Field>
-          <Field label="End date"><input style={inputStyle} type="date" min={eventForm.start_date || selectedTerm.start_date} max={selectedTerm.end_date} value={eventForm.end_date} onChange={e => setEventField('end_date', e.target.value)} required /></Field>
-          <Field label="Status"><select style={inputStyle} value={eventForm.approval_status} onChange={e => setEventField('approval_status', e.target.value)}><option value="approved">Approved</option><option value="pending">Pending review</option></select></Field>
-          <Field label="Notes (optional)"><input style={inputStyle} value={eventForm.notes} onChange={e => setEventField('notes', e.target.value)} placeholder="Additional details" /></Field>
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 14 }}><input type="checkbox" checked={eventForm.is_closure} disabled={eventForm.event_type === 'working_day'} onChange={e => setEventField('is_closure', e.target.checked)} /> No regular classes on these dates</label>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button type="button" style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-secondary, #475569)', border: '1px solid var(--border-color, #dbe2ea)' }} onClick={() => setShowEventForm(false)}>Cancel</button>
-          <button type="submit" style={buttonStyle} disabled={savingEvent || !eventForm.start_date || !eventForm.end_date}>{savingEvent ? 'Saving…' : 'Save event'}</button>
-        </div>
-      </form>
-    </section>}
+        /* ─── Actions Row ─── */
+        .cal-actions-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+        .cal-action-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 14px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: var(--text-main, #1e293b);
+          cursor: pointer;
+          transition: all .15s;
+          box-shadow: 0 1px 2px rgba(15,23,42,.03);
+        }
+        .cal-action-pill:hover {
+          border-color: #cbd5e1;
+          background: #f8fafc;
+        }
+        .cal-action-pill.regional {
+          background: #f0fdf4;
+          border-color: #86efac;
+          color: #166534;
+        }
+        .cal-action-pill.regional:hover {
+          background: #dcfce7;
+        }
+        .cal-action-pill.danger {
+          background: #fef2f2;
+          border-color: #fecaca;
+          color: #dc2626;
+        }
+        .cal-action-pill.danger:hover {
+          background: #fee2e2;
+        }
 
-    <section style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, background: 'var(--bg-card, #fff)', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: 18, borderBottom: '1px solid var(--border-color, #e2e8f0)', flexWrap: 'wrap' }}>
-        <div><h2 style={{ margin: 0, fontSize: 18 }}>Term calendar</h2><p style={{ margin: '5px 0 0', color: 'var(--text-secondary, #64748b)', fontSize: 12 }}>Holidays, closures, exams and special working days</p></div>
-        <select aria-label="Select academic term" style={{ ...inputStyle, width: 'auto', minWidth: 210 }} value={selectedId} onChange={e => setSelectedId(e.target.value)} disabled={!terms.length}>{terms.length ? terms.map(term => <option key={term.term_id} value={term.term_id}>{term.academic_year} · {term.term_name}</option>) : <option value="">No terms created</option>}</select>
-      </div>
-      {selectedTerm && <div style={{ padding: 18, borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-          <button type="button" aria-label="Previous month" onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1, 12)).slice(0, 7))} style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }}>←</button>
-          <h3 style={{ margin: 0, fontSize: 16 }}>{monthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</h3>
-          <button type="button" aria-label="Next month" onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1, 12)).slice(0, 7))} style={{ ...buttonStyle, background: 'transparent', color: 'var(--text-primary, #172033)', border: '1px solid var(--border-color, #dbe2ea)' }}>→</button>
+        /* ─── Main Two-Column Layout ─── */
+        .cal-main-layout {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 350px;
+          gap: 20px;
+          align-items: start;
+        }
+        @media (max-width: 1080px) {
+          .cal-main-layout { grid-template-columns: 1fr; }
+        }
+
+        /* ─── Left: Calendar Box ─── */
+        .cal-calendar-box {
+          background: #ffffff;
+          border: 1px solid #e8edf3;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(15,23,42,.02);
+        }
+        .cal-month-nav-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 20px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .cal-nav-controls {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .cal-nav-arrow {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          border-radius: 8px;
+          color: #475569;
+          cursor: pointer;
+          transition: all .15s;
+        }
+        .cal-nav-arrow:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+        .cal-btn-today {
+          padding: 6px 14px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #334155;
+          cursor: pointer;
+        }
+        .cal-btn-today:hover {
+          background: #f8fafc;
+        }
+        .cal-current-month-label {
+          font-size: 18px;
+          font-weight: 800;
+          color: var(--text-main, #111827);
+          letter-spacing: -.02em;
+        }
+        .cal-month-term-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #475569;
+          background: #ffffff;
+        }
+
+        /* Calendar Grid */
+        .cal-grid-table {
+          display: grid;
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .cal-th {
+          padding: 10px 4px;
+          text-align: center;
+          font-size: 12px;
+          font-weight: 600;
+          color: #64748b;
+          background: #f8fafc;
+          border-bottom: 1px solid #edf2f7;
+        }
+        .cal-td {
+          min-height: 84px;
+          padding: 6px 7px;
+          border-right: 1px solid #f1f5f9;
+          border-bottom: 1px solid #f1f5f9;
+          background: #ffffff;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          transition: background .12s;
+        }
+        .cal-td:nth-child(7n) {
+          border-right: none;
+        }
+        .cal-td.faded {
+          background: #fbfcfe;
+          opacity: .5;
+        }
+        .cal-td.today-cell {
+          background: #eff6ff;
+          box-shadow: inset 0 0 0 1.5px #2563eb;
+        }
+        .cal-date-top {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 4px;
+        }
+        .cal-date-num {
+          font-size: 12px;
+          font-weight: 600;
+          color: #1e293b;
+        }
+        .cal-td.faded .cal-date-num {
+          color: #94a3b8;
+        }
+        .cal-td.today-cell .cal-date-num {
+          color: #1d4ed8;
+          font-weight: 800;
+        }
+        .cal-badge-today {
+          font-size: 9.5px;
+          font-weight: 800;
+          color: #2563eb;
+          letter-spacing: .03em;
+        }
+
+        /* Chips inside days */
+        .cal-chip {
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          line-height: 1.35;
+          margin-bottom: 3px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          border-left: 3px solid #dc2626;
+          background: #fee2e2;
+          color: #991b1b;
+        }
+        .cal-chip.exam {
+          border-left-color: #7c3aed;
+          background: #ede9fe;
+          color: #5b21b6;
+        }
+        .cal-chip.other {
+          border-left-color: #2563eb;
+          background: #dbeafe;
+          color: #1e40af;
+        }
+        .cal-chip.working {
+          border-left-color: #059669;
+          background: #dcfce7;
+          color: #065f46;
+        }
+
+        /* Legend */
+        .cal-legend-bar {
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          padding: 12px 20px;
+          font-size: 11.5px;
+          color: #64748b;
+          flex-wrap: wrap;
+        }
+        .cal-legend-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .cal-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        /* ─── Right Sidebar ─── */
+        .cal-sidebar {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .cal-side-card {
+          background: #ffffff;
+          border: 1px solid #e8edf3;
+          border-radius: 14px;
+          padding: 20px;
+          box-shadow: 0 1px 3px rgba(15,23,42,.02);
+        }
+        .cal-side-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 14px;
+        }
+        .cal-side-title {
+          font-size: 14px;
+          font-weight: 750;
+          color: var(--text-main, #111827);
+        }
+        .cal-view-all-link {
+          font-size: 12px;
+          font-weight: 600;
+          color: #2563eb;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+        }
+        .cal-view-all-link:hover {
+          text-decoration: underline;
+        }
+
+        /* Readiness Progress Section */
+        .cal-readiness-box {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          margin-bottom: 16px;
+          padding-bottom: 14px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .cal-checklist {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .cal-check-item {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          font-size: 12.5px;
+          font-weight: 500;
+          color: #334155;
+        }
+
+        /* Upcoming events list */
+        .cal-upcoming-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 10px 0;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .cal-upcoming-item:last-child {
+          border-bottom: none;
+          padding-bottom: 0;
+        }
+        .cal-upcoming-date-box {
+          width: 36px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          border-right: 2px solid #2563eb;
+          padding-right: 8px;
+          flex-shrink: 0;
+        }
+        .cal-upcoming-day {
+          font-size: 15px;
+          font-weight: 800;
+          color: #111827;
+          line-height: 1;
+        }
+        .cal-upcoming-mon {
+          font-size: 10px;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+          margin-top: 2px;
+        }
+        .cal-upcoming-info {
+          flex: 1;
+          min-width: 0;
+        }
+        .cal-upcoming-name {
+          font-size: 12.5px;
+          font-weight: 700;
+          color: var(--text-main, #111827);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .cal-upcoming-meta {
+          font-size: 11px;
+          color: #64748b;
+          margin-top: 2px;
+        }
+        .cal-upcoming-meta.closure {
+          color: #dc2626;
+        }
+        .cal-badge-status {
+          padding: 3px 8px;
+          border-radius: 12px;
+          font-size: 10.5px;
+          font-weight: 700;
+          flex-shrink: 0;
+        }
+        .cal-badge-status.approved {
+          background: #dcfce7;
+          color: #166534;
+        }
+        .cal-badge-status.pending {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        /* ─── Modals / Overlay Forms ─── */
+        .cal-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15,23,42,.45);
+          backdrop-filter: blur(3px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .cal-modal-content {
+          background: #ffffff;
+          border-radius: 16px;
+          padding: 24px 28px;
+          width: 100%;
+          max-width: 580px;
+          box-shadow: 0 20px 40px rgba(0,0,0,.15);
+          max-height: 90vh;
+          overflow-y: auto;
+        }
+
+        /* Dark mode */
+        html[data-theme="dark"] .cal-page-wrap { color: #f1f5f9; }
+        html[data-theme="dark"] .cal-title { color: #f8fafc; }
+        html[data-theme="dark"] .cal-btn-add { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+        html[data-theme="dark"] .cal-pill { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+        html[data-theme="dark"] .cal-view-tabs { background: #0f172a; border-color: #334155; }
+        html[data-theme="dark"] .cal-metric-card { background: #0f172a; border-color: #1e293b; }
+        html[data-theme="dark"] .cal-import-card { background: #0f172a; border-color: #1e293b; }
+        html[data-theme="dark"] .cal-action-pill { background: #0f172a; border-color: #334155; color: #f1f5f9; }
+        html[data-theme="dark"] .cal-calendar-box { background: #0f172a; border-color: #1e293b; }
+        html[data-theme="dark"] .cal-side-card { background: #0f172a; border-color: #1e293b; }
+        html[data-theme="dark"] .cal-month-nav-bar { border-color: #1e293b; }
+        html[data-theme="dark"] .cal-th { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        html[data-theme="dark"] .cal-td { background: #0f172a; border-color: #1e293b; }
+        html[data-theme="dark"] .cal-td.faded { background: #090e1a; }
+        html[data-theme="dark"] .cal-td.today-cell { background: #1e293b; box-shadow: inset 0 0 0 1.5px #3b82f6; }
+        html[data-theme="dark"] .cal-grid-table { border-color: #1e293b; }
+        html[data-theme="dark"] .cal-modal-content { background: #0f172a; color: #f1f5f9; }
+        html[data-theme="dark"] .cal-dropzone { background: #1e293b; border-color: #3b82f6; }
+        html[data-theme="dark"] .cal-btn-choose { background: #0f172a; border-color: #475569; color: #f1f5f9; }
+        html[data-theme="dark"] .cal-upcoming-item { border-color: #1e293b; }
+        html[data-theme="dark"] .cal-readiness-box { border-color: #1e293b; }
+        html[data-theme="dark"] .cal-date-num { color: #f1f5f9; }
+        html[data-theme="dark"] .cal-upcoming-day { color: #f8fafc; }
+      `}</style>
+
+      <div className="cal-page-wrap">
+        {/* ─── Top Breadcrumb & Header ─── */}
+        <div className="cal-breadcrumb">SCHEDULE &gt; ACADEMIC CALENDAR</div>
+        <div className="cal-header-row">
+          <div>
+            <h1 className="cal-title">Academic Calendar</h1>
+            <p className="cal-subtitle">Configure your semester, load the college-provided activity calendar, and add any extra holidays or events.</p>
+          </div>
+          <div className="cal-header-actions">
+            <button type="button" className="cal-btn-add" onClick={() => setShowEventForm(true)}>
+              <PlusIcon /> Add event
+            </button>
+            <button type="button" className="cal-btn-generate" onClick={() => navigate('/generate')}>
+              <SparklesIcon /> Generate timetable
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 5 }}>
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div key={day} style={{ padding: '7px 2px', textAlign: 'center', fontSize: 11, fontWeight: 750, color: 'var(--text-secondary, #64748b)' }}>{day}</div>)}
-          {monthDays.map((day, index) => {
-            const key = day ? localDateKey(day) : `empty-${index}`
-            const dayEvents = day ? (eventsByDate[localDateKey(day)] || []) : []
-            const insideTerm = day && day >= toDate(selectedTerm.start_date) && day <= toDate(selectedTerm.end_date)
-            return <div key={key} style={{ minHeight: 76, minWidth: 0, border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 8, padding: 5, background: !day ? 'transparent' : day && localDateKey(day) === localDateKey(new Date()) ? '#eff6ff' : insideTerm ? 'var(--bg-card, #fff)' : 'var(--bg-subtle, #f8fafc)', borderColor: day && localDateKey(day) === localDateKey(new Date()) ? '#2563eb' : 'var(--border-color, #e2e8f0)', boxShadow: day && localDateKey(day) === localDateKey(new Date()) ? 'inset 0 0 0 1px #2563eb' : 'none', opacity: insideTerm ? 1 : .48 }}>
-              {day && <><div style={{ fontSize: 11, fontWeight: dayEvents.length || localDateKey(day) === localDateKey(new Date()) ? 800 : 550, marginBottom: 4, color: localDateKey(day) === localDateKey(new Date()) ? '#1d4ed8' : 'inherit' }}>{day.getDate()}{localDateKey(day) === localDateKey(new Date()) ? ' · TODAY' : ''}</div><div style={{ display: 'grid', gap: 3 }}>{dayEvents.slice(0, 2).map((event, i) => <div key={`${event.event_id}-${i}`} title={event.title} style={{ background: event.is_closure ? '#ffe4e6' : event.event_type === 'exam' ? '#ede9fe' : '#dbeafe', color: event.is_closure ? '#9f1239' : event.event_type === 'exam' ? '#5b21b6' : '#1d4ed8', fontSize: 9, lineHeight: 1.25, borderRadius: 4, padding: '3px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</div>)}{dayEvents.length > 2 && <div style={{ fontSize: 9, color: 'var(--text-secondary, #64748b)' }}>+{dayEvents.length - 2} more</div>}</div></>}
+
+        {/* ─── Filter & View Switcher Row ─── */}
+        <div className="cal-filter-row">
+          <div className="cal-pills-group">
+            {/* Pill 1: Academic Year & Term */}
+            <div className="cal-pill">
+              <CapIcon />
+              {terms.length ? (
+                <select
+                  value={selectedId}
+                  onChange={e => setSelectedId(e.target.value)}
+                  aria-label="Select term"
+                >
+                  {terms.map(t => (
+                    <option key={t.term_id} value={t.term_id}>
+                      {t.academic_year} · {t.term_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>2026 – 27 · Semester 1</span>
+              )}
+              <ChevronDown />
             </div>
-          })}
+
+            {/* Pill 2: Term Date Range */}
+            <div className="cal-pill">
+              <CalendarIcon />
+              <span>
+                {selectedTerm
+                  ? `${toDate(selectedTerm.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${toDate(selectedTerm.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : '1 Jul – 30 Dec 2026'}
+              </span>
+              <ChevronDown />
+            </div>
+
+            {/* Pill 3: Region */}
+            <div className="cal-pill">
+              <PinIcon />
+              <span>{selectedTerm?.holiday_region || 'Maharashtra, India'}</span>
+              <ChevronDown />
+            </div>
+          </div>
+
+          {/* Right: View Toggle */}
+          <div className="cal-view-tabs">
+            <button
+              type="button"
+              className={`cal-tab-btn ${viewMode === 'month' ? 'active' : ''}`}
+              onClick={() => setViewMode('month')}
+            >
+              <CalendarIcon /> Month
+            </button>
+            <button
+              type="button"
+              className={`cal-tab-btn ${viewMode === 'week' ? 'active' : ''}`}
+              onClick={() => setViewMode('week')}
+            >
+              <TemplateIcon /> Week
+            </button>
+            <button
+              type="button"
+              className={`cal-tab-btn ${viewMode === 'agenda' ? 'active' : ''}`}
+              onClick={() => setViewMode('agenda')}
+            >
+              <BookIcon /> Agenda
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12, fontSize: 10, color: 'var(--text-secondary, #64748b)' }}><span>🟥 Closure / holiday</span><span>🟪 Exam</span><span>🟦 Other event</span><span>Faded dates are outside this term</span></div>
-      </div>}
-      {loading ? <div style={{ padding: 36, textAlign: 'center', color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>Loading calendar…</div>
-      : !terms.length ? <div style={{ padding: 40, textAlign: 'center' }}><div style={{ fontSize: 30, marginBottom: 10 }}>▦</div><h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Create your first academic term</h3><p style={{ color: 'var(--text-secondary, #64748b)', fontSize: 13, margin: '0 auto 18px', maxWidth: 430 }}>Use the prefilled Semester 1 configuration or enter a different academic term to start managing its calendar.</p><button type="button" style={buttonStyle} onClick={() => setShowTermForm(true)}>Configure first term</button></div>
-      : !events.length ? <div style={{ padding: 38, textAlign: 'center' }}><h3 style={{ margin: '0 0 8px', fontSize: 16 }}>No events added yet</h3><p style={{ color: 'var(--text-secondary, #64748b)', fontSize: 13, margin: '0 auto 18px', maxWidth: 430 }}>Add public holidays, college closures, vacations or exam dates. Public holidays can be imported using the button above. College-specific dates should be added separately.</p><button type="button" style={buttonStyle} onClick={() => setShowEventForm(true)}>Add first event</button></div>
-      : <div>{groupedEvents.map(([month, monthEvents]) => <div key={month}><div style={{ background: 'var(--bg-subtle, #f8fafc)', padding: '10px 18px', fontSize: 12, fontWeight: 750, color: 'var(--text-secondary, #475569)' }}>{toDate(month + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</div>{monthEvents.map(event => <div key={event.event_id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderTop: '1px solid var(--border-color, #edf2f7)', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 82, fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>{dateLabel(event.start_date)}{event.end_date !== event.start_date ? ` – ${dateLabel(event.end_date)}` : ''}</div>
-        <div style={{ width: 4, alignSelf: 'stretch', minHeight: 34, borderRadius: 9, background: event.event_type === 'holiday' || event.event_type === 'closure' ? '#e11d48' : event.event_type === 'exam' ? '#7c3aed' : event.event_type === 'working_day' ? '#059669' : '#2563eb' }} />
-        <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{event.title}</div><div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>{EVENT_TYPES.find(type => type.value === event.event_type)?.label || event.event_type} · {event.source}{event.is_closure ? ' · No regular classes' : ''}</div>{event.notes && <div style={{ fontSize: 12, marginTop: 4 }}>{event.notes}</div>}</div>
-        <span style={{ borderRadius: 20, padding: '4px 8px', background: event.approval_status === 'approved' ? '#dcfce7' : '#fef3c7', color: event.approval_status === 'approved' ? '#166534' : '#92400e', fontSize: 10, fontWeight: 750 }}>{event.approval_status}</span>
-        {event.approval_status === 'pending' && <button type="button" onClick={() => approveImportedEvent(event)} style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#166534', borderRadius: 8, padding: '7px 9px', cursor: 'pointer', fontSize: 12 }}>Approve</button>}
-        <button type="button" aria-label={`Delete ${event.title}`} onClick={() => removeEvent(event.event_id)} style={{ border: '1px solid var(--border-color, #e2e8f0)', background: 'transparent', color: '#be123c', borderRadius: 8, padding: '7px 9px', cursor: 'pointer', fontSize: 12 }}>Delete</button>
-      </div>)}</div>)}</div>}
-    </section>
-    <p style={{ marginTop: 16, color: 'var(--text-secondary, #64748b)', fontSize: 12, lineHeight: 1.6 }}>Built-in entries come from the college-provided AY 2026–27 Semester I activity calendar. Please compare dates with the latest circular. Add any revised or additional holidays using “Add college event”.</p>
-  </main>
+
+        {/* ─── Metric Cards ─── */}
+        <div className="cal-metric-cards">
+          {/* Card 1: Semester period */}
+          <div className="cal-metric-card">
+            <div className="cal-metric-icon-box" style={{ background: '#eff6ff' }}>
+              <BookIcon />
+            </div>
+            <div>
+              <div className="cal-metric-label">Semester period</div>
+              <div className="cal-metric-value">
+                {selectedTerm
+                  ? `${toDate(selectedTerm.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${toDate(selectedTerm.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : '1 Jul – 30 Dec 2026'}
+              </div>
+              <div className="cal-metric-sub">
+                {selectedTerm ? `${selectedTerm.term_name} · ${selectedTerm.academic_year}` : 'Semester 1 · 2026 – 27'}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Total events */}
+          <div className="cal-metric-card">
+            <div className="cal-metric-icon-box" style={{ background: '#ecfdf5' }}>
+              <CheckCalendarIcon />
+            </div>
+            <div>
+              <div className="cal-metric-label">Total events</div>
+              <div className="cal-metric-value">{events.length}</div>
+              <div className="cal-metric-sub">College calendar and additions</div>
+            </div>
+          </div>
+
+          {/* Card 3: Holidays / closures */}
+          <div className="cal-metric-card">
+            <div className="cal-metric-icon-box" style={{ background: '#fef2f2' }}>
+              <TagCalendarIcon />
+            </div>
+            <div>
+              <div className="cal-metric-label">Holidays / closures</div>
+              <div className="cal-metric-value">{holidaysClosuresCount}</div>
+              <div className="cal-metric-sub">Holidays, closures and breaks</div>
+            </div>
+          </div>
+
+          {/* Card 4: Pending reviews */}
+          <div className="cal-metric-card">
+            <div className="cal-metric-icon-box" style={{ background: '#fef3c7' }}>
+              <ClockIcon />
+            </div>
+            <div>
+              <div className="cal-metric-label">Pending reviews</div>
+              <div className="cal-metric-value">{pendingReviewsCount}</div>
+              <div className="cal-metric-sub">Events awaiting approval</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Import Section ─── */}
+        <div className="cal-import-card">
+          <div className="cal-import-left">
+            <div className="cal-import-icon-box">
+              <UploadIcon />
+            </div>
+            <div>
+              <div className="cal-import-title">Import your institution calendar</div>
+              <div className="cal-import-desc">
+                Upload an Excel (.xlsx) or CSV file with Date and Title/Event columns. Optional columns: End Date, Type, Closure.
+              </div>
+            </div>
+          </div>
+
+          <div
+            className={`cal-dropzone ${dragOver ? 'active' : ''}`}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleFileDrop}
+          >
+            <div className="cal-dropzone-info">
+              <FileDocIcon />
+              <div>
+                <div className="cal-dropzone-text">
+                  {calendarFile ? calendarFile.name : 'Drag and drop your file here'}
+                </div>
+                <div className="cal-dropzone-sub">Excel (.xlsx) or CSV (.csv)</div>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx,.csv"
+              style={{ display: 'none' }}
+              onChange={e => setCalendarFile(e.target.files?.[0] || null)}
+            />
+            <button
+              type="button"
+              className="cal-btn-choose"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Choose File
+            </button>
+            <button
+              type="button"
+              className="cal-btn-upload"
+              disabled={!calendarFile || importingHolidays}
+              onClick={uploadCalendar}
+            >
+              {importingHolidays ? 'Uploading…' : 'Upload & preview'}
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Action Pills Row ─── */}
+        <div className="cal-actions-row">
+          <button
+            type="button"
+            className="cal-action-pill"
+            onClick={() => { setEditingTerm(false); setTermForm(DEFAULT_TERM); setShowTermForm(true) }}
+          >
+            <PlusIcon /> New term
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill"
+            disabled={!selectedTerm}
+            onClick={() => { setEditingTerm(true); setTermForm({ ...selectedTerm }); setShowTermForm(true) }}
+          >
+            <EditIcon /> Edit term
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill regional"
+            disabled={!selectedTerm || importingHolidays}
+            onClick={importRegionalHolidays}
+          >
+            <RefreshIcon /> {importingHolidays ? 'Loading…' : 'Load regional holidays'}
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill"
+            disabled={!selectedTerm || importingHolidays}
+            onClick={importHolidays}
+          >
+            <TemplateIcon /> {importingHolidays ? 'Loading…' : 'Load college template'}
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill danger"
+            disabled={!selectedTerm}
+            onClick={removeImportedEvents}
+          >
+            <TrashIcon /> Remove imported entries
+          </button>
+        </div>
+
+        {/* Notices */}
+        {notice && (
+          <div style={{ padding: '12px 16px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 13, marginBottom: 16 }}>
+            {notice}
+          </div>
+        )}
+        {error && (
+          <div style={{ padding: '12px 16px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, marginBottom: 16 }}>
+            {error}
+          </div>
+        )}
+
+        {/* ─── Two-Column Main Content Layout ─── */}
+        <div className="cal-main-layout">
+          {/* Left Column: Calendar Grid or Agenda */}
+          <div className="cal-calendar-box">
+            {/* Header with nav buttons */}
+            <div className="cal-month-nav-bar">
+              <div className="cal-nav-controls">
+                <button
+                  type="button"
+                  className="cal-nav-arrow"
+                  aria-label="Previous month"
+                  onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1, 12)).slice(0, 7))}
+                >
+                  <ChevronLeft />
+                </button>
+                <button
+                  type="button"
+                  className="cal-nav-arrow"
+                  aria-label="Next month"
+                  onClick={() => setCalendarMonth(localDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1, 12)).slice(0, 7))}
+                >
+                  <ChevronRight />
+                </button>
+                <button
+                  type="button"
+                  className="cal-btn-today"
+                  onClick={() => setCalendarMonth(localDateKey(new Date()).slice(0, 7))}
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="cal-current-month-label">
+                {monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </div>
+
+              <div className="cal-month-term-badge">
+                <CapIcon />
+                <span>{selectedTerm ? `${selectedTerm.academic_year} · ${selectedTerm.term_name}` : '2026 – 27 · Semester 1'}</span>
+                <ChevronDown />
+              </div>
+            </div>
+
+            {/* View Mode: Month Grid */}
+            {viewMode === 'month' && (
+              <>
+                <div className="cal-grid-table">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                    <div key={day} className="cal-th">{day}</div>
+                  ))}
+                  {monthDays.map((item, index) => {
+                    const { date, isCurrentMonth } = item
+                    const key = localDateKey(date)
+                    const dayEvents = eventsByDate[key] || []
+                    const isToday = key === localDateKey(new Date())
+                    const isOutsideTerm = selectedTerm && (date < toDate(selectedTerm.start_date) || date > toDate(selectedTerm.end_date))
+
+                    let cls = 'cal-td'
+                    if (!isCurrentMonth || isOutsideTerm) cls += ' faded'
+                    if (isToday) cls += ' today-cell'
+
+                    return (
+                      <div key={key + '-' + index} className={cls}>
+                        <div className="cal-date-top">
+                          <span className="cal-date-num">{date.getDate()}</span>
+                          {isToday && <span className="cal-badge-today">TODAY</span>}
+                        </div>
+                        <div>
+                          {dayEvents.slice(0, 2).map((evt, i) => {
+                            let chipCls = 'cal-chip'
+                            if (evt.event_type === 'exam') chipCls += ' exam'
+                            else if (evt.event_type === 'working_day') chipCls += ' working'
+                            else if (!evt.is_closure && evt.event_type !== 'holiday') chipCls += ' other'
+
+                            return (
+                              <div
+                                key={evt.event_id || i}
+                                className={chipCls}
+                                title={`${evt.title} (${evt.event_type})`}
+                              >
+                                {evt.title}
+                              </div>
+                            )
+                          })}
+                          {dayEvents.length > 2 && (
+                            <div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 600, paddingLeft: 2 }}>
+                              +{dayEvents.length - 2} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="cal-legend-bar">
+                  <div className="cal-legend-item">
+                    <span className="cal-dot" style={{ background: '#dc2626' }} />
+                    <span>Holiday / closure</span>
+                  </div>
+                  <div className="cal-legend-item">
+                    <span className="cal-dot" style={{ background: '#7c3aed' }} />
+                    <span>Exam</span>
+                  </div>
+                  <div className="cal-legend-item">
+                    <span className="cal-dot" style={{ background: '#2563eb' }} />
+                    <span>Other event</span>
+                  </div>
+                  <div className="cal-legend-item" style={{ color: '#94a3b8' }}>
+                    <span className="cal-dot" style={{ background: '#cbd5e1' }} />
+                    <span>Faded dates are outside this term</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* View Mode: Week or Agenda */}
+            {(viewMode === 'week' || viewMode === 'agenda') && (
+              <div style={{ padding: '20px 24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                    {viewMode === 'agenda' ? 'All Scheduled Calendar Events' : 'Weekly View Events'}
+                  </h3>
+                  <button
+                    type="button"
+                    className="cal-btn-add"
+                    style={{ fontSize: 12, padding: '5px 12px' }}
+                    onClick={() => setViewMode('month')}
+                  >
+                    Back to Month Grid
+                  </button>
+                </div>
+                {groupedEvents.map(([month, monthEvents]) => (
+                  <div key={month} style={{ marginBottom: 20 }}>
+                    <div style={{ background: '#f8fafc', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 750, color: '#475569', marginBottom: 8 }}>
+                      {toDate(month + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                    </div>
+                    {monthEvents.map(evt => (
+                      <div key={evt.event_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ minWidth: 80, fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+                            {dateLabel(evt.start_date)}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{evt.title}</div>
+                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                              {EVENT_TYPES.find(t => t.value === evt.event_type)?.label || evt.event_type} · {evt.source}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span className={`cal-badge-status ${evt.approval_status}`}>{evt.approval_status}</span>
+                          {evt.approval_status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => approveImportedEvent(evt)}
+                              style={{ border: '1px solid #86efac', background: '#f0fdf4', color: '#166534', borderRadius: 6, padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Approve
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeEvent(evt.event_id)}
+                            style={{ border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', borderRadius: 6, padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Sidebar */}
+          <div className="cal-sidebar">
+            {/* 1. Scheduling Readiness */}
+            <div className="cal-side-card">
+              <div className="cal-side-header">
+                <div className="cal-side-title">Scheduling readiness</div>
+              </div>
+
+              <div className="cal-readiness-box">
+                {/* 75% Circular Ring */}
+                <div style={{ width: 62, height: 62, flexShrink: 0, position: 'relative' }}>
+                  <svg width="62" height="62" viewBox="0 0 62 62">
+                    <circle cx="31" cy="31" r="24" stroke="#e2e8f0" strokeWidth="5.5" fill="none" />
+                    <circle
+                      cx="31"
+                      cy="31"
+                      r="24"
+                      stroke="#0d9488"
+                      strokeWidth="5.5"
+                      fill="none"
+                      strokeDasharray={2 * Math.PI * 24}
+                      strokeDashoffset={2 * Math.PI * 24 * (1 - 0.75)}
+                      strokeLinecap="round"
+                      transform="rotate(-90 31 31)"
+                    />
+                    <text x="31" y="36" textAnchor="middle" fontSize="13" fontWeight="800" fill="#0f766e">
+                      75%
+                    </text>
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 750, color: '#d97706' }}>Almost ready</div>
+                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3, lineHeight: 1.35 }}>
+                    Complete the remaining items to generate the timetable.
+                  </div>
+                </div>
+              </div>
+
+              {/* Checklist */}
+              <div className="cal-checklist">
+                <div className="cal-check-item">
+                  <CheckCircleIcon />
+                  <span>Calendar synced</span>
+                </div>
+                <div className="cal-check-item">
+                  <CheckCircleIcon />
+                  <span>Faculty availability configured</span>
+                </div>
+                <div className="cal-check-item">
+                  <CheckCircleIcon />
+                  <span>Rooms configured</span>
+                </div>
+                <div className="cal-check-item">
+                  <AlertTriangleIcon />
+                  <span style={{ color: '#b45309', fontWeight: 600 }}>Constraints active</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Upcoming events */}
+            <div className="cal-side-card">
+              <div className="cal-side-header">
+                <div className="cal-side-title">Upcoming events</div>
+                <div className="cal-view-all-link" onClick={() => setViewMode('agenda')}>
+                  View all <ArrowRightIcon />
+                </div>
+              </div>
+
+              <div>
+                {upcomingEvents.map(evt => {
+                  const d = toDate(evt.start_date)
+                  const isClosure = evt.is_closure || evt.event_type === 'holiday' || evt.event_type === 'closure'
+                  return (
+                    <div key={evt.event_id} className="cal-upcoming-item">
+                      <div className="cal-upcoming-date-box" style={{ borderRightColor: isClosure ? '#dc2626' : '#2563eb' }}>
+                        <div className="cal-upcoming-day">{d.getDate()}</div>
+                        <div className="cal-upcoming-mon">
+                          {d.toLocaleDateString('en-US', { month: 'short' })}
+                        </div>
+                      </div>
+                      <div className="cal-upcoming-info">
+                        <div className="cal-upcoming-name" title={evt.title}>{evt.title}</div>
+                        <div className={`cal-upcoming-meta ${isClosure ? 'closure' : ''}`}>
+                          {isClosure ? 'Holiday / closure' : (EVENT_TYPES.find(t => t.value === evt.event_type)?.label || 'College event')}
+                        </div>
+                      </div>
+                      <span className={`cal-badge-status ${evt.approval_status}`}>
+                        {evt.approval_status === 'approved' ? 'Approved' : 'Pending'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Modal: Add / Edit Event ─── */}
+      {showEventForm && selectedTerm && (
+        <div className="cal-modal-overlay" onClick={() => setShowEventForm(false)}>
+          <div className="cal-modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Add Calendar Event</h2>
+              <button
+                type="button"
+                onClick={() => setShowEventForm(false)}
+                style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={saveEvent}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <FieldInput label="Event title">
+                    <input
+                      style={inputCls}
+                      value={eventForm.title}
+                      onChange={e => setEventField('title', e.target.value)}
+                      placeholder="e.g. College Foundation Day"
+                      required
+                    />
+                  </FieldInput>
+                </div>
+                <FieldInput label="Event type">
+                  <select
+                    style={inputCls}
+                    value={eventForm.event_type}
+                    onChange={e => {
+                      setEventField('event_type', e.target.value)
+                      setEventField('is_closure', e.target.value !== 'exam' && e.target.value !== 'event' && e.target.value !== 'working_day')
+                    }}
+                  >
+                    {EVENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </FieldInput>
+                <FieldInput label="Status">
+                  <select
+                    style={inputCls}
+                    value={eventForm.approval_status}
+                    onChange={e => setEventField('approval_status', e.target.value)}
+                  >
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending review</option>
+                  </select>
+                </FieldInput>
+                <FieldInput label="Start date">
+                  <input
+                    style={inputCls}
+                    type="date"
+                    min={selectedTerm.start_date}
+                    max={selectedTerm.end_date}
+                    value={eventForm.start_date}
+                    onChange={e => {
+                      setEventField('start_date', e.target.value)
+                      if (!eventForm.end_date || eventForm.end_date < e.target.value) {
+                        setEventField('end_date', e.target.value)
+                      }
+                    }}
+                    required
+                  />
+                </FieldInput>
+                <FieldInput label="End date">
+                  <input
+                    style={inputCls}
+                    type="date"
+                    min={eventForm.start_date || selectedTerm.start_date}
+                    max={selectedTerm.end_date}
+                    value={eventForm.end_date}
+                    onChange={e => setEventField('end_date', e.target.value)}
+                    required
+                  />
+                </FieldInput>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <FieldInput label="Notes (optional)">
+                    <input
+                      style={inputCls}
+                      value={eventForm.notes}
+                      onChange={e => setEventField('notes', e.target.value)}
+                      placeholder="Additional details"
+                    />
+                  </FieldInput>
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 14, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={eventForm.is_closure}
+                  disabled={eventForm.event_type === 'working_day'}
+                  onChange={e => setEventField('is_closure', e.target.checked)}
+                  style={{ accentColor: '#2563eb' }}
+                />
+                <span>No regular classes on these dates (Closure)</span>
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
+                <button
+                  type="button"
+                  className="cal-btn-add"
+                  onClick={() => setShowEventForm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="cal-btn-upload"
+                  disabled={savingEvent || !eventForm.start_date || !eventForm.end_date}
+                >
+                  {savingEvent ? 'Saving…' : 'Save event'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: New / Edit Term ─── */}
+      {showTermForm && (
+        <div className="cal-modal-overlay" onClick={() => setShowTermForm(false)}>
+          <div className="cal-modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                {editingTerm ? 'Edit Academic Term' : 'Configure New Academic Term'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowTermForm(false)}
+                style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={createTerm}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <FieldInput label="Academic year">
+                  <input style={inputCls} value={termForm.academic_year} onChange={e => setTermField('academic_year', e.target.value)} required />
+                </FieldInput>
+                <FieldInput label="Term name">
+                  <input style={inputCls} value={termForm.term_name} onChange={e => setTermField('term_name', e.target.value)} required />
+                </FieldInput>
+                <FieldInput label="Start date">
+                  <input style={inputCls} type="date" value={termForm.start_date} onChange={e => setTermField('start_date', e.target.value)} required />
+                </FieldInput>
+                <FieldInput label="End date">
+                  <input style={inputCls} type="date" min={termForm.start_date} value={termForm.end_date} onChange={e => setTermField('end_date', e.target.value)} required />
+                </FieldInput>
+                <FieldInput label="Holiday region">
+                  <input style={inputCls} value={termForm.holiday_region} onChange={e => setTermField('holiday_region', e.target.value)} required />
+                </FieldInput>
+                <FieldInput label="Time zone">
+                  <select style={inputCls} value={termForm.timezone} onChange={e => setTermField('timezone', e.target.value)}>
+                    <option value="Asia/Kolkata">India Standard Time (Asia/Kolkata)</option>
+                    <option value="UTC">UTC</option>
+                    <option value="Asia/Dubai">Asia/Dubai</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="America/New_York">America/New_York</option>
+                  </select>
+                </FieldInput>
+                <FieldInput label="Rescheduling policy">
+                  <select style={inputCls} value={termForm.reschedule_policy} onChange={e => setTermField('reschedule_policy', e.target.value)}>
+                    <option value="cancel">Mark cancelled; no replacement</option>
+                    <option value="suggest">Suggest replacements for approval</option>
+                    <option value="automatic">Automatic rescheduling</option>
+                  </select>
+                </FieldInput>
+                <FieldInput label="Term status">
+                  <select style={inputCls} value={termForm.status} onChange={e => setTermField('status', e.target.value)}>
+                    <option value="draft">Draft</option>
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </FieldInput>
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 750, letterSpacing: '.04em', marginBottom: 8, color: 'var(--text-muted, #64748b)' }}>Weekly working days</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {WEEKDAYS.map(day => (
+                    <label
+                      key={day}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        border: '1px solid #dbe2ea', borderRadius: 8, padding: '6px 10px',
+                        fontSize: 12, cursor: 'pointer',
+                        background: termForm.working_days.includes(day) ? '#eff6ff' : '#fff',
+                        borderColor: termForm.working_days.includes(day) ? '#93c5fd' : '#dbe2ea'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={termForm.working_days.includes(day)}
+                        onChange={() => toggleWorkingDay(day)}
+                        style={{ accentColor: '#2563eb' }}
+                      />
+                      <span>{day.slice(0, 3)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
+                <button
+                  type="button"
+                  className="cal-btn-add"
+                  onClick={() => setShowTermForm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="cal-btn-upload"
+                  disabled={savingTerm}
+                >
+                  {savingTerm ? 'Saving…' : editingTerm ? 'Save changes' : 'Save term'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
