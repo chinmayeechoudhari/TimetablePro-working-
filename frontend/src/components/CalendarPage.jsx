@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import UpcomingEventsModal from './UpcomingEventsModal'
 
 const API = 'http://localhost:8000'
 const DEFAULT_TERM = {
@@ -100,6 +101,7 @@ export default function CalendarPage() {
   const [showTermForm, setShowTermForm] = useState(false)
   const [editingTerm, setEditingTerm] = useState(false)
   const [showEventForm, setShowEventForm] = useState(false)
+  const [showAllEventsModal, setShowAllEventsModal] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -158,6 +160,13 @@ export default function CalendarPage() {
   }, [events])
 
   const upcomingEvents = useMemo(() => {
+    const todayStr = localDateKey(new Date())
+    const future = events
+      .filter(e => (e.end_date || e.start_date) >= todayStr)
+      .sort((a, b) => a.start_date.localeCompare(b.start_date))
+    if (future.length > 0) {
+      return future.slice(0, 5)
+    }
     return [...events]
       .sort((a, b) => a.start_date.localeCompare(b.start_date))
       .slice(0, 5)
@@ -1471,14 +1480,24 @@ export default function CalendarPage() {
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
                     {viewMode === 'agenda' ? 'All Scheduled Calendar Events' : 'Weekly View Events'}
                   </h3>
-                  <button
-                    type="button"
-                    className="cal-btn-add"
-                    style={{ fontSize: 12, padding: '5px 12px' }}
-                    onClick={() => setViewMode('month')}
-                  >
-                    Back to Month Grid
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="cal-btn-add"
+                      style={{ fontSize: 12, padding: '5px 12px', background: '#eff6ff', color: '#2563eb', borderColor: '#bfdbfe' }}
+                      onClick={() => setShowAllEventsModal(true)}
+                    >
+                      ⤢ Open in Pop-Up Screen
+                    </button>
+                    <button
+                      type="button"
+                      className="cal-btn-add"
+                      style={{ fontSize: 12, padding: '5px 12px' }}
+                      onClick={() => setViewMode('month')}
+                    >
+                      Back to Month Grid
+                    </button>
+                  </div>
                 </div>
                 {groupedEvents.map(([month, monthEvents]) => (
                   <div key={month} style={{ marginBottom: 20 }}>
@@ -1587,37 +1606,95 @@ export default function CalendarPage() {
             {/* 2. Upcoming events */}
             <div className="cal-side-card">
               <div className="cal-side-header">
-                <div className="cal-side-title">Upcoming events</div>
-                <div className="cal-view-all-link" onClick={() => setViewMode('agenda')}>
+                <div className="cal-side-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span>Upcoming events</span>
+                  <span style={{
+                    background: '#eff6ff',
+                    color: '#2563eb',
+                    padding: '1.5px 7px',
+                    borderRadius: 10,
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                  }}>
+                    {events.length}
+                  </span>
+                </div>
+                <div
+                  className="cal-view-all-link"
+                  onClick={() => setShowAllEventsModal(true)}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                  title="Open upcoming & scheduled events in a pop-up screen"
+                >
                   View all <ArrowRightIcon />
                 </div>
               </div>
 
               <div>
-                {upcomingEvents.map(evt => {
-                  const d = toDate(evt.start_date)
-                  const isClosure = evt.is_closure || evt.event_type === 'holiday' || evt.event_type === 'closure'
-                  return (
-                    <div key={evt.event_id} className="cal-upcoming-item">
-                      <div className="cal-upcoming-date-box" style={{ borderRightColor: isClosure ? '#dc2626' : '#2563eb' }}>
-                        <div className="cal-upcoming-day">{d.getDate()}</div>
-                        <div className="cal-upcoming-mon">
-                          {d.toLocaleDateString('en-US', { month: 'short' })}
+                {upcomingEvents.length === 0 ? (
+                  <div style={{ padding: '16px 4px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>
+                    No upcoming events scheduled
+                  </div>
+                ) : (
+                  upcomingEvents.map(evt => {
+                    const d = toDate(evt.start_date)
+                    const isClosure = evt.is_closure || evt.event_type === 'holiday' || evt.event_type === 'closure'
+                    return (
+                      <div
+                        key={evt.event_id}
+                        className="cal-upcoming-item"
+                        onClick={() => setShowAllEventsModal(true)}
+                        style={{ cursor: 'pointer' }}
+                        title="Click to view all events pop-up"
+                      >
+                        <div className="cal-upcoming-date-box" style={{ borderRightColor: isClosure ? '#dc2626' : '#2563eb' }}>
+                          <div className="cal-upcoming-day">{d.getDate()}</div>
+                          <div className="cal-upcoming-mon">
+                            {d.toLocaleDateString('en-US', { month: 'short' })}
+                          </div>
                         </div>
-                      </div>
-                      <div className="cal-upcoming-info">
-                        <div className="cal-upcoming-name" title={evt.title}>{evt.title}</div>
-                        <div className={`cal-upcoming-meta ${isClosure ? 'closure' : ''}`}>
-                          {isClosure ? 'Holiday / closure' : (EVENT_TYPES.find(t => t.value === evt.event_type)?.label || 'College event')}
+                        <div className="cal-upcoming-info">
+                          <div className="cal-upcoming-name" title={evt.title}>{evt.title}</div>
+                          <div className={`cal-upcoming-meta ${isClosure ? 'closure' : ''}`}>
+                            {isClosure ? 'Holiday / closure' : (EVENT_TYPES.find(t => t.value === evt.event_type)?.label || 'College event')}
+                          </div>
                         </div>
+                        <span className={`cal-badge-status ${evt.approval_status}`}>
+                          {evt.approval_status === 'approved' ? 'Approved' : 'Pending'}
+                        </span>
                       </div>
-                      <span className={`cal-badge-status ${evt.approval_status}`}>
-                        {evt.approval_status === 'approved' ? 'Approved' : 'Pending'}
-                      </span>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
+
+              {events.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllEventsModal(true)}
+                  style={{
+                    marginTop: 12,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 9,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: '#2563eb',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#93c5fd' }}
+                  onMouseOut={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0' }}
+                >
+                  <span>Browse all {events.length} events categorized by month</span>
+                  <ArrowRightIcon />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1847,6 +1924,17 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
+
+      {/* ─── Modal: All Upcoming Events (Categorized by Month) ─── */}
+      <UpcomingEventsModal
+        isOpen={showAllEventsModal}
+        onClose={() => setShowAllEventsModal(false)}
+        events={events}
+        selectedTerm={selectedTerm}
+        onApproveEvent={approveImportedEvent}
+        onDeleteEvent={removeEvent}
+        onOpenAddEvent={() => setShowEventForm(true)}
+      />
     </>
   )
 }
