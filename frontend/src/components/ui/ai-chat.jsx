@@ -3,9 +3,10 @@ import { motion } from "framer-motion";
 import { Send, Sparkles, X, Check } from "lucide-react";
 import axios from "axios";
 import { cn } from "@/lib/utils";
+import { API_BASE } from "../../lib/config";
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const BASE_URL = 'http://localhost:8000';
+const BASE_URL = API_BASE;
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_ALIAS = {

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import axios from 'axios'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function Icon({ name, size = 20, stroke = 1.9 }) {

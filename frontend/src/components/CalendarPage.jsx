@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import UpcomingEventsModal from './UpcomingEventsModal'
+import { API_BASE } from '../lib/config'
 
-const API = 'http://localhost:8000'
+const API = API_BASE
 const DEFAULT_TERM = {
   academic_year: '2026–27',
   term_name: 'Semester 1',

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import * as S from '../styles/formStyles'
 import SubjectTypeBadge from './SubjectTypeBadge'
 import ConfirmModal from './ConfirmModal'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 // =========================================================
 // TYPE ICON (Theory / Laboratory)

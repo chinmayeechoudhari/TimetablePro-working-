@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import ConfirmModal from './ConfirmModal'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 function Icon({ name, size = 20, stroke = 1.9 }) {
   const common = {

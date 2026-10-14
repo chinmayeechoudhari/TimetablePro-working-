@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 const years = [1, 2, 3, 4]
 const label = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y])
 

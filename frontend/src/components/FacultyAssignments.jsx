@@ -5,7 +5,8 @@ import SubjectTypeBadge from './SubjectTypeBadge.jsx'
 import './AcademicStructureModern.css'
 import './FacultyAssignmentsModern.css'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y] || `Year ${y}`)
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -739,7 +740,7 @@ export default function FacultyAssignments() {
       setGroups(g.data)
       setAssignments(a.data)
     } catch (err) {
-      setError(!err.response ? 'Cannot connect to backend server. Make sure it is running on http://localhost:8000.' : 'Could not load faculty or assignments.')
+      setError(!err.response ? 'Cannot connect to backend server. Make sure it is running.' : 'Could not load faculty or assignments.')
     }
   }
   useEffect(() => { load() }, [])

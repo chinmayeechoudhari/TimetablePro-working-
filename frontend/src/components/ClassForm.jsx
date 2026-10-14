@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import ConfirmModal from './ConfirmModal'
 import ClassExcelImport from './ClassExcelImport'
 import * as S from '../styles/formStyles'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 export default function ClassForm() {
   const [classes, setClasses] = useState([])

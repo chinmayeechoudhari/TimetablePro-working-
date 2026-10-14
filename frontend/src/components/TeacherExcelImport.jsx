@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react'
+﻿import { useState, useRef, useCallback } from 'react'
 import axios from 'axios'
 import * as XLSX from 'xlsx'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 function ImportIcon({ name, size = 20, stroke = 1.9 }) {
   const common = {

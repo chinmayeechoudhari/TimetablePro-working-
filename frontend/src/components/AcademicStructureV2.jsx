@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
 import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
 import Icon from './AcademicIcon'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 const YEARS = [1, 2, 3, 4]
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y])
 const letterAt = i => String.fromCharCode(65 + i)

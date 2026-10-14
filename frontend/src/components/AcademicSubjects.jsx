@@ -1,4 +1,4 @@
-import { createPortal } from 'react-dom'
+﻿import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
@@ -8,7 +8,8 @@ import './AcademicSubjectsTable.css'
 import Icon from './AcademicIcon'
 import { loadShortCodes, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y] || `${y}th Year`)
 const divisionNames = group => (group?.divisions || []).map(d => typeof d === 'string' ? d : d?.division_name).filter(Boolean)
 

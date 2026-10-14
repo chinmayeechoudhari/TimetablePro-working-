@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Icon from './AcademicIcon'
 import './AcademicLegacyCleanup.css'
 
-const BASE = 'http://localhost:8000'
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 export default function AcademicLegacyCleanup() {
   const [classes, setClasses] = useState([])

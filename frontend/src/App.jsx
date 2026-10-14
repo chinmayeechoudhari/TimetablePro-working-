@@ -18,29 +18,15 @@ const AcademicSubjects = lazy(() => import('./components/AcademicSubjects.jsx'))
 const FacultyAssignments = lazy(() => import('./components/FacultyAssignments.jsx'))
 const CalendarPage = lazy(() => import('./components/CalendarPage.jsx'))
 
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+import RouteSkeleton from './components/RouteSkeleton.jsx'
+
 function AcademicStructurePage() {
   return (
     <>
       <AcademicStructure />
       <AcademicLegacyCleanup />
     </>
-  )
-}
-
-function RouteLoading() {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '60vh',
-      fontFamily: "'Inter', sans-serif",
-      fontSize: '14px',
-      fontWeight: '600',
-      color: 'var(--text-muted, #64748b)',
-    }}>
-      Loading...
-    </div>
   )
 }
 
@@ -53,21 +39,23 @@ export default function App() {
       <div style={{ display:'flex', height:'100vh', width:'100%', overflow:'hidden', background:'var(--bg-page)', fontFamily:"'Inter','Segoe UI',sans-serif", opacity:enteredApp?1:0, transition:'opacity .4s ease' }}>
         <Navbar />
         <div className="app-main-scroll" style={{ flex:1, height:'100vh', overflowY:'auto', overflowX:'hidden', background:'var(--bg-page)' }}>
-          <Suspense fallback={<RouteLoading />}>
-            <Routes>
-              <Route path="/" element={<StatusDashboard />} />
-              <Route path="/academic-structure" element={<AcademicStructurePage />} />
-              <Route path="/subjects" element={<AcademicSubjects />} />
-              <Route path="/faculty-assignments" element={<FacultyAssignments />} />
-              <Route path="/rooms" element={<RoomForm />} />
-              <Route path="/timeslots" element={<TimeSlotForm />} />
-              <Route path="/teacher-availability" element={<TeacherAvailabilityForm />} />
-              <Route path="/constraints" element={<ConstraintsPage />} />
-              <Route path="/generate" element={<GenerateTimetable />} />
-              <Route path="/timetable" element={<TimetableGrid />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-            </Routes>
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteSkeleton />}>
+              <Routes>
+                <Route path="/" element={<StatusDashboard />} />
+                <Route path="/academic-structure" element={<AcademicStructurePage />} />
+                <Route path="/subjects" element={<AcademicSubjects />} />
+                <Route path="/faculty-assignments" element={<FacultyAssignments />} />
+                <Route path="/rooms" element={<RoomForm />} />
+                <Route path="/timeslots" element={<TimeSlotForm />} />
+                <Route path="/teacher-availability" element={<TeacherAvailabilityForm />} />
+                <Route path="/constraints" element={<ConstraintsPage />} />
+                <Route path="/generate" element={<GenerateTimetable />} />
+                <Route path="/timetable" element={<TimetableGrid />} />
+                <Route path="/calendar" element={<CalendarPage />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
       <ChatBubble />

@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+import logging
+import os
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.teachers import router as teachers_router
 from app.api.rooms import router as rooms_router
@@ -21,17 +25,51 @@ from app.core.config import Base, engine
 from app.models import models
 from app.models import calendar as calendar_models
 
+# ── Logging ──────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("timetable")
+
+# ── Database ─────────────────────────────────────────────────
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Timetable Generator API", version="1.0.0")
+# ── App ──────────────────────────────────────────────────────
+app = FastAPI(
+    title="Timetable Generator API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ── CORS ─────────────────────────────────────────────────────
+# Read allowed origins from environment, defaulting to common dev origins.
+# In production, set ALLOWED_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:3000,http://localhost:4173",
+)
+_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+# ── Global Exception Handler ────────────────────────────────
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again or contact support."},
+    )
 
 
 @app.get("/")
@@ -54,4 +92,6 @@ app.include_router(constraints_router)
 app.include_router(validate_router)
 app.include_router(database_router)
 app.include_router(calendar_router)
+
+logger.info("TimetablePro API started — %d router(s) mounted", 15)
 

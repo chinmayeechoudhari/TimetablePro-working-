@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, useRef } from "react"
+﻿import { useEffect, useMemo, useState, useRef } from "react"
 import axios from "axios"
 
-const BASE = "http://localhost:8000"
+import { API_BASE } from '../lib/config'
+const BASE = API_BASE
 
 function Badge({ type }) {
   const isHard = type === "hard"
