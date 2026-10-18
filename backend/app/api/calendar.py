@@ -678,7 +678,7 @@ def update_event(event_id: int, payload: EventCreate, db: Session = Depends(get_
         exclude_event_id=event.event_id,
     )
     event_data = payload.model_dump()
-    if overlaps:
+    if overlaps and payload.approval_status != "approved":
         event_data["approval_status"] = "pending"
         review_note = "Overlaps another calendar entry; administrator review required."
         event_data["notes"] = f"{event_data.get('notes') or ''} {review_note}".strip()
