@@ -217,12 +217,15 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
     db.add(version)
     db.flush()
 
+    preserved_lock_keys = set()
     for day_offset in range((term.end_date - term.start_date).days + 1):
         day = term.start_date + timedelta(days=day_offset)
         is_working, is_closed, day_events = _event_state(events, day, working_days)
         matching = [(row, slots[row.slot_id]) for row in weekly_rows if slots[row.slot_id].day == day.strftime("%A")]
         for row, slot in matching:
             locked = locked_by_key.get((day, row.class_id, slot.period_number))
+            if locked:
+                preserved_lock_keys.add((locked.session_date, locked.class_id, locked.period_number))
             if not is_working and not (locked and locked.is_locked):
                 # Preserve a dated cancelled occurrence so the weekly/term load gap is auditable.
                 status = "cancelled" if is_closed else "outstanding"
@@ -249,6 +252,35 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
                 original_session_id=locked.session_id if locked else None,
             )
             version.sessions.append(session)
+
+    # Preserve locks even when the new weekly template no longer contains their period.
+    for locked in previous_sessions:
+        lock_key = (locked.session_date, locked.class_id, locked.period_number)
+        if not locked.is_locked or lock_key in preserved_lock_keys:
+            continue
+        if locked.session_date < term.start_date or locked.session_date > term.end_date:
+            continue
+        _, is_closed, day_events = _event_state(events, locked.session_date, working_days)
+        source_event = next((e for e in day_events if e.is_closure), None) if is_closed else None
+        version.sessions.append(ScheduledSession(
+            version_id=version.version_id,
+            session_date=locked.session_date,
+            weekday=locked.weekday,
+            period_number=locked.period_number,
+            slot_id=locked.slot_id,
+            class_id=locked.class_id,
+            subject_id=locked.subject_id,
+            teacher_id=locked.teacher_id,
+            room_id=locked.room_id,
+            session_status="scheduled" if not is_closed else "cancelled",
+            is_locked=True,
+            lock_reason=locked.lock_reason,
+            locked_at=locked.locked_at,
+            locked_by=locked.locked_by,
+            closure_conflict=is_closed,
+            source_event_id=source_event.event_id if source_event else None,
+            original_session_id=locked.session_id,
+        ))
 
     # Approved imported closures may be auto-rescheduled when the term policy allows it.
     # Manually created closures remain suggestions for administrator review.
