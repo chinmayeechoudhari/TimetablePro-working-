@@ -102,6 +102,17 @@ def get_term_or_404(db: Session, term_id: int):
     return term
 
 
+def _overlapping_events(existing_events, start_date: date, end_date: date, exclude_event_id: int | None = None):
+    """Return non-rejected calendar entries whose date ranges overlap the proposed range."""
+    return [
+        event for event in existing_events
+        if event.event_id != exclude_event_id
+        and event.approval_status != "rejected"
+        and event.start_date <= end_date
+        and event.end_date >= start_date
+    ]
+
+
 @router.get("/terms")
 def list_terms(db: Session = Depends(get_db)):
     terms = db.query(AcademicTerm).order_by(AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()).all()
@@ -513,7 +524,22 @@ def create_event(term_id: int, payload: EventCreate, db: Session = Depends(get_d
     term = get_term_or_404(db, term_id)
     if payload.start_date < term.start_date or payload.end_date > term.end_date:
         raise HTTPException(status_code=422, detail="Calendar events must fall within the selected term dates.")
-    event = CalendarEvent(term_id=term_id, **payload.model_dump())
+    overlaps = _overlapping_events(
+        db.query(CalendarEvent).filter(
+            CalendarEvent.term_id == term_id,
+            CalendarEvent.start_date <= payload.end_date,
+            CalendarEvent.end_date >= payload.start_date,
+            CalendarEvent.approval_status != "rejected",
+        ).all(),
+        payload.start_date,
+        payload.end_date,
+    )
+    event_data = payload.model_dump()
+    if overlaps:
+        event_data["approval_status"] = "pending"
+        review_note = "Overlaps another calendar entry; administrator review required."
+        event_data["notes"] = f"{event_data.get('notes') or ''} {review_note}".strip()
+    event = CalendarEvent(term_id=term_id, **event_data)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -640,7 +666,23 @@ def update_event(event_id: int, payload: EventCreate, db: Session = Depends(get_
     term = get_term_or_404(db, event.term_id)
     if payload.start_date < term.start_date or payload.end_date > term.end_date:
         raise HTTPException(status_code=422, detail="Calendar events must fall within the selected term dates.")
-    for field, value in payload.model_dump().items():
+    overlaps = _overlapping_events(
+        db.query(CalendarEvent).filter(
+            CalendarEvent.term_id == event.term_id,
+            CalendarEvent.start_date <= payload.end_date,
+            CalendarEvent.end_date >= payload.start_date,
+            CalendarEvent.approval_status != "rejected",
+        ).all(),
+        payload.start_date,
+        payload.end_date,
+        exclude_event_id=event.event_id,
+    )
+    event_data = payload.model_dump()
+    if overlaps:
+        event_data["approval_status"] = "pending"
+        review_note = "Overlaps another calendar entry; administrator review required."
+        event_data["notes"] = f"{event_data.get('notes') or ''} {review_note}".strip()
+    for field, value in event_data.items():
         setattr(event, field, value)
     db.commit()
     db.refresh(event)
