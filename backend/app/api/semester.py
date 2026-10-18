@@ -77,6 +77,22 @@ def _event_state(events, day, working_days):
     working = override or day.strftime("%A") in working_days
     return working and not closed, closed, active
 
+def _target_for_week(periods_per_week, start, end, events, working_days):
+    """Compute a closure-aware target for a full or partial calendar week."""
+    periods = max(0, int(periods_per_week or 0))
+    if periods == 0 or end < start or not working_days:
+        return 0
+    eligible_days = 0
+    day = start
+    while day <= end:
+        eligible, _, _ = _event_state(events, day, working_days)
+        eligible_days += int(eligible)
+        day += timedelta(days=1)
+    if eligible_days == 0:
+        return 0
+    prorated = (periods * eligible_days + len(working_days) - 1) // len(working_days)
+    return min(periods, prorated)
+
 def _schedule_conflicts(sessions):
     """Return teacher, room, or class double-bookings in the same dated period."""
     active_statuses = {"scheduled", "completed", "missed"}
@@ -573,28 +589,47 @@ def term_dashboard(term_id: int, db: Session = Depends(get_db)):
     subjects = {s.subject_id: s for s in db.query(Subject).all()}
     classes = {c.class_id: c for c in db.query(Class).all()}
     weekly_template = db.query(Timetable).all()
-    weeks = ((term.end_date - term.start_date).days + term.start_date.weekday() + 6) // 7
     # Count touched Monday-Sunday calendar weeks, including partial weeks at both ends.
     first_monday = term.start_date - timedelta(days=term.start_date.weekday())
     last_sunday = term.end_date + timedelta(days=6 - term.end_date.weekday())
     weeks = ((last_sunday - first_monday).days // 7) + 1
     unique_class_subjects = {(row.class_id, row.subject_id) for row in weekly_template}
-    required = sum(
-        max(0, int(subjects[subject_id].periods_per_week or 0)) * weeks
-        for _, subject_id in unique_class_subjects if subject_id in subjects
-    )
+    events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == term_id,
+        CalendarEvent.approval_status == "approved",
+    ).all()
+    working_days = _working_days(term)
+    required_by_pair = {}
+    for class_id, subject_id in unique_class_subjects:
+        subject = subjects.get(subject_id)
+        pair_target = 0
+        if subject:
+            for week_index in range(weeks):
+                week_start = first_monday + timedelta(days=7 * week_index)
+                week_end = week_start + timedelta(days=6)
+                pair_target += _target_for_week(
+                    subject.periods_per_week,
+                    max(week_start, term.start_date),
+                    min(week_end, term.end_date),
+                    events,
+                    working_days,
+                )
+        required_by_pair[(class_id, subject_id)] = pair_target
+    required = sum(required_by_pair.values())
     subject_counts = defaultdict(Counter)
     for s in sessions:
         subject_counts[(s.class_id, s.subject_id)][s.session_status] += 1
     subject_loads = []
-    for (class_id, subject_id), counts in sorted(subject_counts.items()):
+    all_pairs = unique_class_subjects | set(subject_counts.keys())
+    for class_id, subject_id in sorted(all_pairs):
+        counts = subject_counts[(class_id, subject_id)]
         subject = subjects.get(subject_id)
         subject_loads.append({
             "class_id": class_id,
             "class_name": classes[class_id].class_name if class_id in classes else str(class_id),
             "subject_id": subject_id,
             "subject_name": subject.subject_name if subject else str(subject_id),
-            "required_periods": (subject.periods_per_week * weeks) if subject else 0,
+            "required_periods": required_by_pair.get((class_id, subject_id), 0),
             "scheduled": counts["scheduled"],
             "completed": counts["completed"],
             "cancelled": counts["cancelled"],
