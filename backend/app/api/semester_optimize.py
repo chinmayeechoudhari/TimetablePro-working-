@@ -43,6 +43,8 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     if term.end_date < term.start_date:
         raise HTTPException(status_code=422, detail="Term end date must be on or after its start date.")
 
+    # Validate academic-year scoping before loading slots, constraints, or other
+    # scheduling data. Never proceed with another year's assignments.
     saved_constraints = db.query(Constraint).all()
     dynamic_constraints = []
     for row in saved_constraints:
