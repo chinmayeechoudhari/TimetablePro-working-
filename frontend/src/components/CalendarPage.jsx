@@ -352,6 +352,23 @@ export default function CalendarPage() {
     } finally { setSavingEvent(false) }
   }
 
+  async function deleteSelectedTerm() {
+    if (!selectedTerm) return
+    if (!window.confirm('Delete ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + ')? This is only allowed when the semester has no timetable history.')) return
+    setError(''); setNotice('')
+    try {
+      await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
+      const remaining = terms.filter(t => String(t.term_id) !== String(selectedTerm.term_id))
+      setTerms(remaining)
+      const preferred = remaining.find(t => /semester\s*1/i.test(t.term_name)) || remaining[0]
+      setSelectedId(preferred ? String(preferred.term_id) : '')
+      setNotice('Semester deleted.')
+    } catch (e) {
+      const d = e.response?.data?.detail
+      setError(typeof d === 'string' ? d : d?.message || 'This semester could not be deleted. Preserve semesters that already have timetable history.')
+    }
+  }
+
   async function removeImportedEvents() {
     if (!selectedTerm) return
     const confirmed = window.confirm('Remove all imported regional, college-template, and uploaded calendar entries for this term? Manually added events will be kept.')
@@ -1439,6 +1456,15 @@ export default function CalendarPage() {
             onClick={removeImportedEvents}
           >
             <TrashIcon /> Remove imported entries
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill danger"
+            disabled={!selectedTerm}
+            onClick={deleteSelectedTerm}
+            title="Only semesters without timetable history can be deleted"
+          >
+            <TrashIcon /> Delete semester
           </button>
         </div>
 
