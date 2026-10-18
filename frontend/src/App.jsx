@@ -17,6 +17,7 @@ const AcademicLegacyCleanup = lazy(() => import('./components/AcademicLegacyClea
 const AcademicSubjects = lazy(() => import('./components/AcademicSubjects.jsx'))
 const FacultyAssignments = lazy(() => import('./components/FacultyAssignments.jsx'))
 const CalendarPage = lazy(() => import('./components/CalendarPage.jsx'))
+const SemesterDashboard = lazy(() => import('./components/SemesterDashboard.jsx'))
 
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import RouteSkeleton from './components/RouteSkeleton.jsx'
@@ -53,6 +54,7 @@ export default function App() {
                 <Route path="/generate" element={<GenerateTimetable />} />
                 <Route path="/timetable" element={<TimetableGrid />} />
                 <Route path="/calendar" element={<CalendarPage />} />
+                <Route path="/semester" element={<SemesterDashboard />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
