@@ -1,8 +1,9 @@
 """Optimize a semester across dated slots and persist a new draft version."""
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,11 +18,15 @@ from app.solver.semester_solver import solve_semester_schedule
 router = APIRouter(prefix="/semester", tags=["semester-optimization"])
 
 
-def _working_days(term):
+def _working_days(term, slots=None):
     try:
         days = set(json.loads(term.working_days_json or "[]"))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="Term working days are not valid JSON.") from exc
+    if slots:
+        configured = {str(slot.day).strip() for slot in slots if str(slot.day).strip()}
+        if configured:
+            return configured
     valid = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
     if not days or not days.issubset(valid):
         raise HTTPException(status_code=422, detail="Term working days are invalid.")
@@ -101,7 +106,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
             "start_date": term.start_date,
             "end_date": term.end_date,
-            "working_days": _working_days(term),
+            "working_days": _working_days(term, slots),
             "events": event_data,
             "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
             "subjects": [{
@@ -177,3 +182,58 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         } for s in sorted(version.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))],
         "message": "Draft saved. Review it before publishing.",
     }
+
+
+class SessionUpdate(BaseModel):
+    session_status: str | None = None
+    is_locked: bool | None = None
+    lock_reason: str | None = Field(default=None, max_length=500)
+    outcome_note: str | None = None
+
+@router.get('/terms/{term_id}/versions')
+def list_semester_versions(term_id: int, db: Session = Depends(get_db)):
+    term = db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first()
+    if term is None:
+        raise HTTPException(status_code=404, detail='Academic term not found.')
+    versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
+    return [{'version_id': v.version_id, 'term_id': term_id, 'version_number': v.version_number, 'status': v.status, 'published_at': v.published_at.isoformat() if v.published_at else None, 'session_count': len(v.sessions), 'sessions': [{'session_id': s.session_id, 'date': s.session_date.isoformat(), 'weekday': s.weekday, 'period_number': s.period_number, 'slot_id': s.slot_id, 'class_id': s.class_id, 'subject_id': s.subject_id, 'teacher_id': s.teacher_id, 'room_id': s.room_id, 'session_status': s.session_status, 'is_locked': s.is_locked, 'lock_reason': s.lock_reason} for s in sorted(v.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))]} for v in versions]
+
+@router.patch('/sessions/{session_id}')
+def update_semester_session(session_id: int, payload: SessionUpdate, db: Session = Depends(get_db)):
+    session = db.query(ScheduledSession).filter(ScheduledSession.session_id == session_id).first()
+    if session is None:
+        raise HTTPException(status_code=404, detail='Scheduled session not found.')
+    version = db.query(TimetableVersion).filter(TimetableVersion.version_id == session.version_id).first()
+    if version is None or version.status == 'archived':
+        raise HTTPException(status_code=409, detail='This timetable version cannot be changed.')
+    data = payload.model_dump(exclude_unset=True)
+    if data.get('session_status') is not None and data['session_status'] not in {'scheduled', 'completed', 'cancelled', 'rescheduled'}:
+        raise HTTPException(status_code=422, detail='Invalid session status.')
+    for field, value in data.items():
+        setattr(session, field, value)
+    if data.get('is_locked') is True:
+        session.locked_at = datetime.now().astimezone()
+    elif data.get('is_locked') is False:
+        session.locked_at = None
+        session.lock_reason = None
+        session.locked_by = None
+    db.commit()
+    db.refresh(session)
+    return {'session_id': session.session_id, 'session_status': session.session_status, 'is_locked': session.is_locked, 'lock_reason': session.lock_reason}
+
+@router.post('/versions/{version_id}/publish')
+def publish_semester_version(version_id: int, db: Session = Depends(get_db)):
+    version = db.query(TimetableVersion).filter(TimetableVersion.version_id == version_id).first()
+    if version is None:
+        raise HTTPException(status_code=404, detail='Timetable version not found.')
+    if version.status != 'draft':
+        raise HTTPException(status_code=409, detail='Only draft versions can be published.')
+    pending = db.query(CalendarEvent).filter(CalendarEvent.term_id == version.term_id, CalendarEvent.approval_status == 'pending').count()
+    if pending:
+        raise HTTPException(status_code=409, detail=f'Resolve {pending} pending calendar event review(s) before publishing.')
+    for previous in db.query(TimetableVersion).filter(TimetableVersion.term_id == version.term_id, TimetableVersion.status == 'published').all():
+        previous.status = 'archived'
+    version.status = 'published'
+    version.published_at = datetime.now().astimezone()
+    db.commit()
+    return {'version_id': version.version_id, 'term_id': version.term_id, 'status': version.status, 'published_at': version.published_at.isoformat()}
