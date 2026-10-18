@@ -128,6 +128,53 @@ def test_solver_makes_up_closed_week_load_in_another_week():
     assert {session["period_number"] for session in result["sessions"]} == {1, 2}
 
 
+
+def test_solver_respects_multi_day_calendar_closure():
+    data = _solver_data([])
+    data.update({
+        "start_date": date(2026, 7, 6),
+        "end_date": date(2026, 7, 20),
+        "events": [{
+            "start_date": date(2026, 7, 6),
+            "end_date": date(2026, 7, 13),
+            "is_closure": True,
+            "is_working_day_override": False,
+        }],
+        "slots": [{"slot_id": 1, "day": "Monday", "period_number": 1}],
+    })
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    assert result["sessions"]
+    assert all(
+        session["session_date"] not in {date(2026, 7, 6), date(2026, 7, 13)}
+        for session in result["sessions"]
+    )
+
+
+def test_explicit_working_day_override_allows_date_despite_closure():
+    data = _solver_data([])
+    data.update({
+        "events": [
+            {
+                "start_date": date(2026, 7, 6),
+                "end_date": date(2026, 7, 6),
+                "is_closure": True,
+                "is_working_day_override": False,
+            },
+            {
+                "start_date": date(2026, 7, 6),
+                "end_date": date(2026, 7, 6),
+                "is_closure": False,
+                "is_working_day_override": True,
+            },
+        ],
+    })
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 1
+    assert result["sessions"][0]["session_date"] == date(2026, 7, 6)
+
+
 def test_solver_soft_constraint_produces_a_feasible_schedule():
     constraint = _constraint({
         "constraint_type": "soft",
