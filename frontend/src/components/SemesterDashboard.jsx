@@ -55,6 +55,34 @@ export default function SemesterDashboard() {
     try { const r = await axios.patch(API + '/semester/sessions/' + s.session_id + '/lock', { locked: !s.is_locked, reason: !s.is_locked ? 'Preserve assignment during regeneration' : null }); if (selected) setSelected({ ...selected, sessions: selected.sessions.map(x => x.session_id === s.session_id ? r.data : x) }); await refresh() }
     catch (e) { setError(e.response?.data?.detail || 'Could not change lock.') }
   }
+  async function suggestReplacement(s) {
+    const replacementDate = window.prompt('Replacement date (YYYY-MM-DD):')
+    if (!replacementDate) return
+    const period = Number(window.prompt('Replacement period number:'))
+    if (!Number.isInteger(period) || period < 1) {
+      setError('Enter a valid period number.')
+      return
+    }
+    try {
+      await axios.post(API + '/semester/sessions/' + s.session_id + '/replacement', {
+        replacement_date: replacementDate,
+        period_number: period,
+        approved: false,
+        note: 'Suggested replacement awaiting administrator approval.',
+      })
+      await refresh()
+      setNotice('Replacement suggestion created. Approve it from the pending replacement row.')
+    } catch (e) { setError(e.response?.data?.detail || 'Could not create replacement suggestion.') }
+  }
+
+  async function approveReplacement(s) {
+    try {
+      await axios.post(API + '/semester/sessions/' + s.session_id + '/replacement/approve')
+      await refresh()
+      setNotice('Replacement approved.')
+    } catch (e) { setError(e.response?.data?.detail || 'Could not approve replacement.') }
+  }
+
   async function outcome(s, status) {
     try { const r = await axios.patch(API + '/semester/sessions/' + s.session_id + '/outcome', { status }); if (selected) setSelected({ ...selected, sessions: selected.sessions.map(x => x.session_id === s.session_id ? r.data : x) }); await refresh(); setNotice('Session marked ' + status + '.') }
     catch (e) { setError(e.response?.data?.detail || 'Could not update outcome.') }
@@ -70,6 +98,6 @@ export default function SemesterDashboard() {
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginBottom: 16 }}>{metrics.map(([label, value]) => <div key={label} style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}><div style={{ color: '#6b7280', fontSize: 12 }}>{label}</div><strong style={{ fontSize: 26 }}>{value}</strong></div>)}</section>
     {dashboard && <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><strong>{dashboard.incomplete ? 'Completion needs attention' : 'No recorded outstanding work'}</strong><p>{summary.unresolved_locked_conflicts || 0} unresolved locked-session closure conflict(s). Drafts do not replace the published timetable until published.</p></section>}
     <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><h2>Version history</h2>{!versions.length ? <p>No versioned semester timetable yet.</p> : versions.map(v => <div key={v.version_id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', padding: 9, borderBottom: '1px solid #eee' }}><button style={button} onClick={() => openVersion(v)}>Version {v.version_number} · {v.status}</button><span>{v.created_at ? new Date(v.created_at).toLocaleString() : ''}</span>{v.status === 'draft' && <button style={{ ...button, background: '#2563eb', color: 'white' }} disabled={busy} onClick={() => publish(v)}>Publish</button>}</div>)}</section>
-    <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}><h2>{version ? 'Version ' + version.version_number + ' sessions' : 'Semester sessions'}</h2><p style={{ color: '#6b7280' }}>Locks carry forward when the same class, subject and date exist. Closure conflicts require manual resolution.</p>{!version?.sessions?.length ? <p>Select a version to inspect sessions.</p> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800, fontSize: 13 }}><thead><tr>{['Date','Period','Class','Subject','Teacher','Room','Status','Lock','Actions'].map(x => <th key={x} style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>{x}</th>)}</tr></thead><tbody>{version.sessions.slice(0,250).map(s => <tr key={s.session_id}><td style={{ padding: 8 }}>{s.date}</td><td style={{ padding: 8 }}>{s.period_number}</td><td style={{ padding: 8 }}>{s.class_id}</td><td style={{ padding: 8 }}>{s.subject_id}</td><td style={{ padding: 8 }}>{s.teacher_id}</td><td style={{ padding: 8 }}>{s.room_id}</td><td style={{ padding: 8, color: s.closure_conflict ? '#b91c1c' : 'inherit' }}>{s.closure_conflict ? 'Closure conflict' : s.status}</td><td style={{ padding: 8 }}>{s.is_locked ? 'Locked' : 'Open'}</td><td style={{ padding: 8, whiteSpace: 'nowrap' }}>{version.status !== 'archived' && <><button style={button} onClick={() => lock(s)}>{s.is_locked ? 'Unlock' : 'Lock'}</button> {s.status === 'scheduled' && <button style={button} onClick={() => outcome(s,'completed')}>Conducted</button>} {s.status === 'scheduled' && <button style={button} onClick={() => outcome(s,'missed')}>Missed</button>}</>}</td></tr>)}</tbody></table>{version.sessions.length > 250 && <p>Showing first 250 of {version.sessions.length} sessions.</p>}</div>}</section>
+    <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}><h2>{version ? 'Version ' + version.version_number + ' sessions' : 'Semester sessions'}</h2><p style={{ color: '#6b7280' }}>Locks carry forward when the same class, subject and date exist. Closure conflicts require manual resolution.</p>{!version?.sessions?.length ? <p>Select a version to inspect sessions.</p> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800, fontSize: 13 }}><thead><tr>{['Date','Period','Class','Subject','Teacher','Room','Status','Lock','Actions'].map(x => <th key={x} style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>{x}</th>)}</tr></thead><tbody>{version.sessions.slice(0,250).map(s => <tr key={s.session_id}><td style={{ padding: 8 }}>{s.date}</td><td style={{ padding: 8 }}>{s.period_number}</td><td style={{ padding: 8 }}>{s.class_id}</td><td style={{ padding: 8 }}>{s.subject_id}</td><td style={{ padding: 8 }}>{s.teacher_id}</td><td style={{ padding: 8 }}>{s.room_id}</td><td style={{ padding: 8, color: s.closure_conflict ? '#b91c1c' : 'inherit' }}>{s.closure_conflict ? 'Closure conflict' : s.status}</td><td style={{ padding: 8 }}>{s.is_locked ? 'Locked' : 'Open'}</td><td style={{ padding: 8, whiteSpace: 'nowrap' }}>{version.status !== 'archived' && <><button style={button} onClick={() => lock(s)}>{s.is_locked ? 'Unlock' : 'Lock'}</button> {s.status === 'scheduled' && <button style={button} onClick={() => outcome(s,'completed')}>Conducted</button>} {s.status === 'scheduled' && <button style={button} onClick={() => outcome(s,'missed')}>Missed</button>}{s.status === 'cancelled' && !s.is_locked && <button style={button} onClick={() => suggestReplacement(s)}>Suggest replacement</button>}{s.status === 'outstanding' && s.original_session_id && <button style={button} onClick={() => approveReplacement(s)}>Approve replacement</button>}</>}</td></tr>)}</tbody></table>{version.sessions.length > 250 && <p>Showing first 250 of {version.sessions.length} sessions.</p>}</div>}</section>
   </main>
 }
