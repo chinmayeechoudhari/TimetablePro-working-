@@ -55,6 +55,8 @@ def test_optimize_rejects_malformed_saved_dynamic_constraint():
     def query_for(model):
         if model is AcademicTerm:
             return FakeQuery(first=term)
+        if model is AcademicGroup:
+            return FakeQuery(all_rows=[])
         if model is Constraint:
             return FakeQuery(all_rows=[
                 SimpleNamespace(constraint_id=4, parameters_json="{not-json")
@@ -93,6 +95,8 @@ def test_optimize_rejects_unsupported_saved_soft_priority():
     def query_for(model):
         if model is AcademicTerm:
             return FakeQuery(first=term)
+        if model is AcademicGroup:
+            return FakeQuery(all_rows=[])
         if model is Constraint:
             return FakeQuery(all_rows=[
                 SimpleNamespace(constraint_id=5, constraint_type="soft", parameters_json=json.dumps(payload))
@@ -129,6 +133,8 @@ def test_optimize_rejects_saved_constraint_type_mismatch():
     def query_for(model):
         if model is AcademicTerm:
             return FakeQuery(first=term)
+        if model is AcademicGroup:
+            return FakeQuery(all_rows=[])
         if model is Constraint:
             return FakeQuery(all_rows=[
                 SimpleNamespace(constraint_id=6, constraint_type="soft", parameters_json=json.dumps(payload))
