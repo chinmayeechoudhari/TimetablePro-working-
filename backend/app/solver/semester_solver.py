@@ -99,28 +99,47 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if len(variables) > 1:
             model.Add(sum(variables) <= 1)
 
-    # Exactly one weekly target for every class-subject pair in each touched week.
+    # Preserve the semester's total teaching requirement while allowing makeup
+    # sessions to move across weeks when an approved closure removes all usable
+    # slots from a week. Normal weeks still target periods_per_week; a week may
+    # carry up to one additional weekly target as makeup capacity. The objective
+    # below penalizes deviations so makeup is used only when calendar/resource
+    # constraints make the regular weekly target impossible.
     first_monday = start - timedelta(days=start.weekday())
     last_monday = end - timedelta(days=end.weekday())
-    week = first_monday
-    while week <= last_monday:
-        week_end = week + timedelta(days=6)
-        for subject in subjects:
+    weeks = list(_week_starts(start, end))
+    weekly_counts = {}
+    makeup_penalties = []
+    for subject in subjects:
+        target = max(0, int(subject.get("periods_per_week", 0) or 0))
+        semester_vars = []
+        if target <= 0:
+            continue
+        for week in weeks:
+            week_end = week + timedelta(days=6)
             matching = [
                 var for (d, sl, c, s, t, r), var in assign.items()
                 if s == subject["subject_id"] and c == subject["class_id"]
                 and week <= d <= week_end
             ]
-            target = max(0, int(subject.get("periods_per_week", 0) or 0))
+            weekly_counts[(subject["class_id"], subject["subject_id"], week)] = matching
+            semester_vars.extend(matching)
             if matching:
-                model.Add(sum(matching) == target)
-            elif target:
-                return {
-                    "status": "infeasible",
-                    "reason": f"Subject {subject['subject_id']} for class {subject['class_id']} has target {target} but no eligible slots in week {week.isoformat()}.",
-                    "sessions": [],
-                }
-        week += timedelta(days=7)
+                # Keep the regular weekly load whenever possible, but permit
+                # capped makeup in a neighboring eligible week after closures.
+                weekly_total = sum(matching)
+                model.Add(weekly_total <= target * 2)
+                deviation = model.NewIntVar(0, target * 2, f"weekly_deviation_c{subject['class_id']}_s{subject['subject_id']}_{week}")
+                model.AddAbsEquality(deviation, weekly_total - target)
+                makeup_penalties.append(deviation)
+        required_semester_total = target * len(weeks)
+        if not semester_vars:
+            return {
+                "status": "infeasible",
+                "reason": f"Subject {subject['subject_id']} for class {subject['class_id']} has no eligible dated slots anywhere in the semester.",
+                "sessions": [],
+            }
+        model.Add(sum(semester_vars) == required_semester_total)
 
     # Keep locked assignments fixed. A lock that cannot be represented is a
     # reported infeasibility rather than silently moved or dropped.
@@ -152,7 +171,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         dynamic_penalties.extend(compiled)
 
     # Soft preference: discourage exceeding a teacher's daily workload target.
-    penalties = []
+    penalties = list(makeup_penalties)
     teacher_daily = defaultdict(list)
     for (session_date, slot_id, class_id, subject_id, teacher_id, room_id), var in assign.items():
         teacher_daily[(teacher_id, session_date)].append(var)
