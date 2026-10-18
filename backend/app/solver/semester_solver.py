@@ -113,6 +113,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if target <= 0:
             continue
         weekly_candidates = {}
+        calendar_open_weeks = {}
         for week in weeks:
             week_end = week + timedelta(days=6)
             matching = [
@@ -123,12 +124,21 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             weekly_candidates[week] = matching
             semester_vars.extend(matching)
 
-        # A fully unavailable week (for example, a week closed by the
-        # academic calendar) contributes no candidate variables. Roll that
-        # missed weekly target into the capacity of eligible weeks so the
-        # semester total remains achievable instead of making the model
-        # infeasible solely because approved closures removed dates.
-        closed_weeks = sum(1 for matching in weekly_candidates.values() if not matching)
+            # Count a week as closed only when the calendar leaves no eligible
+            # date with a configured slot weekday inside the term. An empty
+            # subject candidate list alone is not proof of a calendar closure
+            # (for example, a partial boundary week may simply lack that weekday).
+            calendar_open_weeks[week] = any(
+                start <= candidate_day <= end
+                and _event_state(candidate_day, events, working_days)[0]
+                and any(slot["day"] == candidate_day.strftime("%A") for slot in slots)
+                for candidate_day in (week + timedelta(days=offset) for offset in range(7))
+            )
+
+        # Roll only genuinely calendar-closed weeks into makeup capacity. This
+        # prevents partial term weeks or resource/subject eligibility gaps from
+        # silently granting extra teaching capacity.
+        closed_weeks = sum(1 for is_open in calendar_open_weeks.values() if not is_open)
         weekly_capacity = target * (1 + closed_weeks)
         for week, matching in weekly_candidates.items():
             if matching:
