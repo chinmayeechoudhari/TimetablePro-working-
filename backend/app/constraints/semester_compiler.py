@@ -65,9 +65,14 @@ def _matches(assign, condition, data):
 def _compile_expression(model, assign, expression, constraint_type, data):
     kind = expression.kind
     if kind == "forbid":
-        for key in _matches(assign, expression.filter, data):
-            model.Add(assign[key] == 0)
-        return []
+        matched = [assign[key] for key in _matches(assign, expression.filter, data)]
+        if constraint_type == "hard":
+            for variable in matched:
+                model.Add(variable == 0)
+            return []
+        # A soft forbid is a preference, not a hard prohibition: each
+        # matching scheduled assignment contributes one unit of penalty.
+        return matched
     if kind == "exists":
         variables = [assign[key] for key in _matches(assign, expression.filter, data)]
         count = _make_count_var(model, variables, "semester_dynamic_exists")
