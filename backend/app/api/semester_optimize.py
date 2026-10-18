@@ -85,33 +85,41 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "is_locked": session.is_locked,
         } for session in latest.sessions if session.is_locked]
 
-    result = solve_semester_schedule({
-        "db": db,
-        "dynamic_constraints": dynamic_constraints,
-        "slot_period": {s.slot_id: s.period_number for s in slots},
-        "slot_day": {s.slot_id: s.day for s in slots},
-        "room_types": {r.room_id: str(r.room_type or "classroom").strip().lower() for r in rooms},
-        "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
-        "start_date": term.start_date,
-        "end_date": term.end_date,
-        "working_days": _working_days(term),
-        "events": event_data,
-        "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
-        "subjects": [{
-            "subject_id": s.subject_id,
-            "class_id": s.class_id,
-            "periods_per_week": s.periods_per_week,
-            "subject_type": s.subject_type,
-        } for s in subjects],
-        "teachers": [{
-            "teacher_id": t.teacher_id,
-            "max_periods_per_day": t.max_periods_per_day,
-        } for t in teachers],
-        "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
-        "teacher_subjects": [(link.teacher_id, link.subject_id) for link in teacher_subjects],
-        "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
-        "locked_sessions": locked_sessions,
-    }, max_time_seconds=max_time_seconds)
+    try:
+        result = solve_semester_schedule({
+            "db": db,
+            "dynamic_constraints": dynamic_constraints,
+            "slot_period": {s.slot_id: s.period_number for s in slots},
+            "slot_day": {s.slot_id: s.day for s in slots},
+            "room_types": {r.room_id: str(r.room_type or "classroom").strip().lower() for r in rooms},
+            "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
+            "start_date": term.start_date,
+            "end_date": term.end_date,
+            "working_days": _working_days(term),
+            "events": event_data,
+            "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
+            "subjects": [{
+                "subject_id": s.subject_id,
+                "class_id": s.class_id,
+                "periods_per_week": s.periods_per_week,
+                "subject_type": s.subject_type,
+            } for s in subjects],
+            "teachers": [{
+                "teacher_id": t.teacher_id,
+                "max_periods_per_day": t.max_periods_per_day,
+            } for t in teachers],
+            "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
+            "teacher_subjects": [(link.teacher_id, link.subject_id) for link in teacher_subjects],
+            "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
+            "locked_sessions": locked_sessions,
+        }, max_time_seconds=max_time_seconds)
+    
+    
+    except (ValueError, TypeError, KeyError, NotImplementedError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A saved dynamic constraint could not be compiled for semester scheduling: {exc}",
+        ) from exc
 
     if result["status"] not in {"optimal", "feasible"}:
         raise HTTPException(status_code=409, detail={
