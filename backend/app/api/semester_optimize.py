@@ -45,6 +45,22 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
 
     # Validate academic-year scoping before loading slots, constraints, or other
     # scheduling data. Never proceed with another year's assignments.
+    all_groups = db.query(AcademicGroup).all()
+    term_year = str(term.academic_year or "").strip().casefold()
+    scoped_groups = [
+        group for group in all_groups
+        if str(group.academic_year or "").strip().casefold() == term_year
+    ]
+    if all_groups and not scoped_groups:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No academic groups match academic year '{term.academic_year}'. "
+                "Check the term's academic year and the department/year setup; "
+                "the optimizer will not fall back to another year's subjects."
+            ),
+        )
+
     saved_constraints = db.query(Constraint).all()
     dynamic_constraints = []
     for row in saved_constraints:
@@ -80,25 +96,6 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     slots = db.query(TimeSlot).all()
     teachers = db.query(Teacher).all()
     rooms = db.query(Room).all()
-
-    # Prefer the department/year -> division -> teaching-assignment structure.
-    # AcademicGroup is keyed by academic year, so only assignments belonging to
-    # this term's academic year are eligible for optimization.
-    all_groups = db.query(AcademicGroup).all()
-    term_year = str(term.academic_year or "").strip().casefold()
-    scoped_groups = [
-        group for group in all_groups
-        if str(group.academic_year or "").strip().casefold() == term_year
-    ]
-    if all_groups and not scoped_groups:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"No academic groups match academic year '{term.academic_year}'. "
-                "Check the term's academic year and the department/year setup; "
-                "the optimizer will not fall back to another year's subjects."
-            ),
-        )
 
     if scoped_groups:
         scoped_group_ids = {group.group_id for group in scoped_groups}
