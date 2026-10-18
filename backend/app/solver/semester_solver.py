@@ -23,7 +23,7 @@ def _event_state(day: date, events: list[dict], working_days: set[str]) -> tuple
 
 
 def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
-    """Solve dated sessions and enforce each class-subject target in each touched week.
+    """Solve dated sessions while preserving semester totals and allowing capped holiday makeup.
 
     Required data keys:
       start_date, end_date, working_days, events, slots, subjects, teachers,
@@ -105,10 +105,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     # carry up to one additional weekly target as makeup capacity. The objective
     # below penalizes deviations so makeup is used only when calendar/resource
     # constraints make the regular weekly target impossible.
-    first_monday = start - timedelta(days=start.weekday())
-    last_monday = end - timedelta(days=end.weekday())
     weeks = list(_week_starts(start, end))
-    weekly_counts = {}
     makeup_penalties = []
     for subject in subjects:
         target = max(0, int(subject.get("periods_per_week", 0) or 0))
@@ -122,7 +119,6 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 if s == subject["subject_id"] and c == subject["class_id"]
                 and week <= d <= week_end
             ]
-            weekly_counts[(subject["class_id"], subject["subject_id"], week)] = matching
             semester_vars.extend(matching)
             if matching:
                 # Keep the regular weekly load whenever possible, but permit
