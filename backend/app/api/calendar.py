@@ -51,7 +51,7 @@ class EventCreate(BaseModel):
     is_closure: bool = True
     is_working_day_override: bool | None = None
     source: str = Field(default="manual", max_length=200)
-    approval_status: Literal["pending", "approved", "rejected"] = "approved"
+    approval_status: Literal["pending", "approved", "rejected"] = "pending"
     notes: str | None = None
 
     @model_validator(mode="after")
