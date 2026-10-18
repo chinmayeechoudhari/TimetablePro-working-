@@ -128,10 +128,18 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             # date with a configured slot weekday inside the term. An empty
             # subject candidate list alone is not proof of a calendar closure
             # (for example, a partial boundary week may simply lack that weekday).
-            calendar_open_weeks[week] = any(
-                start <= candidate_day <= end
-                and not _event_state(candidate_day, events, working_days)[1]
+            configured_workdays = [
+                candidate_day
                 for candidate_day in (week + timedelta(days=offset) for offset in range(7))
+                if start <= candidate_day <= end
+                and candidate_day.strftime("%A") in working_days
+            ]
+            # A week is closed only if it had at least one configured working
+            # date and every such date is closed by the calendar. A partial
+            # boundary week with no configured working weekday is not a closure.
+            calendar_open_weeks[week] = bool(configured_workdays) and any(
+                not _event_state(candidate_day, events, working_days)[1]
+                for candidate_day in configured_workdays
             )
 
         # Roll only genuinely calendar-closed weeks into makeup capacity. This
