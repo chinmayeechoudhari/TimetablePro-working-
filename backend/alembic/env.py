@@ -13,6 +13,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.models.models import Base
+from app.models import calendar as calendar_models
+from app.models import semester as semester_models
 from app.core.config import engine
 target_metadata = Base.metadata
 
