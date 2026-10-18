@@ -67,6 +67,32 @@ def _event_state(events, day, working_days):
     working = override or day.strftime("%A") in working_days
     return working and not closed, closed, active
 
+def _schedule_conflicts(sessions):
+    """Return teacher, room, or class double-bookings in the same dated period."""
+    active_statuses = {"scheduled", "completed", "missed"}
+    buckets = defaultdict(list)
+    for session in sessions:
+        if session.session_status not in active_statuses:
+            continue
+        buckets[(session.session_date, session.period_number)].append(session)
+
+    conflicts = []
+    for (session_date, period_number), rows in buckets.items():
+        for resource, attr in (("class", "class_id"), ("teacher", "teacher_id"), ("room", "room_id")):
+            by_id = defaultdict(list)
+            for row in rows:
+                by_id[getattr(row, attr)].append(row)
+            for resource_id, duplicate_rows in by_id.items():
+                if len(duplicate_rows) > 1:
+                    conflicts.append({
+                        "date": session_date.isoformat(),
+                        "period_number": period_number,
+                        "resource": resource,
+                        "resource_id": resource_id,
+                        "session_ids": [row.session_id for row in duplicate_rows],
+                    })
+    return conflicts
+
 
 def _find_replacement(db: Session, original: ScheduledSession, term: AcademicTerm, version: TimetableVersion):
     """Find earliest valid replacement; prefer the original week, then later weeks."""
@@ -334,9 +360,18 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
     sessions = db.query(ScheduledSession).filter(ScheduledSession.version_id == version_id).all()
     if not sessions:
         raise HTTPException(status_code=409, detail="An empty timetable cannot be published.")
-    conflicts = [s.session_id for s in sessions if s.closure_conflict and s.is_locked]
-    if conflicts:
-        raise HTTPException(status_code=409, detail={"message": "Locked sessions conflict with approved closures. Unlock or resolve them before publishing.", "session_ids": conflicts})
+    schedule_conflicts = _schedule_conflicts(sessions)
+    if schedule_conflicts:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This version contains class, teacher, or room double-bookings. Resolve them before publishing.",
+                "conflicts": schedule_conflicts,
+            },
+        )
+    closure_conflicts = [s.session_id for s in sessions if s.closure_conflict and s.is_locked]
+    if closure_conflicts:
+        raise HTTPException(status_code=409, detail={"message": "Locked sessions conflict with approved closures. Unlock or resolve them before publishing.", "session_ids": closure_conflicts})
     now = datetime.utcnow()
     db.query(TimetableVersion).filter(
         TimetableVersion.term_id == version.term_id,
