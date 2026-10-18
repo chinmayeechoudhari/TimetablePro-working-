@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
+from app.models.semester import TimetableVersion
 
 router = APIRouter(prefix="/calendar", tags=["academic-calendar"])
 WEEKDAYS = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
@@ -21,7 +22,6 @@ class TermCreate(BaseModel):
     end_date: date
     holiday_region: str = Field(default="Maharashtra, India", min_length=1, max_length=120)
     timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=64)
-    working_days: list[str] = Field(default_factory=lambda: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
     reschedule_policy: Literal["cancel", "suggest", "automatic"] = "suggest"
     status: Literal["draft", "active", "archived"] = "draft"
 
@@ -29,10 +29,6 @@ class TermCreate(BaseModel):
     def validate_dates_and_days(self):
         if self.end_date < self.start_date:
             raise ValueError("Term end date must be on or after the start date.")
-        if not self.working_days or any(day not in WEEKDAYS for day in self.working_days):
-            raise ValueError("Choose at least one valid working day.")
-        if len(set(self.working_days)) != len(self.working_days):
-            raise ValueError("Working days must not contain duplicates.")
         return self
 
 
@@ -43,7 +39,6 @@ class TermUpdate(BaseModel):
     end_date: date | None = None
     holiday_region: str | None = Field(default=None, min_length=1, max_length=120)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
-    working_days: list[str] | None = None
     reschedule_policy: Literal["cancel", "suggest", "automatic"] | None = None
     status: Literal["draft", "active", "archived"] | None = None
 
@@ -78,7 +73,6 @@ def serialize_term(term: AcademicTerm):
         "end_date": term.end_date.isoformat(),
         "holiday_region": term.holiday_region,
         "timezone": term.timezone,
-        "working_days": json.loads(term.working_days_json or "[]"),
         "reschedule_policy": term.reschedule_policy,
         "status": term.status,
         "created_at": term.created_at.isoformat() if term.created_at else None,
@@ -123,7 +117,6 @@ def create_term(payload: TermCreate, db: Session = Depends(get_db)):
         end_date=payload.end_date,
         holiday_region=payload.holiday_region.strip(),
         timezone=payload.timezone.strip(),
-        working_days_json=json.dumps(payload.working_days),
         reschedule_policy=payload.reschedule_policy,
         status=payload.status,
     )
@@ -141,12 +134,6 @@ def create_term(payload: TermCreate, db: Session = Depends(get_db)):
 def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)):
     term = get_term_or_404(db, term_id)
     data = payload.model_dump(exclude_unset=True)
-    if "working_days" in data:
-        days = data.pop("working_days")
-        if days is not None:
-            if not days or any(day not in WEEKDAYS for day in days) or len(set(days)) != len(days):
-                raise HTTPException(status_code=422, detail="Working days must be unique valid weekdays, with at least one selected.")
-            term.working_days_json = json.dumps(days)
     for field, value in data.items():
         if value is not None:
             setattr(term, field, value)
@@ -164,6 +151,9 @@ def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)
 @router.delete("/terms/{term_id}", status_code=204)
 def delete_term(term_id: int, db: Session = Depends(get_db)):
     term = get_term_or_404(db, term_id)
+    versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).count()
+    if versions:
+        raise HTTPException(status_code=409, detail="This semester has timetable history. Archive it instead of deleting it; existing drafts and published versions must be preserved.")
     db.delete(term)
     db.commit()
     return None
