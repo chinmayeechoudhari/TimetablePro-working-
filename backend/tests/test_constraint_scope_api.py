@@ -130,7 +130,7 @@ def test_create_constraint_persists_semester_scope_without_schema_migration(monk
     db.commit.assert_called_once()
 
 
-def test_create_constraint_rejects_duplicate_only_within_same_scope(monkeypatch):
+def test_create_constraint_allows_same_rule_in_different_scope(monkeypatch):
     payload = _constraint_payload().model_dump(mode="json")
     existing_global = SimpleNamespace(
         constraint_id=1, constraint_name="Global", constraint_type="hard",
