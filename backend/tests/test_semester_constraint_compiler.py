@@ -124,7 +124,7 @@ def test_solver_makes_up_closed_week_load_in_another_week():
     result = solve_semester_schedule(data)
     assert result["status"] in {"optimal", "feasible"}
     assert len(result["sessions"]) == 2
-    assert {session["date"] for session in result["sessions"]} == {date(2026, 7, 13)}
+    assert {session["session_date"] for session in result["sessions"]} == {date(2026, 7, 13)}
     assert {session["period_number"] for session in result["sessions"]} == {1, 2}
 
 
