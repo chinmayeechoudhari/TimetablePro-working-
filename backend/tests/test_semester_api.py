@@ -1,7 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from app.api.semester import _event_state, _schedule_conflicts
+from app.api.semester import _event_state, _schedule_conflicts, _target_for_week
 from app.api.semester_workflow import _weekly_target
 
 
@@ -48,9 +48,19 @@ def test_event_outside_date_range_does_not_affect_day():
 
 
 
-def test_weekly_target_scales_down_for_partial_week():
-    # Wednesday-Friday is three of five configured teaching days.
-    assert _weekly_target(3, date(2026, 7, 1), date(2026, 7, 3), [], {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 2
+def test_weekly_target_keeps_full_requirement_for_partial_week():
+    # Wednesday-Friday is only part of the calendar week,
+    # but the full weekly requirement still applies.
+    working_days = {
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
+    }
+    assert _weekly_target(
+        3,
+        date(2026, 7, 1),
+        date(2026, 7, 3),
+        [],
+        working_days,
+    ) == 3
 
 
 def test_weekly_target_does_not_exceed_weekly_load_with_working_day_override():
@@ -60,12 +70,52 @@ def test_weekly_target_does_not_exceed_weekly_load_with_working_day_override():
     assert _weekly_target(3, date(2026, 6, 29), date(2026, 7, 5), [closure, override], {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 3
 
 
-def test_weekly_target_drops_to_zero_when_all_teaching_days_are_closed():
+def test_weekly_target_keeps_full_requirement_when_all_days_are_closed():
+    working_days = {
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
+    }
     events = [
         event(date(2026, 7, day), date(2026, 7, day))
         for day in range(6, 11)
     ]
-    assert _weekly_target(3, date(2026, 7, 6), date(2026, 7, 10), events, {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 0
+
+    assert _weekly_target(
+        3,
+        date(2026, 7, 6),
+        date(2026, 7, 10),
+        events,
+        working_days,
+    ) == 3
+
+
+def test_dashboard_and_workflow_weekly_targets_match():
+    working_days = {
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
+    }
+    closure = event(date(2026, 7, 1), date(2026, 7, 1))
+
+    workflow_target = _weekly_target(
+        3, date(2026, 7, 1), date(2026, 7, 3),
+        [closure], working_days,
+    )
+    dashboard_target = _target_for_week(
+        3, date(2026, 7, 1), date(2026, 7, 3),
+        [closure], working_days,
+    )
+
+    assert workflow_target == 3
+    assert dashboard_target == workflow_target
+
+
+def test_weekly_targets_return_zero_for_invalid_or_empty_inputs():
+    start = date(2026, 7, 1)
+    end = date(2026, 7, 3)
+    working_days = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
+
+    for target_function in (_weekly_target, _target_for_week):
+        assert target_function(0, start, end, [], working_days) == 0
+        assert target_function(3, end, start, [], working_days) == 0
+        assert target_function(3, start, end, [], set()) == 0
 
 
 def session(session_id, day, period, class_id, teacher_id, room_id, status="scheduled"):
