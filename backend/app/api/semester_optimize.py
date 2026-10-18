@@ -47,7 +47,22 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     dynamic_constraints = []
     for row in saved_constraints:
         try:
-            payload = json.loads(row.parameters_json or "{}")
+            stored_payload = json.loads(row.parameters_json or "{}")
+            # Legacy rows are global GeneratedConstraint JSON. New scoped rows
+            # use an envelope so this feature needs no database migration.
+            if (
+                isinstance(stored_payload, dict)
+                and isinstance(stored_payload.get("scope"), dict)
+                and isinstance(stored_payload.get("constraint"), dict)
+            ):
+                scoped_term_id = stored_payload["scope"].get("term_id")
+                if not isinstance(scoped_term_id, int):
+                    raise ValueError("Scoped constraint is missing a valid term_id.")
+                if scoped_term_id != term_id:
+                    continue
+                payload = stored_payload["constraint"]
+            else:
+                payload = stored_payload
             parsed = GeneratedConstraint.model_validate(payload)
             if row.constraint_type != parsed.constraint_type:
                 raise ValueError("Saved constraint type does not match its payload.")
