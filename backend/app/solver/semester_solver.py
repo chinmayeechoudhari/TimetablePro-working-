@@ -83,12 +83,16 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
               for key in candidates}
 
     # At most one session per class, teacher, or room at each dated period.
+    # Group by period_number, not slot_id: duplicate slot records for the same
+    # weekday/period must not allow overlapping assignments.
+    slot_by_id = {slot["slot_id"]: slot for slot in slots}
     buckets = defaultdict(list)
     for key, var in assign.items():
         session_date, slot_id, class_id, subject_id, teacher_id, room_id = key
-        buckets[("class", session_date, slot_id, class_id)].append(var)
-        buckets[("teacher", session_date, slot_id, teacher_id)].append(var)
-        buckets[("room", session_date, slot_id, room_id)].append(var)
+        period_number = slot_by_id[slot_id]["period_number"]
+        buckets[("class", session_date, period_number, class_id)].append(var)
+        buckets[("teacher", session_date, period_number, teacher_id)].append(var)
+        buckets[("room", session_date, period_number, room_id)].append(var)
     for variables in buckets.values():
         if len(variables) > 1:
             model.Add(sum(variables) <= 1)
