@@ -9,6 +9,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 from ortools.sat.python import cp_model
 
+from app.constraints.semester_compiler import compile_semester_constraint
+
 
 ACTIVE_STATUSES = {"scheduled", "completed", "missed"}
 
@@ -137,6 +139,26 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         model.Add(assign[key_prefix] == 1)
         locked_keys.add(key_prefix)
 
+    # Compile persisted user-authored constraints against date-aware assignment keys.
+    dynamic_penalties = []
+    for index, constraint in enumerate(data.get("dynamic_constraints", [])):
+        compiled = compile_semester_constraint(model, assign, constraint, data)
+        weight = constraint.weight if constraint.constraint_type == "soft" else None
+        if weight is not None and weight != 1:
+            scaled = []
+            for penalty_index, penalty in enumerate(compiled):
+                if isinstance(penalty, (int, float)):
+                    scaled.append(int(penalty * weight))
+                else:
+                    upper_bound = max(0, penalty.Proto().domain[-1] * int(weight))
+                    weighted = model.NewIntVar(
+                        0, upper_bound, f"semester_constraint_{index}_weighted_{penalty_index}"
+                    )
+                    model.Add(weighted == penalty * int(weight))
+                    scaled.append(weighted)
+            compiled = scaled
+        dynamic_penalties.extend(compiled)
+
     # Soft preference: discourage exceeding a teacher's daily workload target.
     penalties = []
     teacher_daily = defaultdict(list)
@@ -172,6 +194,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 penalty = model.NewIntVar(0, min(target, len(day_vars)), f"spread_s{subject['subject_id']}_{week}")
                 model.Add(penalty >= min(target, len(day_vars)) - sum(day_vars))
                 penalties.append(penalty)
+    penalties.extend(dynamic_penalties)
     if penalties:
         model.Minimize(sum(penalties))
 
