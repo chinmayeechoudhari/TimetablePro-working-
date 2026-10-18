@@ -78,20 +78,12 @@ def _event_state(events, day, working_days):
     return working and not closed, closed, active
 
 def _target_for_week(periods_per_week, start, end, events, working_days):
-    """Compute a closure-aware target for a full or partial calendar week."""
+    """Return the full weekly subject target for every week touched by a term."""
     periods = max(0, int(periods_per_week or 0))
     if periods == 0 or end < start or not working_days:
         return 0
-    eligible_days = 0
-    day = start
-    while day <= end:
-        eligible, _, _ = _event_state(events, day, working_days)
-        eligible_days += int(eligible)
-        day += timedelta(days=1)
-    if eligible_days == 0:
-        return 0
-    prorated = (periods * eligible_days + len(working_days) - 1) // len(working_days)
-    return min(periods, prorated)
+    return periods
+
 
 def _schedule_conflicts(sessions):
     """Return teacher, room, or class double-bookings in the same dated period."""
