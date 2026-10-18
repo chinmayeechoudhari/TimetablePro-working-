@@ -20,7 +20,7 @@ export default function SemesterDashboard() {
   async function refresh(id = termId) {
     if (!id) return
     const [v, d, p, w] = await Promise.all([axios.get(API + '/semester/terms/' + id + '/versions'), axios.get(API + '/semester/terms/' + id + '/dashboard'), axios.post(API + '/semester/terms/' + id + '/preview').catch(() => ({ data: null })), axios.get(API + '/semester/terms/' + id + '/weekly-progress').catch(() => ({ data: [] }))])
-    setVersions(v.data); setDashboard(d.data); setPreview(p.data); setWeeklyProgress(Array.isArray(w.data) ? w.data : (w.data?.weeks || w.data?.rows || []))
+    setVersions(v.data); setDashboard(d.data); setPreview(p.data); setWeeklyProgress(Array.isArray(w.data) ? w.data : (w.data?.shortfalls || w.data?.weeks || w.data?.rows || []))
   }
   useEffect(() => {
     axios.get(API + '/calendar/terms').then(r => {
