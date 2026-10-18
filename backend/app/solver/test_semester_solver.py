@@ -105,3 +105,30 @@ def test_locked_session_on_closed_date_reports_conflict():
     result = solve_semester_schedule(data)
     assert result["status"] == "infeasible"
     assert result["locked_conflicts"] == ["2026-10-19"]
+
+
+def test_working_day_override_allows_scheduling_on_closed_weekday():
+    data = _base_data()
+    data["events"] = [{
+        "start_date": date(2026, 10, 19),
+        "end_date": date(2026, 10, 19),
+        "is_closure": True,
+        "is_working_day_override": True,
+    }]
+    data["slots"] = data["slots"][:2]
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 2
+
+
+def test_lab_subject_uses_only_lab_room():
+    data = _base_data()
+    data["subjects"][0]["subject_type"] = "lab"
+    data["rooms"] = [
+        {"room_id": 30, "room_type": "classroom"},
+        {"room_id": 31, "room_type": "lab"},
+    ]
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 2
+    assert all(item["room_id"] == 31 for item in result["sessions"])
