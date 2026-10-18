@@ -127,6 +127,7 @@ export default function TimetableGrid() {
   const [loading, setLoading] = useState(true)
   const [subjectsList, setSubjectsList] = useState([])
   const [calendarEvents, setCalendarEvents] = useState([])
+  const [terms, setTerms] = useState([])
   const [activeTerm, setActiveTerm] = useState(null)
   const [today] = useState(() => new Date())
 
@@ -138,15 +139,23 @@ export default function TimetableGrid() {
 
   useEffect(() => {
     let alive = true
-    axios.get(`${BASE}/calendar/terms`).then(async response => {
-      const term = response.data.find(item => item.status === 'active') || response.data[0]
-      if (!term || !alive) return
-      setActiveTerm(term)
-      const eventsResponse = await axios.get(`${BASE}/calendar/terms/${term.term_id}/events`)
-      if (alive) setCalendarEvents(eventsResponse.data.filter(item => item.approval_status === 'approved'))
-    }).catch(() => { if (alive) { setActiveTerm(null); setCalendarEvents([]) } })
+    axios.get(`${BASE}/calendar/terms`).then(response => {
+      if (!alive) return
+      const rows = response.data || []
+      setTerms(rows)
+      setActiveTerm(rows.find(item => item.status === 'active') || rows[0] || null)
+    }).catch(() => { if (alive) { setTerms([]); setActiveTerm(null); setCalendarEvents([]) } })
     return () => { alive = false }
   }, [])
+
+  useEffect(() => {
+    let alive = true
+    if (!activeTerm?.term_id) { setCalendarEvents([]); return () => { alive = false } }
+    axios.get(`${BASE}/calendar/terms/${activeTerm.term_id}/events`)
+      .then(response => { if (alive) setCalendarEvents((response.data || []).filter(item => item.approval_status === 'approved')) })
+      .catch(() => { if (alive) setCalendarEvents([]) })
+    return () => { alive = false }
+  }, [activeTerm?.term_id])
 
 
 
@@ -259,6 +268,11 @@ export default function TimetableGrid() {
   }
   const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const eventsForDate = (date) => calendarEvents.filter(event => event.start_date <= dateKey(date) && event.end_date >= dateKey(date))
+  const dayCalendarState = (date) => {
+    const events = eventsForDate(date)
+    const workingOverride = events.some(event => event.is_working_day_override === true)
+    return { events, workingOverride, closures: workingOverride ? [] : events.filter(event => event.is_closure) }
+  }
 
     const activeDays = DAYS.filter(day => slots.some(s => s.day === day))
   const activePeriods = PERIODS.filter(p => slots.some(s => s.period_number === p))
@@ -330,12 +344,13 @@ export default function TimetableGrid() {
                 {dateForWeekday(day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                 {dateKey(dateForWeekday(day)) === todayKey ? ' · TODAY' : ''}
               </div>
-              {eventsForDate(dateForWeekday(day)).filter(event => event.is_closure).map(event => <div key={event.event_id} title={event.title} style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#ffe4e6', color: '#9f1239' }}>{event.title}</div>)}
+              {dayCalendarState(dateForWeekday(day)).closures.map(event => <div key={event.event_id} title={event.title} style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#ffe4e6', color: '#9f1239' }}>{event.title} · NO CLASSES</div>)}
+              {dayCalendarState(dateForWeekday(day)).workingOverride && <div style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#dcfce7', color: '#166534' }}>Approved working day</div>}
             </td>
 
             {/* PERIOD CELLS */}
             {activePeriods.map((period, pi) => {
-              const closureEvents = eventsForDate(dateForWeekday(day)).filter(event => event.is_closure)
+              const closureEvents = dayCalendarState(dateForWeekday(day)).closures
               const entry = closureEvents.length ? null : getCell(fKey, fVal, day, period)
               const color = entry
                 ? (subjectColors[entry.subject_id] || COLORS[0])
@@ -445,12 +460,18 @@ export default function TimetableGrid() {
               Today: {today.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </div>
             <div style={{ marginTop: 3, fontSize: 11, color: '#64748b' }}>
-              Showing dates for the current week{activeTerm ? ` · ${activeTerm.academic_year} ${activeTerm.term_name}` : ''}. Calendar closures appear under the day.
+              Showing dates for the current week{activeTerm ? ` · ${activeTerm.academic_year} ${activeTerm.term_name}` : ''}. Approved closures suppress class cards; approved working-day overrides take precedence.
             </div>
           </div>
         </div>
 
         <div className="hero-actions no-print">
+          {terms.length > 0 && <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#475569' }}>
+            Calendar term
+            <select value={activeTerm?.term_id ?? ''} onChange={event => setActiveTerm(terms.find(term => String(term.term_id) === event.target.value) || null)} style={{ padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: 8, background: 'white', maxWidth: 220 }}>
+              {terms.map(term => <option key={term.term_id} value={term.term_id}>{term.academic_year} · {term.term_name}</option>)}
+            </select>
+          </label>}
           <button type="button" className="secondary-action" onClick={handleExport}>
             <Icon name="download" size={16} />
             Export current view
