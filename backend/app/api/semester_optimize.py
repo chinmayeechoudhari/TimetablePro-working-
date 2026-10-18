@@ -11,6 +11,7 @@ from app.models.calendar import AcademicTerm, CalendarEvent
 from app.models.models import Constraint, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
 from app.models.semester import ScheduledSession, TimetableVersion
 from app.constraints.schemas import GeneratedConstraint
+from app.constraints.resolver import EntityResolutionError
 from app.solver.semester_solver import solve_semester_schedule
 
 router = APIRouter(prefix="/semester", tags=["semester-optimization"])
@@ -42,7 +43,10 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     for row in saved_constraints:
         try:
             payload = json.loads(row.parameters_json or "{}")
-            dynamic_constraints.append(GeneratedConstraint.model_validate(payload))
+            parsed = GeneratedConstraint.model_validate(payload)
+            if parsed.constraint_type == "soft" and parsed.weight not in (1, 2, 3):
+                parsed = parsed.model_copy(update={"weight": 3})
+            dynamic_constraints.append(parsed)
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             raise HTTPException(
                 status_code=409,
@@ -115,7 +119,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         }, max_time_seconds=max_time_seconds)
     
     
-    except (ValueError, TypeError, KeyError, NotImplementedError) as exc:
+    except (ValueError, TypeError, KeyError, NotImplementedError, EntityResolutionError) as exc:
         raise HTTPException(
             status_code=409,
             detail=f"A saved dynamic constraint could not be compiled for semester scheduling: {exc}",
