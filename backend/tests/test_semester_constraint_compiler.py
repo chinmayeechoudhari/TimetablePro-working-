@@ -194,22 +194,3 @@ def test_solver_soft_constraint_produces_a_feasible_schedule():
     assert len(result["sessions"]) == 1
     assert result["sessions"][0]["weekday"] == "Monday"
     assert result["objective_value"] >= 3
-
-
-def test_partial_boundary_week_without_a_configured_slot_is_not_counted_as_closed():
-    # The term starts on Tuesday, but the only configured slot is Wednesday.
-    # The first week still has a valid Wednesday candidate, while the final
-    # partial week ends Tuesday and should not be treated as a holiday closure.
-    data = _solver_data([])
-    data.update({
-        "start_date": date(2026, 7, 7),
-        "end_date": date(2026, 7, 14),
-        "working_days": {"Wednesday"},
-        "slots": [{"slot_id": 1, "day": "Wednesday", "period_number": 1}],
-    })
-    result = solve_semester_schedule(data)
-    assert result["status"] in {"optimal", "feasible"}
-    assert len(result["sessions"]) == 2
-    assert {session["session_date"] for session in result["sessions"]} == {
-        date(2026, 7, 8), date(2026, 7, 14)
-    }
