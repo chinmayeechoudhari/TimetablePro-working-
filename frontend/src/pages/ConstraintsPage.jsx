@@ -528,7 +528,10 @@ export default function ConstraintsPage() {
         if (!alive) return
         const list = Array.isArray(res.data) ? res.data : []
         setTerms(list)
-        // Preserve legacy behavior: start in Global scope until the admin explicitly selects a semester.
+        const chosen = list.find(term => term.term_name?.trim().toLowerCase() === "semester 1")
+          || list.find(term => term.status === "active")
+          || list[0]
+        if (chosen) setSelectedTermId(String(chosen.term_id))
       })
       .catch(err => { if (alive) setError(err?.response?.data?.detail || "Could not load academic semesters") })
       .finally(() => { if (alive) setTermsLoading(false) })
