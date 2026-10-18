@@ -2,6 +2,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from app.api.semester import _event_state
+from app.api.semester_workflow import _weekly_target
 
 
 def event(start, end, *, closure=True, override=None):
@@ -44,3 +45,24 @@ def test_working_day_override_reopens_closure():
 def test_event_outside_date_range_does_not_affect_day():
     closure = event(date(2026, 7, 2), date(2026, 7, 3))
     assert _event_state([closure], date(2026, 7, 1), {"Wednesday"}) == (True, False, [])
+
+
+
+def test_weekly_target_scales_down_for_partial_week():
+    # Wednesday-Friday is three of five configured teaching days.
+    assert _weekly_target(3, date(2026, 7, 1), date(2026, 7, 3), [], {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 2
+
+
+def test_weekly_target_does_not_exceed_weekly_load_with_working_day_override():
+    # An override can reopen a closure but should not inflate the weekly subject target.
+    closure = event(date(2026, 7, 4), date(2026, 7, 4))
+    override = event(date(2026, 7, 4), date(2026, 7, 4), closure=False, override=True)
+    assert _weekly_target(3, date(2026, 6, 29), date(2026, 7, 5), [closure, override], {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 3
+
+
+def test_weekly_target_drops_to_zero_when_all_teaching_days_are_closed():
+    events = [
+        event(date(2026, 7, day), date(2026, 7, day))
+        for day in range(6, 11)
+    ]
+    assert _weekly_target(3, date(2026, 7, 6), date(2026, 7, 10), events, {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 0
