@@ -250,6 +250,17 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
             )
             version.sessions.append(session)
 
+    # Approved imported closures may be auto-rescheduled when the term policy allows it.
+    # Manually created closures remain suggestions for administrator review.
+    if term.reschedule_policy == "automatic":
+        db.flush()
+        for session in list(version.sessions):
+            if session.session_status != "cancelled" or not session.source_event_id:
+                continue
+            event = next((e for e in events if e.event_id == session.source_event_id), None)
+            if event and event.source.strip().lower() not in {"manual", "admin", "administrator"}:
+                _apply_replacement(db, session, term, version, approved=True, note="Automatically replaced due to approved imported closure.")
+
     try:
         db.commit()
     except IntegrityError:
