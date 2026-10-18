@@ -1,8 +1,11 @@
 from datetime import date
 
+import pytest
 from ortools.sat.python import cp_model
+
 from app.constraints.schemas import GeneratedConstraint
 from app.constraints.semester_compiler import compile_semester_constraint
+from app.solver.semester_solver import solve_semester_schedule
 
 
 def _constraint(payload):
@@ -12,9 +15,9 @@ def _constraint(payload):
 def _fixture():
     model = cp_model.CpModel()
     keys = [
-        (date(2026, 7, 6), 1, 10, 20, 30, 40),  # Monday period 1
-        (date(2026, 7, 6), 2, 10, 20, 30, 40),  # Monday period 2
-        (date(2026, 7, 13), 1, 10, 20, 30, 40), # following Monday, period 1
+        (date(2026, 7, 6), 1, 10, 20, 30, 40),
+        (date(2026, 7, 6), 2, 10, 20, 30, 40),
+        (date(2026, 7, 13), 1, 10, 20, 30, 40),
     ]
     assign = {key: model.NewBoolVar(f"a{i}") for i, key in enumerate(keys)}
     data = {
@@ -36,8 +39,7 @@ def test_forbid_day_applies_to_every_matching_date():
     })
     compile_semester_constraint(model, assign, constraint, data)
     model.Add(sum(assign.values()) == 1)
-    solver = cp_model.CpSolver()
-    assert solver.Solve(model) == cp_model.INFEASIBLE
+    assert cp_model.CpSolver().Solve(model) == cp_model.INFEASIBLE
 
 
 def test_no_adjacent_is_scoped_to_same_calendar_date():
@@ -68,3 +70,51 @@ def test_no_adjacent_does_not_confuse_same_periods_on_different_dates():
     model.Add(assign[(date(2026, 7, 6), 1, 10, 20, 30, 40)] == 1)
     model.Add(assign[(date(2026, 7, 13), 1, 10, 20, 30, 40)] == 1)
     assert cp_model.CpSolver().Solve(model) == cp_model.OPTIMAL
+
+
+def _solver_data(dynamic_constraints):
+    return {
+        "start_date": date(2026, 7, 6),
+        "end_date": date(2026, 7, 6),
+        "working_days": {"Monday"},
+        "events": [],
+        "slots": [{"slot_id": 1, "day": "Monday", "period_number": 1}],
+        "subjects": [{"subject_id": 20, "class_id": 10, "periods_per_week": 1, "subject_type": "theory"}],
+        "teachers": [{"teacher_id": 30, "max_periods_per_day": 6}],
+        "rooms": [{"room_id": 40, "room_type": "classroom"}],
+        "teacher_subjects": [(30, 20)],
+        "unavailable_pairs": [],
+        "dynamic_constraints": dynamic_constraints,
+        "slot_period": {1: 1},
+        "room_types": {40: "classroom"},
+        "subject_types": {20: "theory"},
+    }
+
+
+def test_solver_enforces_saved_hard_constraint():
+    constraint = _constraint({
+        "constraint_type": "hard",
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Monday"
+        }},
+        "explanation": "No Monday classes",
+    })
+    result = solve_semester_schedule(_solver_data([constraint]))
+    assert result["status"] == "infeasible"
+    assert result["sessions"] == []
+
+
+def test_solver_soft_constraint_produces_a_feasible_schedule():
+    constraint = _constraint({
+        "constraint_type": "soft",
+        "weight": 3,
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Monday"
+        }},
+        "explanation": "Avoid Monday classes",
+    })
+    result = solve_semester_schedule(_solver_data([constraint]))
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 1
+    assert result["sessions"][0]["weekday"] == "Monday"
+    assert result["objective_value"] >= 3
