@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import Class, Room, Subject, Teacher, TimeSlot, Timetable
+from app.models.models import Class, Room, Subject, Teacher, TeacherAvailability, TimeSlot, Timetable
 from app.models.semester import ScheduledSession, TimetableVersion
 
 router = APIRouter(prefix="/semester", tags=["semester-timetables"])
@@ -76,6 +76,10 @@ def _find_replacement(db: Session, original: ScheduledSession, term: AcademicTer
     ).all()
     working_days = set(json.loads(term.working_days_json or "[]"))
     slots = db.query(TimeSlot).order_by(TimeSlot.period_number.asc()).all()
+    unavailable = {
+        (item.teacher_id, item.slot_id)
+        for item in db.query(TeacherAvailability).filter(TeacherAvailability.is_available.is_(False)).all()
+    }
     start_week = original.session_date - timedelta(days=original.session_date.weekday())
     candidates = []
     day = max(term.start_date, original.session_date + timedelta(days=1))
@@ -86,6 +90,21 @@ def _find_replacement(db: Session, original: ScheduledSession, term: AcademicTer
             for slot in slots:
                 if slot.day != day.strftime("%A"):
                     continue
+                if (original.teacher_id, slot.slot_id) in unavailable:
+                    continue
+                # Respect the teacher's daily workload target as a hard safety guard
+                # for replacement placement; the generator's normal solver handles
+                # workload as a soft preference.
+                teacher = db.query(Teacher).filter(Teacher.teacher_id == original.teacher_id).first()
+                if teacher and teacher.max_periods_per_day:
+                    teacher_day_count = db.query(ScheduledSession).filter(
+                        ScheduledSession.version_id == version.version_id,
+                        ScheduledSession.session_date == day,
+                        ScheduledSession.teacher_id == original.teacher_id,
+                        ScheduledSession.session_status.in_(["scheduled", "completed"]),
+                    ).count()
+                    if teacher_day_count >= teacher.max_periods_per_day:
+                        continue
                 candidates.append((0 if same_week else 1, day, slot.period_number, slot.slot_id))
         day += timedelta(days=1)
     candidates.sort(key=lambda x: (x[0], x[1], x[2]))
@@ -387,6 +406,20 @@ def create_replacement(session_id: int, payload: ReplacementRequest, db: Session
         raise HTTPException(status_code=422, detail="Selected time slot does not exist.")
     if slot and (slot.day != payload.replacement_date.strftime("%A") or slot.period_number != payload.period_number):
         raise HTTPException(status_code=422, detail="Selected time slot does not match the replacement date and period.")
+    if slot is None:
+        slot = db.query(TimeSlot).filter(
+            TimeSlot.day == payload.replacement_date.strftime("%A"),
+            TimeSlot.period_number == payload.period_number,
+        ).first()
+        if slot is None:
+            raise HTTPException(status_code=422, detail="No configured time slot matches that date and period.")
+    availability = db.query(TeacherAvailability).filter(
+        TeacherAvailability.teacher_id == original.teacher_id,
+        TeacherAvailability.slot_id == slot.slot_id,
+        TeacherAvailability.is_available.is_(False),
+    ).first()
+    if availability:
+        raise HTTPException(status_code=409, detail="The assigned teacher is unavailable in this time slot.")
     conflicts = db.query(ScheduledSession).filter(
         ScheduledSession.version_id == version.version_id,
         ScheduledSession.session_date == payload.replacement_date,
@@ -435,6 +468,38 @@ def approve_replacement(session_id: int, db: Session = Depends(get_db)):
     original = _session(db, replacement.original_session_id)
     if replacement.session_status != "outstanding":
         raise HTTPException(status_code=409, detail="Only a pending replacement can be approved.")
+    term = _term(db, version.term_id)
+    if replacement.session_date < term.start_date or replacement.session_date > term.end_date:
+        raise HTTPException(status_code=409, detail="Replacement is outside the current semester range.")
+    if original.is_locked:
+        raise HTTPException(status_code=409, detail="The original session is locked; unlock it before approving a replacement.")
+    events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == term.term_id,
+        CalendarEvent.approval_status == "approved",
+    ).all()
+    eligible, closed, _ = _event_state(events, replacement.session_date, set(json.loads(term.working_days_json or "[]")))
+    if not eligible or closed:
+        raise HTTPException(status_code=409, detail="The replacement date is no longer an eligible teaching day.")
+    if replacement.slot_id:
+        slot = db.query(TimeSlot).filter(TimeSlot.slot_id == replacement.slot_id).first()
+        if not slot or slot.day != replacement.weekday or slot.period_number != replacement.period_number:
+            raise HTTPException(status_code=409, detail="The replacement time slot is no longer valid.")
+        unavailable = db.query(TeacherAvailability).filter(
+            TeacherAvailability.teacher_id == replacement.teacher_id,
+            TeacherAvailability.slot_id == replacement.slot_id,
+            TeacherAvailability.is_available.is_(False),
+        ).first()
+        if unavailable:
+            raise HTTPException(status_code=409, detail="The assigned teacher is unavailable in the replacement slot.")
+    conflicts = db.query(ScheduledSession).filter(
+        ScheduledSession.version_id == version.version_id,
+        ScheduledSession.session_date == replacement.session_date,
+        ScheduledSession.period_number == replacement.period_number,
+        ScheduledSession.session_status.in_(["scheduled", "completed"]),
+        ScheduledSession.session_id != replacement.session_id,
+    ).all()
+    if any(s.class_id == replacement.class_id or s.teacher_id == replacement.teacher_id or s.room_id == replacement.room_id for s in conflicts):
+        raise HTTPException(status_code=409, detail="The replacement now conflicts with another class, teacher or room.")
     replacement.replacement_approved = True
     replacement.session_status = "scheduled"
     original.session_status = "rescheduled"
