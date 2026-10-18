@@ -130,7 +130,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             # (for example, a partial boundary week may simply lack that weekday).
             calendar_open_weeks[week] = any(
                 start <= candidate_day <= end
-                and _event_state(candidate_day, events, working_days)[0]
+                and not _event_state(candidate_day, events, working_days)[1]
                 for candidate_day in (week + timedelta(days=offset) for offset in range(7))
             )
 
