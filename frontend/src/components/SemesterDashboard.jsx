@@ -23,6 +23,7 @@ export default function SemesterDashboard() {
   const [classFilter, setClassFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showTermSettings, setShowTermSettings] = useState(false)
+  const [calendarFile, setCalendarFile] = useState(null)
 
   async function refresh(id = termId) {
     if (!id) return
@@ -49,6 +50,22 @@ export default function SemesterDashboard() {
     setBusy(true); setError(''); setNotice('')
     try { const response = await axios.patch(API + '/calendar/terms/' + termId, { working_days: nextDays }); setTerms(old => old.map(t => t.term_id === response.data.term_id ? response.data : t)); setNotice('Teaching days updated. Run semester optimization again to apply changes to a new draft.') }
     catch (e) { setError(e.response?.data?.detail || 'Could not update teaching days.') }
+    finally { setBusy(false) }
+  }
+
+  async function uploadInstitutionCalendar() {
+    if (!calendarFile || !termId) { setError('Choose the institution calendar PDF or spreadsheet first.'); return }
+    const form = new FormData(); form.append('file', calendarFile)
+    setBusy(true); setError(''); setNotice('')
+    try { const r = await axios.post(API + '/calendar/terms/' + termId + '/holidays/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }); await refresh(termId); setNotice((r.data.message || 'Calendar imported.') + ' Entries are pending review. Check dates in Academic Calendar before optimizing.'); setCalendarFile(null) }
+    catch (e) { setError(e.response?.data?.detail || 'Could not import the calendar file. Check that it contains event and date columns.') }
+    finally { setBusy(false) }
+  }
+
+  async function updateReschedulePolicy(policy) {
+    setBusy(true); setError(''); setNotice('')
+    try { const r = await axios.patch(API + '/calendar/terms/' + termId, { reschedule_policy: policy }); setTerms(old => old.map(t => String(t.term_id) === String(termId) ? { ...t, ...r.data } : t)); setNotice(policy === 'automatic' ? 'Automatic rescheduling selected for eligible sessions. Conflicts and locked sessions still need review.' : policy === 'suggest' ? 'Replacement suggestions will wait for administrator approval.' : 'Sessions will be cancelled without automatic replacement.') }
+    catch (e) { setError(e.response?.data?.detail || 'Could not update rescheduling policy.') }
     finally { setBusy(false) }
   }
 
@@ -201,6 +218,7 @@ export default function SemesterDashboard() {
         <div><h2 style={{ margin: '0 0 5px' }}>2 · Calendar awareness</h2><p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>Approved calendar events affect which dates the semester solver can use.</p></div>
         <div style={{ fontSize: 13 }}><strong>{approvedEvents.length}</strong> approved events · <strong>{closures.length}</strong> closures</div>
       </div>
+      <div style={{ marginTop: 16, padding: 14, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10 }}><h3 style={{ marginTop: 0 }}>Import institution calendar</h3><p style={{ fontSize: 13, color: '#64748b' }}>Upload your institution's PDF or supported spreadsheet. Imported entries remain pending review until an admin confirms them.</p><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}><input aria-label='Institution calendar file' type='file' accept='.pdf,.csv,.xlsx,.xls' onChange={e => setCalendarFile(e.target.files?.[0] || null)} /><button style={{ ...button, background: '#2563eb', color: '#fff' }} disabled={busy || !calendarFile} onClick={uploadInstitutionCalendar}>{busy ? 'Importing…' : 'Upload calendar'}</button><button style={button} onClick={() => window.location.assign('/calendar')}>Review and approve dates</button></div><div style={{ marginTop: 12 }}><label style={{ fontSize: 13, fontWeight: 600 }}>After an approved closure: <select value={activeTerm?.reschedule_policy || 'suggest'} disabled={busy} onChange={e => updateReschedulePolicy(e.target.value)} style={{ marginLeft: 8, padding: 8, border: '1px solid #cbd5e1', borderRadius: 8 }}><option value='suggest'>Suggest date for admin approval</option><option value='automatic'>Automatically reschedule eligible sessions</option><option value='cancel'>Cancel without replacement</option></select></label></div></div>
       {events.length ? <div style={{ overflowX: 'auto', marginTop: 12 }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}><thead><tr>{['Event','Dates','Type','Effect','Approval'].map(x=><th key={x} style={{ textAlign: 'left', padding: 9, borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>{x}</th>)}</tr></thead><tbody>{events.slice(0,8).map(e=><tr key={e.event_id}><td style={{ padding: 9, borderBottom: '1px solid #f1f5f9' }}>{e.title}</td><td style={{ padding: 9, borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{e.start_date}{e.end_date !== e.start_date ? ' → ' + e.end_date : ''}</td><td style={{ padding: 9, borderBottom: '1px solid #f1f5f9' }}>{e.event_type}</td><td style={{ padding: 9, borderBottom: '1px solid #f1f5f9' }}>{e.is_working_day_override ? 'Working-day override' : e.is_closure ? 'Closure' : 'Teaching allowed'}</td><td style={{ padding: 9, borderBottom: '1px solid #f1f5f9' }}>{e.approval_status}</td></tr>)}</tbody></table>{events.length>8 && <p style={{ color: '#64748b', fontSize: 12 }}>Showing 8 of {events.length}. Manage the full calendar in Academic Calendar.</p>}</div> : <p style={{ color: '#64748b', fontSize: 13, marginTop: 12 }}>No events found for this term. Add approved holidays, exam days or working-day overrides in Academic Calendar.</p>}
       {preview && <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}><strong>Calendar impact preview · not an optimizer result</strong><p style={{ fontSize: 13, margin: '5px 0 12px', color: '#1e40af' }}>{preview.note || 'This estimates the impact on the weekly template. Run the semester optimizer to generate assignments for actual dates.'}</p><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}>{[['Template sessions',preview.planned_sessions],['Closure cancellations',preview.closure_cancellations],['Changed sessions',preview.changed_sessions_vs_published],['Locked conflicts',preview.locked_conflicts],['Weeks touched',preview.weeks_touched]].map(([label,value])=><div key={label} style={{ background: 'white', border: '1px solid #dbeafe', padding: 10, borderRadius: 8 }}><div style={{ color: '#64748b', fontSize: 11 }}>{label}</div><strong style={{ fontSize: 20 }}>{value ?? 0}</strong></div>)}</div></div>}
     </section>
