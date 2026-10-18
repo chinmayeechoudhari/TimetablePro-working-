@@ -24,6 +24,46 @@ def _create_index_if_missing(name, table, columns):
 
 def upgrade():
     existing = set(_inspector().get_table_names())
+    # Calendar tables predate Alembic in this project and are also created by
+    # Base.metadata.create_all at startup. Create them here only for a clean
+    # migration-only deployment where startup has not created them yet.
+    if "academic_term" not in existing:
+        op.create_table(
+            "academic_term",
+            sa.Column("term_id", sa.Integer(), primary_key=True),
+            sa.Column("academic_year", sa.String(length=20), nullable=False),
+            sa.Column("term_name", sa.String(length=80), nullable=False),
+            sa.Column("start_date", sa.Date(), nullable=False),
+            sa.Column("end_date", sa.Date(), nullable=False),
+            sa.Column("holiday_region", sa.String(length=120), nullable=False, server_default="Maharashtra, India"),
+            sa.Column("timezone", sa.String(length=64), nullable=False, server_default="Asia/Kolkata"),
+            sa.Column("working_days_json", sa.Text(), nullable=False, server_default='["Monday","Tuesday","Wednesday","Thursday","Friday"]'),
+            sa.Column("reschedule_policy", sa.String(length=32), nullable=False, server_default="suggest"),
+            sa.Column("status", sa.String(length=20), nullable=False, server_default="draft"),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.UniqueConstraint("academic_year", "term_name", name="uq_academic_term_year_name"),
+        )
+        op.create_index("ix_academic_term_term_id", "academic_term", ["term_id"])
+    existing = set(_inspector().get_table_names())
+    if "calendar_event" not in existing:
+        op.create_table(
+            "calendar_event",
+            sa.Column("event_id", sa.Integer(), primary_key=True),
+            sa.Column("term_id", sa.Integer(), sa.ForeignKey("academic_term.term_id", ondelete="CASCADE"), nullable=False),
+            sa.Column("title", sa.String(length=160), nullable=False),
+            sa.Column("event_type", sa.String(length=32), nullable=False, server_default="holiday"),
+            sa.Column("start_date", sa.Date(), nullable=False),
+            sa.Column("end_date", sa.Date(), nullable=False),
+            sa.Column("is_closure", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("is_working_day_override", sa.Boolean(), nullable=True),
+            sa.Column("source", sa.String(length=200), nullable=False, server_default="manual"),
+            sa.Column("approval_status", sa.String(length=24), nullable=False, server_default="approved"),
+            sa.Column("notes", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        )
+        op.create_index("ix_calendar_event_event_id", "calendar_event", ["event_id"])
+        op.create_index("ix_calendar_event_term_id", "calendar_event", ["term_id"])
+    existing = set(_inspector().get_table_names())
     if "timetable_version" not in existing:
         op.create_table(
             "timetable_version",
