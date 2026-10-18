@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
+from app.models.models import Constraint, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
 from app.models.semester import ScheduledSession, TimetableVersion
 from app.solver.semester_solver import solve_semester_schedule
 
@@ -35,6 +35,15 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         raise HTTPException(status_code=404, detail="Academic term not found.")
     if term.end_date < term.start_date:
         raise HTTPException(status_code=422, detail="Term end date must be on or after its start date.")
+
+    # Do not silently ignore user-authored constraints until the compiler has
+    # a date-aware key adapter. The weekly solver continues to support them.
+    saved_constraints = db.query(Constraint).count()
+    if saved_constraints:
+        raise HTTPException(
+            status_code=409,
+            detail="Semester optimization is not enabled while saved dynamic constraints exist; date-aware constraint compilation must be enabled first. The weekly solver remains available.",
+        )
 
     slots = db.query(TimeSlot).all()
     subjects = db.query(Subject).all()
