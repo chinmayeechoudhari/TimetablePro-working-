@@ -1,7 +1,7 @@
 from datetime import date
 from types import SimpleNamespace
 
-from app.api.semester import _event_state
+from app.api.semester import _event_state, _schedule_conflicts
 from app.api.semester_workflow import _weekly_target
 
 
@@ -66,3 +66,42 @@ def test_weekly_target_drops_to_zero_when_all_teaching_days_are_closed():
         for day in range(6, 11)
     ]
     assert _weekly_target(3, date(2026, 7, 6), date(2026, 7, 10), events, {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}) == 0
+
+
+def session(session_id, day, period, class_id, teacher_id, room_id, status="scheduled"):
+    return SimpleNamespace(
+        session_id=session_id,
+        session_date=day,
+        period_number=period,
+        class_id=class_id,
+        teacher_id=teacher_id,
+        room_id=room_id,
+        session_status=status,
+    )
+
+
+def test_schedule_conflicts_detect_teacher_and_room_double_booking():
+    rows = [
+        session(1, date(2026, 7, 1), 2, 10, 7, 4),
+        session(2, date(2026, 7, 1), 2, 11, 7, 4),
+    ]
+    conflicts = _schedule_conflicts(rows)
+    assert {item["resource"] for item in conflicts} == {"teacher", "room"}
+    assert all(item["session_ids"] == [1, 2] for item in conflicts)
+
+
+def test_schedule_conflicts_ignore_different_dates_and_periods():
+    rows = [
+        session(1, date(2026, 7, 1), 2, 10, 7, 4),
+        session(2, date(2026, 7, 2), 2, 11, 7, 4),
+        session(3, date(2026, 7, 1), 3, 12, 7, 4),
+    ]
+    assert _schedule_conflicts(rows) == []
+
+
+def test_schedule_conflicts_ignore_cancelled_sessions():
+    rows = [
+        session(1, date(2026, 7, 1), 2, 10, 7, 4, status="cancelled"),
+        session(2, date(2026, 7, 1), 2, 11, 7, 4),
+    ]
+    assert _schedule_conflicts(rows) == []
