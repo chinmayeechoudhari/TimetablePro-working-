@@ -112,6 +112,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         semester_vars = []
         if target <= 0:
             continue
+        weekly_candidates = {}
         for week in weeks:
             week_end = week + timedelta(days=6)
             matching = [
@@ -119,13 +120,24 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 if s == subject["subject_id"] and c == subject["class_id"]
                 and week <= d <= week_end
             ]
+            weekly_candidates[week] = matching
             semester_vars.extend(matching)
+
+        # A fully unavailable week (for example, a week closed by the
+        # academic calendar) contributes no candidate variables. Roll that
+        # missed weekly target into the capacity of eligible weeks so the
+        # semester total remains achievable instead of making the model
+        # infeasible solely because approved closures removed dates.
+        closed_weeks = sum(1 for matching in weekly_candidates.values() if not matching)
+        weekly_capacity = target * (1 + closed_weeks)
+        for week, matching in weekly_candidates.items():
             if matching:
-                # Keep the regular weekly load whenever possible, but permit
-                # capped makeup in a neighboring eligible week after closures.
                 weekly_total = sum(matching)
-                model.Add(weekly_total <= target * 2)
-                deviation = model.NewIntVar(0, target * 2, f"weekly_deviation_c{subject['class_id']}_s{subject['subject_id']}_{week}")
+                model.Add(weekly_total <= weekly_capacity)
+                deviation = model.NewIntVar(
+                    0, weekly_capacity,
+                    f"weekly_deviation_c{subject['class_id']}_s{subject['subject_id']}_{week}"
+                )
                 model.AddAbsEquality(deviation, weekly_total - target)
                 makeup_penalties.append(deviation)
         required_semester_total = target * len(weeks)
