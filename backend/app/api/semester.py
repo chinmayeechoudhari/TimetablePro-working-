@@ -46,6 +46,11 @@ def _term(db: Session, term_id: int) -> AcademicTerm:
     return term
 
 
+def _working_days(term: AcademicTerm) -> set[str]:
+    working_days = _working_days(term)
+    return working_days
+
+
 def _version(db: Session, version_id: int) -> TimetableVersion:
     version = db.query(TimetableVersion).filter(TimetableVersion.version_id == version_id).first()
     if version is None:
@@ -100,7 +105,7 @@ def _find_replacement(db: Session, original: ScheduledSession, term: AcademicTer
         CalendarEvent.term_id == term.term_id,
         CalendarEvent.approval_status == "approved",
     ).all()
-    working_days = set(json.loads(term.working_days_json or "[]"))
+    working_days = _working_days(term)
     slots = db.query(TimeSlot).order_by(TimeSlot.period_number.asc()).all()
     unavailable = {
         (item.teacher_id, item.slot_id)
@@ -254,7 +259,7 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
         CalendarEvent.approval_status == "approved",
     ).order_by(CalendarEvent.start_date, CalendarEvent.event_id).all()
     try:
-        working_days = set(json.loads(term.working_days_json or "[]"))
+        working_days = _working_days(term)
     except (TypeError, ValueError):
         raise HTTPException(status_code=422, detail="Term working days are not valid JSON.")
     if not working_days or not working_days.issubset(WORKING_DAYS):
