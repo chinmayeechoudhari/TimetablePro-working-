@@ -22,6 +22,7 @@ from app.api.database import router as database_router
 from app.api.calendar import router as calendar_router
 from app.api.semester import router as semester_router
 from app.api.semester_workflow import router as semester_workflow_router
+from app.api.semester_optimize import router as semester_optimize_router
 
 from app.core.config import Base, engine
 from app.models import models
@@ -97,6 +98,7 @@ app.include_router(database_router)
 app.include_router(calendar_router)
 app.include_router(semester_router)
 app.include_router(semester_workflow_router)
+app.include_router(semester_optimize_router)
 
-logger.info("TimetablePro API started — %d router(s) mounted", 17)
+logger.info("TimetablePro API started — %d router(s) mounted", 18)
 
