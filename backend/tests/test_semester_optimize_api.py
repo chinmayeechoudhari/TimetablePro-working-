@@ -43,7 +43,7 @@ def test_optimize_returns_404_when_term_does_not_exist():
     assert exc.value.detail == "Academic term not found."
 
 
-def test_optimize_blocks_saved_dynamic_constraints_before_solving():
+def test_optimize_rejects_malformed_saved_dynamic_constraint():
     term = SimpleNamespace(
         term_id=7,
         start_date=date(2026, 7, 1),
@@ -56,8 +56,10 @@ def test_optimize_blocks_saved_dynamic_constraints_before_solving():
         if model is AcademicTerm:
             return FakeQuery(first=term)
         if model is Constraint:
-            return FakeQuery(count=1)
-        raise AssertionError(f"Unexpected database query before constraint guard: {model}")
+            return FakeQuery(all_rows=[
+                SimpleNamespace(constraint_id=4, parameters_json="{not-json")
+            ])
+        raise AssertionError(f"Unexpected database query after malformed constraint: {model}")
 
     db.query.side_effect = query_for
 
@@ -65,7 +67,7 @@ def test_optimize_blocks_saved_dynamic_constraints_before_solving():
         optimize_semester(term_id=7, db=db)
 
     assert exc.value.status_code == 409
-    assert "date-aware constraint compilation" in exc.value.detail
+    assert "Saved dynamic constraint 4 is invalid" in exc.value.detail
     db.commit.assert_not_called()
     db.add.assert_not_called()
 
