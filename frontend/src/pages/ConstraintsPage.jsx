@@ -224,7 +224,11 @@ function HistoryModal({ rules, onClose, onRemove, onUpdatePriority }) {
 }
 
 
-function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
+function scopeRequestConfig(termId) {
+  return termId ? { params: { term_id: Number(termId) } } : {}
+}
+
+function ConstraintWizard({ clarification, originalText, onBack, onDone, selectedTermId }) {
   const [step, setStep] = useState(1)
   const [selectedKeys, setSelectedKeys] = useState(new Set())
   const [globalAll, setGlobalAll] = useState(false)
@@ -263,14 +267,14 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
     try {
       const results = []
       if (globalAll) {
-        const res = await axios.post(`${BASE}/constraints/preview`, { text: originalText, selection: { subject_id: null, class_id: null, subject_type: null } })
+        const res = await axios.post(`${BASE}/constraints/preview`, { text: originalText, selection: { subject_id: null, class_id: null, subject_type: null } }, scopeRequestConfig(selectedTermId))
         if (res.data?.constraint) results.push({ constraint: res.data.constraint, label: "All Classes (Global)" })
       } else {
         for (const key of selectedKeys) {
           const opt = options.find(o => optKey(o) === key)
           if (!opt) continue
           try {
-            const res = await axios.post(`${BASE}/constraints/preview`, { text: originalText, selection: { subject_id: opt.subject_id, class_id: opt.class_id, subject_type: opt.subject_type } })
+            const res = await axios.post(`${BASE}/constraints/preview`, { text: originalText, selection: { subject_id: opt.subject_id, class_id: opt.class_id, subject_type: opt.subject_type } }, scopeRequestConfig(selectedTermId))
             if (res.data?.constraint) results.push({ constraint: res.data.constraint, label: `${opt.class_name} \u00b7 ${opt.subject_type || "theory"}` })
           } catch (e) { results.push({ constraint: null, label: `${opt.class_name} \u00b7 ${opt.subject_type || "theory"}`, error: e?.response?.data?.detail || "Failed" }) }
         }
@@ -287,7 +291,7 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
       if (error || !constraint) { results.push({ label, ok: false, error: error || "No constraint" }); continue }
       const weightToUse = wizardWeights[i] ?? (constraint.weight || 3)
       const toSave = constraint.constraint_type === "soft" ? { ...constraint, weight: weightToUse } : constraint
-      try { await axios.post(`${BASE}/constraints`, { constraint: toSave }); results.push({ label, ok: true }) }
+      try { await axios.post(`${BASE}/constraints`, { constraint: toSave }, scopeRequestConfig(selectedTermId)); results.push({ label, ok: true }) }
       catch (e) { const is409 = e?.response?.status === 409; results.push({ label, ok: is409, error: is409 ? "Already active" : (e?.response?.data?.detail || "Save failed") }) }
     }
     setSaveResults(results); setSaving(false)
@@ -487,6 +491,9 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone }) {
 
 
 export default function ConstraintsPage() {
+  const [terms, setTerms] = useState([])
+  const [selectedTermId, setSelectedTermId] = useState("") // empty means global scope
+  const [termsLoading, setTermsLoading] = useState(true)
   const [text, setText] = useState("")
   const [preview, setPreview] = useState(null)
   const [previewWarnings, setPreviewWarnings] = useState([])
@@ -504,21 +511,36 @@ export default function ConstraintsPage() {
   const [wizardActive, setWizardActive] = useState(false)
   const [selectedWeight, setSelectedWeight] = useState(3)
 
-  async function loadRules() {
-    try { const res = await axios.get(`${BASE}/constraints`); setRules(Array.isArray(res.data) ? res.data : []); setError(null) }
+  async function loadRules(termId = selectedTermId) {
+    try { const res = await axios.get(`${BASE}/constraints`, scopeRequestConfig(termId)); setRules(Array.isArray(res.data) ? res.data : []); setError(null) }
     catch (err) { setError(err?.response?.data?.detail || err?.message || "Could not load active constraints") }
   }
   async function loadSuggestions() {
     try { const res = await axios.get(`${BASE}/constraints/suggestions`); if (Array.isArray(res.data) && res.data.length > 0) setSuggestions(res.data) }
     catch { setSuggestions(["No classes on Tuesday.", "No OS Lab on Tuesday.", "OS cannot occur on Tuesday.", "Rahul cannot teach Monday period 3."]) }
   }
-  useEffect(() => { loadRules(); loadSuggestions() }, [])
+  useEffect(() => {
+    let alive = true
+    axios.get(`${BASE}/calendar/terms`)
+      .then(res => {
+        if (!alive) return
+        const list = Array.isArray(res.data) ? res.data : []
+        setTerms(list)
+        // Preserve legacy behavior: start in Global scope until the admin explicitly selects a semester.
+      })
+      .catch(err => { if (alive) setError(err?.response?.data?.detail || "Could not load academic semesters") })
+      .finally(() => { if (alive) setTermsLoading(false) })
+    loadSuggestions()
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => { loadRules(selectedTermId) }, [selectedTermId])
 
   async function review() {
     const value = text.trim(); if (!value) return
     setLoading(true); setError(null); setSuccess(null); setPreview(null); setPreviewWarnings([]); setClarification(null)
     try {
-      const res = await axios.post(`${BASE}/constraints/preview`, { text: value, selection: null })
+      const res = await axios.post(`${BASE}/constraints/preview`, { text: value, selection: null }, scopeRequestConfig(selectedTermId))
       if (res.data?.status === "needs_clarification") { setClarification(res.data); setWizardActive(true) }
       else {
         const c = res.data?.constraint || null
@@ -550,7 +572,7 @@ export default function ConstraintsPage() {
     if (!confirmedPreview) return
     setSaving(true); setError(null); setSuccess(null)
     try {
-      await axios.post(`${BASE}/constraints`, { constraint: confirmedPreview })
+      await axios.post(`${BASE}/constraints`, { constraint: confirmedPreview }, scopeRequestConfig(selectedTermId))
       setConfirmedPreview(null); setText(""); await loadRules()
       setSuccess("Constraint added successfully.")
     } catch (err) { setError(err?.response?.data?.detail || err?.message || "Could not add this constraint") }
@@ -612,7 +634,7 @@ export default function ConstraintsPage() {
   }), [rules, typeFilter, searchQuery])
 
   if (wizardActive && clarification) {
-    return <ConstraintWizard clarification={clarification} originalText={text} onBack={handleWizardBack} onDone={handleWizardDone} />
+    return <ConstraintWizard clarification={clarification} originalText={text} selectedTermId={selectedTermId} onBack={handleWizardBack} onDone={handleWizardDone} />
   }
 
   const s = {
@@ -704,6 +726,23 @@ export default function ConstraintsPage() {
           <div style={s.howItWorks}>
             <div style={s.howTitle}><SparkleIcon size={16} /> How it works</div>
             <p style={s.howBody}>Describe your rules naturally. Hard rules like &quot;must&quot; or &quot;cannot&quot;, or soft preferences using &quot;try to&quot; or &quot;ideally&quot;.</p>
+          </div>
+        </div>
+
+        <div style={{ ...s.card, padding: "16px 20px", marginBottom: 22, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 220, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#111827", marginBottom: 4 }}>Constraint scope</div>
+            <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>Global rules apply to every semester. Select a semester to view its rules alongside global rules and add semester-only rules.</div>
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 280, fontSize: 12, fontWeight: 700, color: "#374151" }}>
+            Apply new constraints to
+            <select value={selectedTermId} onChange={e => { setSelectedTermId(e.target.value); setPreview(null); setConfirmedPreview(null); setPreviewWarnings([]); setClarification(null); setError(null); setSuccess(null) }} disabled={termsLoading} style={{ padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 9, background: "#fff", color: "#111827", fontSize: 13 }}>
+              <option value="">Global — all semesters</option>
+              {terms.map(term => <option key={term.term_id} value={String(term.term_id)}>{term.term_name} · {term.academic_year}</option>)}
+            </select>
+          </label>
+          <div style={{ padding: "8px 12px", borderRadius: 9, background: selectedTermId ? "#eff6ff" : "#f1f5f9", color: selectedTermId ? "#1d4ed8" : "#475569", fontSize: 12, fontWeight: 700 }}>
+            {selectedTermId ? `Semester-only: ${terms.find(t => String(t.term_id) === selectedTermId)?.term_name || selectedTermId}` : "Global scope"}
           </div>
         </div>
 
