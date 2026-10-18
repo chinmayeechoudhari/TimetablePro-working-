@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import Constraint, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
+from app.models.models import (AcademicGroup, Constraint, Division, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TeachingAssignment, TimeSlot)
 from app.models.semester import ScheduledSession, TimetableVersion
 from app.constraints.schemas import GeneratedConstraint
 from app.constraints.resolver import EntityResolutionError
@@ -61,9 +61,66 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             ) from exc
 
     slots = db.query(TimeSlot).all()
-    subjects = db.query(Subject).all()
     teachers = db.query(Teacher).all()
     rooms = db.query(Room).all()
+
+    # Prefer the department/year -> division -> teaching-assignment structure.
+    # AcademicGroup is keyed by academic year, so only assignments belonging to
+    # this term's academic year are eligible for optimization.
+    all_groups = db.query(AcademicGroup).all()
+    term_year = str(term.academic_year or "").strip().casefold()
+    scoped_groups = [
+        group for group in all_groups
+        if str(group.academic_year or "").strip().casefold() == term_year
+    ]
+    if all_groups and not scoped_groups:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"No academic groups match academic year '{term.academic_year}'. "
+                "Check the term's academic year and the department/year setup; "
+                "the optimizer will not fall back to another year's subjects."
+            ),
+        )
+
+    if scoped_groups:
+        scoped_group_ids = {group.group_id for group in scoped_groups}
+        scoped_divisions = db.query(Division).filter(
+            Division.group_id.in_(scoped_group_ids)
+        ).all()
+        scoped_class_ids = {division.class_id for division in scoped_divisions}
+        assignments = db.query(TeachingAssignment).filter(
+            TeachingAssignment.division_id.in_(
+                [division.division_id for division in scoped_divisions]
+            )
+        ).all() if scoped_divisions else []
+        scoped_subject_ids = {assignment.subject_id for assignment in assignments}
+        subjects = db.query(Subject).filter(
+            Subject.subject_id.in_(scoped_subject_ids)
+        ).all() if scoped_subject_ids else []
+        teacher_subject_pairs = sorted({
+            (assignment.teacher_id, assignment.subject_id)
+            for assignment in assignments
+        })
+        if not scoped_divisions or not subjects or not assignments:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"No complete teaching assignments are configured for academic year "
+                    f"'{term.academic_year}'. Add subjects and teacher assignments for "
+                    "the selected academic year before optimizing."
+                ),
+            )
+    else:
+        # Backward compatibility for installations that have not migrated to
+        # the academic-group workflow yet. Once any groups exist, we never mix
+        # legacy global subjects into a term with scoped academic data.
+        subjects = db.query(Subject).all()
+        teacher_subject_pairs = [
+            (link.teacher_id, link.subject_id)
+            for link in db.query(TeacherSubject).all()
+        ]
+
     if not slots or not subjects or not teachers or not rooms:
         raise HTTPException(status_code=409, detail="Add time slots, subjects, teachers, and rooms before optimizing.")
 
@@ -79,7 +136,6 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     } for event in events]
 
     availability = db.query(TeacherAvailability).filter(TeacherAvailability.is_available.is_(False)).all()
-    teacher_subjects = db.query(TeacherSubject).all()
     latest = db.query(TimetableVersion).filter(
         TimetableVersion.term_id == term_id,
     ).order_by(TimetableVersion.version_number.desc()).first()
@@ -120,7 +176,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
                 "max_periods_per_day": t.max_periods_per_day,
             } for t in teachers],
             "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
-            "teacher_subjects": [(link.teacher_id, link.subject_id) for link in teacher_subjects],
+            "teacher_subjects": teacher_subject_pairs,
             "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
             "locked_sessions": locked_sessions,
         }, max_time_seconds=max_time_seconds)
