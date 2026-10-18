@@ -88,7 +88,6 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         scoped_divisions = db.query(Division).filter(
             Division.group_id.in_(scoped_group_ids)
         ).all()
-        scoped_class_ids = {division.class_id for division in scoped_divisions}
         assignments = db.query(TeachingAssignment).filter(
             TeachingAssignment.division_id.in_(
                 [division.division_id for division in scoped_divisions]
