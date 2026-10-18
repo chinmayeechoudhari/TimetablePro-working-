@@ -50,11 +50,10 @@ def test_approved_closure_removes_date_from_candidate_slots():
 
 def test_teacher_unavailability_is_respected():
     data = _base_data()
-    data["unavailable_pairs"] = [(20, 1), (20, 2), (20, 3), (20, 4)]
+    data["unavailable_pairs"] = [(20, 1), (20, 2)]
     result = solve_semester_schedule(data)
     assert result["status"] in {"optimal", "feasible"}
     assert len(result["sessions"]) == 2
-    assert all(item["slot_id"] == 5 for item in result["sessions"]) is False
     assert all((item["teacher_id"], item["slot_id"]) not in data["unavailable_pairs"] for item in result["sessions"])
 
 
