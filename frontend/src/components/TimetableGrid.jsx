@@ -480,6 +480,10 @@ export default function TimetableGrid() {
             <Icon name="printer" size={16} />
             Export all views
           </button>
+          <button type="button" className="secondary-action" onClick={() => { window.location.href = '/semester' }}>
+            <Icon name="calendar" size={16} />
+            Open dated semester timetable
+          </button>
         </div>
 
       </section>
