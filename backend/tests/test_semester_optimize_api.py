@@ -145,6 +145,40 @@ def test_optimize_rejects_saved_constraint_type_mismatch():
     db.add.assert_not_called()
 
 
+
+def test_optimize_rejects_mismatched_academic_year_instead_of_using_global_subjects():
+    term = SimpleNamespace(
+        term_id=7,
+        academic_year="2026-27",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 12, 31),
+        working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
+    )
+    db = Mock()
+
+    def query_for(model):
+        if model is AcademicTerm:
+            return FakeQuery(first=term)
+        if model is Constraint:
+            return FakeQuery(all_rows=[])
+        if model is AcademicGroup:
+            return FakeQuery(all_rows=[
+                SimpleNamespace(group_id=3, academic_year="2025-26")
+            ])
+        raise AssertionError(
+            f"Optimizer must stop on academic-year mismatch before querying {model}."
+        )
+
+    db.query.side_effect = query_for
+    with pytest.raises(HTTPException) as exc:
+        optimize_semester(term_id=7, db=db)
+
+    assert exc.value.status_code == 409
+    assert "No academic groups match academic year '2026-27'" in exc.value.detail
+    db.commit.assert_not_called()
+    db.add.assert_not_called()
+
+
 def test_working_days_rejects_invalid_json():
     term = SimpleNamespace(working_days_json="{not-json")
 
