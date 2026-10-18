@@ -398,7 +398,7 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Could not read this calendar file. Check that it is a valid .xlsx or UTF-8 CSV.") from exc
+        raise HTTPException(status_code=400, detail="Could not read this calendar file. Check that it is a valid PDF, .xlsx or UTF-8 CSV.") from exc
 
     def parse_date(value):
         if isinstance(value, datetime):
