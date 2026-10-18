@@ -37,26 +37,11 @@ def _touched_weeks(start, end):
 
 
 def _weekly_target(periods_per_week, start, end, events, working_days):
-    """Scale a weekly subject target to the eligible teaching days in a partial week.
-
-    A closure removes an eligible teaching day; an approved working-day override
-    restores it. Targets are rounded up so partial weeks do not silently lose a
-    subject's expected sessions.
-    """
+    """Return the full weekly subject target for every week touched by a term."""
     periods = max(0, int(periods_per_week or 0))
     if periods == 0 or end < start or not working_days:
         return 0
-    eligible_days = 0
-    day = start
-    while day <= end:
-        eligible, _, _ = _day_state(day, events, working_days)
-        eligible_days += int(eligible)
-        day += timedelta(days=1)
-    if eligible_days == 0:
-        return 0
-    # Integer ceiling avoids floating-point rounding surprises.
-    prorated = (periods * eligible_days + len(working_days) - 1) // len(working_days)
-    return min(periods, prorated)
+    return periods
 
 
 @router.post("/terms/{term_id}/preview")
