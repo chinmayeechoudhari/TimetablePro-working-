@@ -1,0 +1,146 @@
+"""Optimize a semester across dated slots and persist a new draft version."""
+import json
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.config import get_db
+from app.models.calendar import AcademicTerm, CalendarEvent
+from app.models.models import Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
+from app.models.semester import ScheduledSession, TimetableVersion
+from app.solver.semester_solver import solve_semester_schedule
+
+router = APIRouter(prefix="/semester", tags=["semester-optimization"])
+
+
+def _working_days(term):
+    try:
+        days = set(json.loads(term.working_days_json or "[]"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Term working days are not valid JSON.") from exc
+    valid = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+    if not days or not days.issubset(valid):
+        raise HTTPException(status_code=422, detail="Term working days are invalid.")
+    return days
+
+
+@router.post("/terms/{term_id}/optimize", status_code=201)
+def optimize_semester(term_id: int, created_by: str | None = None, notes: str | None = None,
+                      max_time_seconds: float = 30.0, db: Session = Depends(get_db)):
+    """Solve dated semester sessions and save a new draft; never publish automatically."""
+    term = db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first()
+    if term is None:
+        raise HTTPException(status_code=404, detail="Academic term not found.")
+    if term.end_date < term.start_date:
+        raise HTTPException(status_code=422, detail="Term end date must be on or after its start date.")
+
+    slots = db.query(TimeSlot).all()
+    subjects = db.query(Subject).all()
+    teachers = db.query(Teacher).all()
+    rooms = db.query(Room).all()
+    if not slots or not subjects or not teachers or not rooms:
+        raise HTTPException(status_code=409, detail="Add time slots, subjects, teachers, and rooms before optimizing.")
+
+    events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == term_id,
+        CalendarEvent.approval_status == "approved",
+    ).all()
+    event_data = [{
+        "start_date": event.start_date,
+        "end_date": event.end_date,
+        "is_closure": event.is_closure,
+        "is_working_day_override": event.is_working_day_override,
+    } for event in events]
+
+    availability = db.query(TeacherAvailability).filter(TeacherAvailability.is_available.is_(False)).all()
+    teacher_subjects = db.query(TeacherSubject).all()
+    latest = db.query(TimetableVersion).filter(
+        TimetableVersion.term_id == term_id,
+    ).order_by(TimetableVersion.version_number.desc()).first()
+    locked_sessions = []
+    if latest:
+        locked_sessions = [{
+            "session_date": session.session_date,
+            "class_id": session.class_id,
+            "subject_id": session.subject_id,
+            "teacher_id": session.teacher_id,
+            "room_id": session.room_id,
+            "slot_id": session.slot_id,
+            "period_number": session.period_number,
+            "is_locked": session.is_locked,
+        } for session in latest.sessions if session.is_locked]
+
+    result = solve_semester_schedule({
+        "start_date": term.start_date,
+        "end_date": term.end_date,
+        "working_days": _working_days(term),
+        "events": event_data,
+        "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
+        "subjects": [{
+            "subject_id": s.subject_id,
+            "class_id": s.class_id,
+            "periods_per_week": s.periods_per_week,
+            "subject_type": s.subject_type,
+        } for s in subjects],
+        "teachers": [{
+            "teacher_id": t.teacher_id,
+            "max_periods_per_day": t.max_periods_per_day,
+        } for t in teachers],
+        "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
+        "teacher_subjects": [(link.teacher_id, link.subject_id) for link in teacher_subjects],
+        "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
+        "locked_sessions": locked_sessions,
+    }, max_time_seconds=max_time_seconds)
+
+    if result["status"] not in {"optimal", "feasible"}:
+        raise HTTPException(status_code=409, detail={
+            "message": "Semester optimization could not produce a valid schedule.",
+            "status": result["status"],
+            "reason": result.get("reason"),
+            "locked_conflicts": result.get("locked_conflicts", []),
+        })
+
+    next_number = (latest.version_number + 1) if latest else 1
+    version = TimetableVersion(
+        term_id=term_id,
+        version_number=next_number,
+        status="draft",
+        created_by=created_by,
+        notes=notes or "Generated by date-aware semester CP-SAT optimizer.",
+    )
+    db.add(version)
+    db.flush()
+    for item in result["sessions"]:
+        db.add(ScheduledSession(version_id=version.version_id, **item))
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Optimized draft conflicts with a database uniqueness rule. No draft was saved.") from exc
+
+    db.refresh(version)
+    return {
+        "status": result["status"],
+        "objective_value": result.get("objective_value", 0),
+        "version_id": version.version_id,
+        "version_number": version.version_number,
+        "term_id": term_id,
+        "draft_only": True,
+        "session_count": len(result["sessions"]),
+        "sessions": [{
+            "session_id": s.session_id,
+            "date": s.session_date.isoformat(),
+            "weekday": s.weekday,
+            "period_number": s.period_number,
+            "slot_id": s.slot_id,
+            "class_id": s.class_id,
+            "subject_id": s.subject_id,
+            "teacher_id": s.teacher_id,
+            "room_id": s.room_id,
+            "is_locked": s.is_locked,
+        } for s in sorted(version.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))],
+        "message": "Draft saved. Review it before publishing.",
+    }
