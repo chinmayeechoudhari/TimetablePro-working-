@@ -95,6 +95,7 @@ export default function CalendarPage() {
   const [versionSessions, setVersionSessions] = useState([])
   const [optimizingSemester, setOptimizingSemester] = useState(false)
   const [versionError, setVersionError] = useState('')
+  const [loadValidation, setLoadValidation] = useState(null)
 
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
   const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
@@ -247,6 +248,15 @@ export default function CalendarPage() {
       .catch(() => { if (active) { setSemesterVersions([]); setVersionSessions([]) } })
     return () => { active = false }
   }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedId || !selectedVersionId) { setLoadValidation(null); return }
+    let active = true
+    axios.get(API + '/semester/terms/' + selectedId + '/dashboard', { params: { version_id: selectedVersionId } })
+      .then(r => { if (active) setLoadValidation(r.data) })
+      .catch(() => { if (active) setLoadValidation(null) })
+    return () => { active = false }
+  }, [selectedId, selectedVersionId])
 
   useEffect(() => {
     if (!selectedVersionId) { setVersionSessions([]); return }
@@ -1234,6 +1244,19 @@ export default function CalendarPage() {
               </table>
             </div>
             {versionSessions.length===0 && <p style={{color:'#64748b',fontSize:13}}>This version has no dated sessions.</p>}
+            {loadValidation?.summary && <div style={{marginTop:18,borderTop:'1px solid #e2e8f0',paddingTop:16}}>
+              <h3 style={{margin:'0 0 10px',fontSize:15}}>Teaching-load validation</h3>
+              <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+                {[['Required periods',loadValidation.summary.required_periods],['Scheduled',loadValidation.summary.scheduled],['Completed',loadValidation.summary.completed],['Outstanding',loadValidation.summary.outstanding],['Cancelled',loadValidation.summary.cancelled]].map(([label,value])=><div key={label} style={{padding:'8px 12px',border:'1px solid #e2e8f0',borderRadius:8,minWidth:110}}><div style={{fontSize:11,color:'#64748b'}}>{label}</div><strong style={{fontSize:18}}>{value}</strong></div>)}
+              </div>
+              <p style={{fontSize:12,color:loadValidation.incomplete?'#b45309':'#047857',margin:'0 0 10px'}}>{loadValidation.incomplete?'Review outstanding/cancelled periods and any locked closure conflicts before considering the term complete.':'No outstanding teaching-load items are reported for this version.'}</p>
+              <div style={{overflowX:'auto',maxHeight:240,border:'1px solid #e2e8f0',borderRadius:9}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead style={{position:'sticky',top:0,background:'#f8fafc'}}><tr>{['Class','Subject','Required','Scheduled','Completed','Outstanding','Remaining'].map(h=><th key={h} style={{padding:8,textAlign:'left'}}>{h}</th>)}</tr></thead>
+                  <tbody>{(loadValidation.subject_loads||[]).map(row=>{const covered=(row.scheduled||0)+(row.completed||0);const remaining=Math.max(0,(row.required_periods||0)-covered);return <tr key={row.class_id+'-'+row.subject_id} style={{borderTop:'1px solid #e2e8f0'}}><td style={{padding:8}}>{row.class_name}</td><td style={{padding:8}}>{row.subject_name}</td><td style={{padding:8}}>{row.required_periods}</td><td style={{padding:8}}>{row.scheduled}</td><td style={{padding:8}}>{row.completed}</td><td style={{padding:8}}>{row.outstanding}</td><td style={{padding:8,color:remaining?'#b45309':'#047857',fontWeight:700}}>{remaining}</td></tr>})}</tbody>
+                </table>
+              </div>
+            </div>}
           </div> : <p style={{marginTop:16,color:'#64748b',fontSize:13}}>No dated timetable yet. Finish term setup, weekly slots, subjects, faculty assignments, rooms and constraints, then choose <b>Optimize semester</b>. The optimizer should create a draft; it does not publish automatically.</p>}
         </section>
 
