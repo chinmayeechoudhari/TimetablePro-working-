@@ -273,6 +273,7 @@ def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
     if not country:
         raise HTTPException(status_code=422, detail="No regional feed is configured for this country yet. Upload your institution calendar or add dates manually.")
     imported = skipped = 0
+    overlaps = []
     for year in range(term.start_date.year, term.end_date.year + 1):
         request = Request(f"https://date.nager.at/api/v3/PublicHolidays/{year}/{country}", headers={"User-Agent": "TimetablePro/1.0"})
         try:
@@ -311,14 +312,41 @@ def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
             if "maharashtra" in region and subdivisions and "IN-MH" not in subdivisions:
                 continue
             title = item.get("localName") or item.get("name") or "Public holiday"
-            exists = db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id, CalendarEvent.start_date == event_date, CalendarEvent.title == title).first()
+            overlapping = db.query(CalendarEvent).filter(
+                CalendarEvent.term_id == term_id,
+                CalendarEvent.start_date <= event_date,
+                CalendarEvent.end_date >= event_date,
+            ).all()
+            exists = next((event for event in overlapping if event.start_date == event_date and event.end_date == event_date and event.title.strip().casefold() == title.strip().casefold()), None)
             if exists:
                 skipped += 1
                 continue
-            db.add(CalendarEvent(term_id=term_id, title=title, event_type="holiday", start_date=event_date, end_date=event_date, is_closure=True, is_working_day_override=False, source=f"Regional public holidays ({term.holiday_region})", approval_status="approved", notes="Imported regional public-holiday suggestion. Verify against the relevant government notice."))
+            needs_review = bool(overlapping)
+            for event in overlapping:
+                overlaps.append({
+                    "imported_title": title,
+                    "date": event_date.isoformat(),
+                    "existing_title": event.title,
+                    "existing_source": event.source,
+                    "existing_approval_status": event.approval_status,
+                })
+            db.add(CalendarEvent(
+                term_id=term_id, title=title, event_type="holiday",
+                start_date=event_date, end_date=event_date, is_closure=True,
+                is_working_day_override=False,
+                source=f"Regional public holidays ({term.holiday_region})",
+                approval_status="pending" if needs_review else "approved",
+                notes="Overlaps another calendar entry; administrator review required." if needs_review else "Imported regional public-holiday suggestion. Verify against the relevant government notice.",
+            ))
             imported += 1
     db.commit()
-    return {"imported": imported, "skipped": skipped, "source": term.holiday_region, "message": f"Loaded {imported} regional holiday dates. Please review before relying on them."}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "overlaps": overlaps[:100],
+        "source": term.holiday_region,
+        "message": f"Loaded {imported} regional holiday dates; {len(overlaps)} overlapping date pairs need administrator review.",
+    }
 
 
 @router.post("/terms/{term_id}/holidays/upload")
