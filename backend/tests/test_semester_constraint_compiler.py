@@ -194,3 +194,22 @@ def test_solver_soft_constraint_produces_a_feasible_schedule():
     assert len(result["sessions"]) == 1
     assert result["sessions"][0]["weekday"] == "Monday"
     assert result["objective_value"] >= 3
+
+
+def test_partial_final_week_without_any_working_day_is_not_treated_as_a_closure():
+    # The term ends Tuesday, while this subject only has Wednesday slots.
+    # That partial week has no session date, but the calendar itself is open;
+    # it must not grant makeup capacity as if an approved closure occurred.
+    data = _solver_data([])
+    data.update({
+        "start_date": date(2026, 7, 6),
+        "end_date": date(2026, 7, 14),
+        "working_days": {"Wednesday"},
+        "slots": [
+            {"slot_id": 1, "day": "Wednesday", "period_number": 1},
+            {"slot_id": 2, "day": "Wednesday", "period_number": 2},
+        ],
+    })
+    result = solve_semester_schedule(data)
+    assert result["status"] == "infeasible"
+    assert result["sessions"] == []
