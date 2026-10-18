@@ -167,7 +167,8 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         dynamic_penalties.extend(compiled)
 
     # Soft preference: discourage exceeding a teacher's daily workload target.
-    penalties = list(makeup_penalties)
+    # Weekly-load preservation is a stronger objective than individual soft preferences.
+    penalties = [penalty * 10 for penalty in makeup_penalties]
     teacher_daily = defaultdict(list)
     for (session_date, slot_id, class_id, subject_id, teacher_id, room_id), var in assign.items():
         teacher_daily[(teacher_id, session_date)].append(var)
