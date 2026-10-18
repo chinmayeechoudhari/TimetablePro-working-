@@ -342,8 +342,31 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
             workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
             sheet = workbook.active
             rows = [[cell for cell in row] for row in sheet.iter_rows(values_only=True)]
+        elif filename.endswith(".pdf"):
+            import re
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(raw))
+            extracted = "\\n".join(page.extract_text() or "" for page in reader.pages)
+            if not extracted.strip():
+                raise HTTPException(status_code=422, detail="No selectable text was found in this PDF. It may be scanned; use OCR or upload CSV/XLSX.")
+            rows = [["Date", "Title", "Type", "Closure"]]
+            date_pattern = re.compile(r"(?P<date>\\b(?:\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}\\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\\s+\\d{4})?)\\b)", re.I)
+            for line in extracted.splitlines():
+                line = re.sub(r"\\s+", " ", line).strip(" •|\\t-")
+                match = date_pattern.search(line)
+                if not match:
+                    continue
+                date_text = match.group("date").strip()
+                event_title = (line[:match.start()] + " " + line[match.end():]).strip(" :-|\\t•")
+                if not event_title or len(event_title) > 160:
+                    continue
+                if not re.search(r"\\d{4}", date_text):
+                    date_text = f"{date_text} {term.start_date.year}"
+                rows.append([date_text, event_title, "holiday", "yes"])
+            if len(rows) == 1:
+                raise HTTPException(status_code=422, detail="No recognizable date-and-event rows found in the PDF. Review its layout or upload a CSV/XLSX table.")
         else:
-            raise HTTPException(status_code=415, detail="Upload an .xlsx or .csv file. PDF import is not supported yet.")
+            raise HTTPException(status_code=415, detail="Upload a PDF, .xlsx or .csv calendar file.")
     except HTTPException:
         raise
     except Exception as exc:
@@ -379,6 +402,7 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
     closure_index = next((i for i, value in enumerate(normalized) if value in {"closure", "no classes", "is closure"}), None)
     imported = skipped = 0
     problems = []
+    overlaps = []
     for line, row in enumerate(rows[1:], start=2):
         if max(date_index, title_index) >= len(row):
             continue
@@ -398,14 +422,21 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
         is_closure = event_type == "working_day" or raw_closure in {"yes", "true", "1", "y"} if closure_index is not None else event_type in {"holiday", "vacation", "closure", "working_day"}
         if event_type in {"exam", "event"} and closure_index is None:
             is_closure = False
-        exists = db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id, CalendarEvent.start_date == start_date, CalendarEvent.title == title).first()
-        if exists:
+        overlapping = db.query(CalendarEvent).filter(
+            CalendarEvent.term_id == term_id,
+            CalendarEvent.start_date <= end_date,
+            CalendarEvent.end_date >= start_date,
+        ).all()
+        same = next((item for item in overlapping if item.title.strip().casefold() == title.casefold()), None)
+        if same:
             skipped += 1
             continue
+        for item in overlapping:
+            overlaps.append({"imported_title": title, "start_date": start_date.isoformat(), "existing_title": item.title, "existing_start_date": item.start_date.isoformat(), "existing_source": item.source, "existing_approval_status": item.approval_status})
         db.add(CalendarEvent(term_id=term_id, title=title, event_type=event_type, start_date=start_date, end_date=end_date, is_closure=is_closure, is_working_day_override=event_type == "working_day", source=f"Uploaded institution calendar: {file.filename}", approval_status="pending", notes="Imported from institution file. Review and approve this entry in the calendar."))
         imported += 1
     db.commit()
-    return {"imported": imported, "skipped": skipped, "problems": problems[:20], "source": file.filename, "message": f"Imported {imported} entries as pending review; {skipped} duplicates skipped."}
+    return {"imported": imported, "skipped": skipped, "problems": problems[:20], "overlaps": overlaps[:100], "source": file.filename, "message": f"Imported {imported} entries as pending review; {skipped} duplicates skipped. {len(overlaps)} overlapping date pairs need administrator review."}
 
 
 @router.delete("/terms/{term_id}/events/imported")
