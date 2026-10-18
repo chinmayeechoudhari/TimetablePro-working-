@@ -565,14 +565,22 @@ def approve_replacement(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/terms/{term_id}/dashboard")
-def term_dashboard(term_id: int, db: Session = Depends(get_db)):
+def term_dashboard(term_id: int, version_id: int | None = None, db: Session = Depends(get_db)):
     term = _term(db, term_id)
-    version = db.query(TimetableVersion).filter(
-        TimetableVersion.term_id == term_id,
-        TimetableVersion.status == "published",
-    ).order_by(TimetableVersion.version_number.desc()).first()
-    if not version:
-        version = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).first()
+    if version_id is not None:
+        version = db.query(TimetableVersion).filter(
+            TimetableVersion.version_id == version_id,
+            TimetableVersion.term_id == term_id,
+        ).first()
+        if version is None:
+            raise HTTPException(status_code=404, detail="Timetable version not found for this semester.")
+    else:
+        version = db.query(TimetableVersion).filter(
+            TimetableVersion.term_id == term_id,
+            TimetableVersion.status == "published",
+        ).order_by(TimetableVersion.version_number.desc()).first()
+        if not version:
+            version = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).first()
     if not version:
         return {"term": {"term_id": term.term_id, "term_name": term.term_name}, "version": None, "summary": {"required_periods": 0, "scheduled": 0, "completed": 0, "cancelled": 0, "rescheduled": 0, "outstanding": 0, "unresolved_locked_conflicts": 0}, "subject_loads": [], "incomplete": True}
 
