@@ -201,7 +201,7 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
     previous = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).first()
     previous_sessions = previous.sessions if previous else []
     locked_by_key = {
-        (s.session_date, s.class_id, s.subject_id): s
+        (s.session_date, s.class_id, s.period_number): s
         for s in previous_sessions if s.is_locked
     }
     events = db.query(CalendarEvent).filter(
@@ -222,7 +222,7 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
         is_working, is_closed, day_events = _event_state(events, day, working_days)
         matching = [(row, slots[row.slot_id]) for row in weekly_rows if slots[row.slot_id].day == day.strftime("%A")]
         for row, slot in matching:
-            locked = locked_by_key.get((day, row.class_id, row.subject_id))
+            locked = locked_by_key.get((day, row.class_id, slot.period_number))
             if not is_working and not (locked and locked.is_locked):
                 # Preserve a dated cancelled occurrence so the weekly/term load gap is auditable.
                 status = "cancelled" if is_closed else "outstanding"
@@ -390,6 +390,25 @@ def create_replacement(session_id: int, payload: ReplacementRequest, db: Session
         raise HTTPException(status_code=409, detail="A class already occupies that date and period.")
     db.refresh(replacement)
     return _serialize_session(replacement)
+
+
+@router.post("/sessions/{session_id}/replacement/approve")
+def approve_replacement(session_id: int, db: Session = Depends(get_db)):
+    replacement = _session(db, session_id)
+    version = _version(db, replacement.version_id)
+    if version.status == "archived":
+        raise HTTPException(status_code=409, detail="Archived versions are read-only.")
+    if not replacement.original_session_id:
+        raise HTTPException(status_code=422, detail="This session is not a replacement.")
+    original = _session(db, replacement.original_session_id)
+    if replacement.session_status != "outstanding":
+        raise HTTPException(status_code=409, detail="Only a pending replacement can be approved.")
+    replacement.replacement_approved = True
+    replacement.session_status = "scheduled"
+    original.session_status = "rescheduled"
+    db.commit()
+    db.refresh(replacement)
+    return {"original": _serialize_session(original), "replacement": _serialize_session(replacement)}
 
 
 @router.get("/terms/{term_id}/dashboard")
