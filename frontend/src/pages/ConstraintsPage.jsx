@@ -189,7 +189,9 @@ function HistoryModal({ rules, onClose, onRemove, onUpdatePriority }) {
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                     <Badge type={rule.constraint_type} />
                     <div>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#111827", lineHeight: 1.5 }}>{rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}</div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#111827", lineHeight: 1.5 }}>{rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}
+                    <div style={{ fontSize: 10, fontWeight: 700, color: rule.scope === "semester" ? "#1d4ed8" : "#64748b", marginTop: 4 }}>{rule.scope === "semester" ? `SEMESTER-SPECIFIC · ${terms.find(t => String(t.term_id) === String(rule.term_id))?.term_name || `Term ${rule.term_id}`}` : "GLOBAL · Applies to all semesters"}</div></div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: rule.scope === "semester" ? "#1d4ed8" : "#64748b", marginTop: 4 }}>{rule.scope === "semester" ? "SEMESTER-SPECIFIC" : "GLOBAL"}</div>
                       <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>ID #{rule.constraint_id}</div>
                     </div>
                   </div>
