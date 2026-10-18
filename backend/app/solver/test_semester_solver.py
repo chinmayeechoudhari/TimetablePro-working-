@@ -132,3 +132,15 @@ def test_lab_subject_uses_only_lab_room():
     assert result["status"] in {"optimal", "feasible"}
     assert len(result["sessions"]) == 2
     assert all(item["room_id"] == 31 for item in result["sessions"])
+
+
+def test_duplicate_slot_records_cannot_create_same_period_collision():
+    data = _base_data()
+    data["slots"].append({"slot_id": 6, "day": "Monday", "period_number": 1})
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    occupied = [
+        (item["session_date"], item["period_number"], item["class_id"])
+        for item in result["sessions"]
+    ]
+    assert len(occupied) == len(set(occupied))
