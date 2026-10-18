@@ -131,7 +131,6 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             calendar_open_weeks[week] = any(
                 start <= candidate_day <= end
                 and _event_state(candidate_day, events, working_days)[0]
-                and any(slot["day"] == candidate_day.strftime("%A") for slot in slots)
                 for candidate_day in (week + timedelta(days=offset) for offset in range(7))
             )
 
