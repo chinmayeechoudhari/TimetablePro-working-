@@ -378,6 +378,15 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
     version = _version(db, version_id)
     if version.status == "archived":
         raise HTTPException(status_code=409, detail="Archived versions cannot be published.")
+    pending_events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == version.term_id,
+        CalendarEvent.approval_status == "pending",
+    ).count()
+    if pending_events:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Resolve {pending_events} pending calendar event review(s) before publishing.",
+        )
     sessions = db.query(ScheduledSession).filter(ScheduledSession.version_id == version_id).all()
     if not sessions:
         raise HTTPException(status_code=409, detail="An empty timetable cannot be published.")
