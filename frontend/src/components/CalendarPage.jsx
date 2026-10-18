@@ -12,11 +12,9 @@ const DEFAULT_TERM = {
   end_date: '2026-12-30',
   holiday_region: 'Maharashtra, India',
   timezone: 'Asia/Kolkata',
-  working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   reschedule_policy: 'suggest',
   status: 'active',
 }
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const EVENT_TYPES = [
   { value: 'holiday', label: 'Public / college holiday' },
   { value: 'vacation', label: 'Vacation / break' },
@@ -188,8 +186,9 @@ export default function CalendarPage() {
     const response = await axios.get(`${API}/calendar/terms`)
     setTerms(response.data)
     const preferred = response.data.find(term => String(term.term_id) === String(preferId))
+    const semesterOne = response.data.find(term => term.term_name?.trim().toLowerCase() === 'semester 1')
     const active = response.data.find(term => term.status === 'active')
-    const next = preferred || active || response.data[0]
+    const next = preferred || semesterOne || active || response.data[0]
     setSelectedId(next ? String(next.term_id) : '')
     if (next) {
       const today = localDateKey(new Date())
@@ -211,7 +210,7 @@ export default function CalendarPage() {
         if (!alive) return
         const list = response.data
         setTerms(list)
-        const chosen = list.find(term => term.status === 'active') || list[0]
+        const chosen = list.find(term => term.term_name?.trim().toLowerCase() === 'semester 1') || list.find(term => term.status === 'active') || list[0]
         if (chosen) {
           setSelectedId(String(chosen.term_id))
           const today = localDateKey(new Date())
@@ -348,17 +347,12 @@ export default function CalendarPage() {
     } catch (err) { setError(err.response?.data?.detail || 'Could not delete this event.') }
   }
 
-  function toggleWorkingDay(day) {
-    setTermField('working_days', termForm.working_days.includes(day)
-      ? termForm.working_days.filter(item => item !== day)
-      : [...termForm.working_days, day])
-  }
 
   function handleFileDrop(e) {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer?.files?.[0]
-    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.csv'))) {
+    if (file && ['.xlsx', '.csv', '.pdf'].some(ext => file.name.toLowerCase().endsWith(ext))) {
       setCalendarFile(file)
     }
   }
@@ -1273,14 +1267,14 @@ export default function CalendarPage() {
                 <div className="cal-dropzone-text">
                   {calendarFile ? calendarFile.name : 'Drag and drop your file here'}
                 </div>
-                <div className="cal-dropzone-sub">Excel (.xlsx) or CSV (.csv)</div>
+                <div className="cal-dropzone-sub">PDF, Excel (.xlsx) or CSV (.csv)</div>
               </div>
             </div>
 
             <input
               type="file"
               ref={fileInputRef}
-              accept=".xlsx,.csv"
+              accept=".pdf,.xlsx,.csv"
               style={{ display: 'none' }}
               onChange={e => setCalendarFile(e.target.files?.[0] || null)}
             />
@@ -1879,31 +1873,6 @@ export default function CalendarPage() {
                 </FieldInput>
               </div>
 
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 750, letterSpacing: '.04em', marginBottom: 8, color: 'var(--text-muted, #64748b)' }}>Weekly working days</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {WEEKDAYS.map(day => (
-                    <label
-                      key={day}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        border: '1px solid #dbe2ea', borderRadius: 8, padding: '6px 10px',
-                        fontSize: 12, cursor: 'pointer',
-                        background: termForm.working_days.includes(day) ? '#eff6ff' : '#fff',
-                        borderColor: termForm.working_days.includes(day) ? '#93c5fd' : '#dbe2ea'
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={termForm.working_days.includes(day)}
-                        onChange={() => toggleWorkingDay(day)}
-                        style={{ accentColor: '#2563eb' }}
-                      />
-                      <span>{day.slice(0, 3)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
                 <button
