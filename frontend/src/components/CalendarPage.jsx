@@ -90,6 +90,12 @@ export default function CalendarPage() {
     is_closure: true, approval_status: 'pending', source: 'manual', notes: ''
   })
   const [events, setEvents] = useState([])
+  const [semesterVersions, setSemesterVersions] = useState([])
+  const [selectedVersionId, setSelectedVersionId] = useState('')
+  const [versionSessions, setVersionSessions] = useState([])
+  const [optimizingSemester, setOptimizingSemester] = useState(false)
+  const [versionError, setVersionError] = useState('')
+
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
   const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
   const [loading, setLoading] = useState(true)
@@ -227,6 +233,29 @@ export default function CalendarPage() {
       })
     return () => { alive = false }
   }, [])
+
+  useEffect(() => {
+    if (!selectedId) { setSemesterVersions([]); setSelectedVersionId(''); setVersionSessions([]); return }
+    let active = true
+    axios.get(API + '/semester/terms/' + selectedId + '/versions')
+      .then(r => {
+        if (!active) return
+        const versions = Array.isArray(r.data) ? r.data : []
+        setSemesterVersions(versions)
+        setSelectedVersionId(current => current && versions.some(v => String(v.version_id) === current) ? current : (versions.find(v => v.status === 'draft') || versions[0] ? String((versions.find(v => v.status === 'draft') || versions[0]).version_id) : ''))
+      })
+      .catch(() => { if (active) { setSemesterVersions([]); setVersionSessions([]) } })
+    return () => { active = false }
+  }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedVersionId) { setVersionSessions([]); return }
+    let active = true
+    axios.get(API + '/semester/versions/' + selectedVersionId)
+      .then(r => { if (active) setVersionSessions(r.data.sessions || []) })
+      .catch(() => { if (active) setVersionSessions([]) })
+    return () => { active = false }
+  }, [selectedVersionId])
 
   useEffect(() => {
     if (!selectedId) { setEvents([]); return }
@@ -1109,11 +1138,66 @@ export default function CalendarPage() {
             <button type="button" className="cal-btn-add" onClick={() => setShowEventForm(true)}>
               <PlusIcon /> Add event
             </button>
-            <button type="button" className="cal-btn-generate" onClick={() => navigate('/generate')}>
-              <SparklesIcon /> Generate timetable
+            <button type="button" className="cal-btn-generate" disabled={!selectedTerm || optimizingSemester} onClick={async () => {
+              setVersionError('')
+              setOptimizingSemester(true)
+              try {
+                const result = await axios.post(API + '/semester/terms/' + selectedTerm.term_id + '/optimize')
+                const versions = await axios.get(API + '/semester/terms/' + selectedTerm.term_id + '/versions')
+                setSemesterVersions(versions.data || [])
+                setSelectedVersionId(String(result.data.version_id))
+              } catch (e) {
+                const detail = e.response?.data?.detail
+                setVersionError(typeof detail === 'string' ? detail : detail?.message || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
+              } finally { setOptimizingSemester(false) }
+            }}>
+              <SparklesIcon /> {optimizingSemester ? 'Optimizing…' : 'Optimize semester'}
             </button>
           </div>
         </div>
+
+        {versionError && <div role="alert" style={{margin:'12px 0',padding:12,border:'1px solid #fecaca',background:'#fef2f2',color:'#991b1b',borderRadius:10}}>{versionError}</div>}
+        <section style={{margin:'16px 0 22px',padding:20,background:'var(--card-bg, #fff)',border:'1px solid #dbe5f2',borderRadius:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div><h2 style={{margin:0,fontSize:18}}>Semester timetable</h2><p style={{margin:'5px 0 0',fontSize:12,color:'#64748b'}}>Optimize real calendar dates, review every session, track completion, lock sessions and publish only after review.</p></div>
+            <select aria-label="Timetable version" value={selectedVersionId} onChange={e=>setSelectedVersionId(e.target.value)} style={{padding:'10px 12px',border:'1px solid #cbd5e1',borderRadius:9,minWidth:220}}>
+              <option value="">No timetable generated</option>
+              {semesterVersions.map(v=><option key={v.version_id} value={String(v.version_id)}>v{v.version_number} · {v.status}</option>)}
+            </select>
+          </div>
+          {selectedVersionId ? <div style={{marginTop:16}}>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:12}}>
+              <span style={{padding:'8px 12px',background:'#eff6ff',borderRadius:8,fontSize:12}}>Sessions: <b>{versionSessions.length}</b></span>
+              <span style={{padding:'8px 12px',background:'#ecfdf5',borderRadius:8,fontSize:12}}>Completed: <b>{versionSessions.filter(s=>s.status==='completed').length}</b></span>
+              <span style={{padding:'8px 12px',background:'#fef3c7',borderRadius:8,fontSize:12}}>Locked: <b>{versionSessions.filter(s=>s.is_locked).length}</b></span>
+              <span style={{padding:'8px 12px',background:'#fff7ed',borderRadius:8,fontSize:12}}>Pending replacements: <b>{versionSessions.filter(s=>s.status==='outstanding' && s.original_session_id).length}</b></span>
+              {semesterVersions.some(v=>String(v.version_id)===selectedVersionId && v.status==='draft') && <button type="button" className="cal-btn-add" onClick={async()=>{
+                if(!window.confirm('Publish this draft timetable? This replaces the currently published version.')) return
+                setVersionError('')
+                try { await axios.post(API+'/semester/versions/'+selectedVersionId+'/publish'); const r=await axios.get(API+'/semester/terms/'+selectedId+'/versions'); setSemesterVersions(r.data||[]) }
+                catch(e) { const d=e.response?.data?.detail; setVersionError(typeof d==='string'?d:d?.message||'Cannot publish: resolve schedule conflicts and pending calendar issues first.') }
+              }}>Publish draft</button>}
+            </div>
+            <div style={{overflowX:'auto',maxHeight:420,overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:10}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead style={{position:'sticky',top:0,background:'#f8fafc',zIndex:1}}><tr>{['Date','Day','Period','Class','Subject','Teacher','Room','Status','Session lock'].map(x=><th key={x} style={{padding:10,textAlign:'left',whiteSpace:'nowrap'}}>{x}</th>)}</tr></thead>
+                <tbody>{versionSessions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'') || a.period_number-b.period_number).map(s=><tr key={s.session_id} style={{borderTop:'1px solid #e2e8f0'}}>
+                  <td style={{padding:9,whiteSpace:'nowrap'}}>{s.date}</td><td style={{padding:9}}>{s.weekday}</td><td style={{padding:9}}>{s.period_number}</td><td style={{padding:9}}>{s.class_id}</td><td style={{padding:9}}>{s.subject_id}</td><td style={{padding:9}}>{s.teacher_id}</td><td style={{padding:9}}>{s.room_id}</td>
+                  <td style={{padding:7}}><select value={s.status||'scheduled'} disabled={semesterVersions.find(v=>String(v.version_id)===selectedVersionId)?.status==='archived'} onChange={async e=>{
+                    try { await axios.patch(API+'/semester/sessions/'+s.session_id+'/outcome',{status:e.target.value,note:null}); const r=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(r.data.sessions||[]) }
+                    catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not update session status.')}
+                  }}><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="missed">Missed</option><option value="cancelled">Cancelled</option></select></td>
+                  <td style={{padding:7}}><button type="button" className="cal-btn-add" disabled={semesterVersions.find(v=>String(v.version_id)===selectedVersionId)?.status==='archived'} onClick={async()=>{
+                    const locked=!s.is_locked; const reason=locked?(window.prompt('Reason for locking this session?','Protected by administrator')||'Protected by administrator'):null
+                    try { await axios.patch(API+'/semester/sessions/'+s.session_id+'/lock',{locked,reason,actor:'administrator'}); const r=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(r.data.sessions||[]) }
+                    catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not change session lock.')}
+                  }}>{s.is_locked?'Unlock':'Lock'}</button></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            {versionSessions.length===0 && <p style={{color:'#64748b',fontSize:13}}>This version has no dated sessions.</p>}
+          </div> : <p style={{marginTop:16,color:'#64748b',fontSize:13}}>No dated timetable yet. Finish term setup, weekly slots, subjects, faculty assignments, rooms and constraints, then choose <b>Optimize semester</b>. The optimizer should create a draft; it does not publish automatically.</p>}
+        </section>
 
         {/* ─── Filter & View Switcher Row ─── */}
         <div className="cal-filter-row">
