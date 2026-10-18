@@ -211,6 +211,7 @@ def _persistence_db(monkeypatch, solver_result):
 
     term = SimpleNamespace(
         term_id=7,
+        academic_year="2026-27",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 7),
         working_days_json='["Wednesday"]',
