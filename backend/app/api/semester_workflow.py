@@ -36,6 +36,28 @@ def _touched_weeks(start, end):
     return first_monday, count
 
 
+def _weekly_target(periods_per_week, start, end, events, working_days):
+    """Scale a weekly subject target to the eligible teaching days in a partial week.
+
+    A closure removes an eligible teaching day; an approved working-day override
+    restores it. Targets are rounded up so partial weeks do not silently lose a
+    subject's expected sessions.
+    """
+    periods = max(0, int(periods_per_week or 0))
+    if periods == 0 or end < start or not working_days:
+        return 0
+    eligible_days = 0
+    day = start
+    while day <= end:
+        eligible, _, _ = _day_state(day, events, working_days)
+        eligible_days += int(eligible)
+        day += timedelta(days=1)
+    if eligible_days == 0:
+        return 0
+    # Integer ceiling avoids floating-point rounding surprises.
+    return (periods * eligible_days + len(working_days) - 1) // len(working_days)
+
+
 @router.post("/terms/{term_id}/preview")
 def preview_semester_draft(term_id: int, db: Session = Depends(get_db)):
     """Return a read-only preview before a draft is persisted."""
@@ -108,7 +130,16 @@ def preview_semester_draft(term_id: int, db: Session = Depends(get_db)):
 
     subjects = {subject.subject_id: subject for subject in db.query(Subject).all()}
     pairs = {(row.class_id, row.subject_id) for row in weekly_rows}
-    required = sum(max(0, int(subjects[sid].periods_per_week or 0)) * weeks for _, sid in pairs if sid in subjects)
+    required = 0
+    for week_index in range(weeks):
+        week_start = first_monday + timedelta(days=7 * week_index)
+        week_end = week_start + timedelta(days=6)
+        range_start = max(week_start, term.start_date)
+        range_end = min(week_end, term.end_date)
+        for _, subject_id in pairs:
+            subject = subjects.get(subject_id)
+            if subject:
+                required += _weekly_target(subject.periods_per_week, range_start, range_end, events, working_days)
     template_load = Counter((row.class_id, row.subject_id) for row in weekly_rows)
     template_shortfalls = [
         {"class_id": cid, "subject_id": sid, "required_per_week": max(0, int(subjects[sid].periods_per_week or 0)), "weekly_template_periods": template_load[(cid, sid)]}
@@ -148,6 +179,17 @@ def weekly_progress(term_id: int, db: Session = Depends(get_db)):
 
     template = db.query(Timetable).all()
     subjects = {s.subject_id: s for s in db.query(Subject).all()}
+    try:
+        working_days = set(json.loads(term.working_days_json or "[]"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Term working days are not valid JSON.")
+    valid_days = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+    if not working_days or not working_days.issubset(valid_days):
+        raise HTTPException(status_code=422, detail="Term working days are invalid.")
+    events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == term_id,
+        CalendarEvent.approval_status == "approved",
+    ).all()
     classes = {c.class_id: c for c in db.query(Class).all()}
     pairs = {(row.class_id, row.subject_id) for row in template}
     first_monday, weeks = _touched_weeks(term.start_date, term.end_date)
@@ -168,7 +210,7 @@ def weekly_progress(term_id: int, db: Session = Depends(get_db)):
             subject = subjects.get(subject_id)
             if not subject:
                 continue
-            target = max(0, int(subject.periods_per_week or 0))
+            target = _weekly_target(subject.periods_per_week, range_start, range_end, events, working_days)
             actual = week_counts[(week_start, class_id, subject_id)]
             rows.append({
                 "week_start": range_start.isoformat(),
