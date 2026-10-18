@@ -48,7 +48,7 @@ def _term(db: Session, term_id: int) -> AcademicTerm:
 
 def _working_days(term: AcademicTerm) -> set[str]:
     try:
-        working_days = _working_days(term)
+        working_days = set(json.loads(term.working_days_json or "[]"))
     except (TypeError, ValueError):
         raise HTTPException(status_code=422, detail="Term working days are not valid JSON.")
     if not working_days or not working_days.issubset(WORKING_DAYS):
