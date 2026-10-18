@@ -72,6 +72,79 @@ def test_optimize_rejects_malformed_saved_dynamic_constraint():
     db.add.assert_not_called()
 
 
+def test_optimize_rejects_unsupported_saved_soft_priority():
+    term = SimpleNamespace(
+        term_id=7,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 12, 31),
+        working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
+    )
+    payload = {
+        "constraint_type": "soft",
+        "weight": 1.5,
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Monday"
+        }},
+        "explanation": "Avoid Monday",
+    }
+    import json
+    db = Mock()
+
+    def query_for(model):
+        if model is AcademicTerm:
+            return FakeQuery(first=term)
+        if model is Constraint:
+            return FakeQuery(all_rows=[
+                SimpleNamespace(constraint_id=5, constraint_type="soft", parameters_json=json.dumps(payload))
+            ])
+        raise AssertionError(f"Unexpected database query after invalid priority: {model}")
+
+    db.query.side_effect = query_for
+    with pytest.raises(HTTPException) as exc:
+        optimize_semester(term_id=7, db=db)
+
+    assert exc.value.status_code == 409
+    assert "Saved dynamic constraint 5 is invalid" in exc.value.detail
+    db.commit.assert_not_called()
+    db.add.assert_not_called()
+
+
+def test_optimize_rejects_saved_constraint_type_mismatch():
+    term = SimpleNamespace(
+        term_id=7,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 12, 31),
+        working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
+    )
+    payload = {
+        "constraint_type": "hard",
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Monday"
+        }},
+        "explanation": "No Monday classes",
+    }
+    import json
+    db = Mock()
+
+    def query_for(model):
+        if model is AcademicTerm:
+            return FakeQuery(first=term)
+        if model is Constraint:
+            return FakeQuery(all_rows=[
+                SimpleNamespace(constraint_id=6, constraint_type="soft", parameters_json=json.dumps(payload))
+            ])
+        raise AssertionError(f"Unexpected database query after type mismatch: {model}")
+
+    db.query.side_effect = query_for
+    with pytest.raises(HTTPException) as exc:
+        optimize_semester(term_id=7, db=db)
+
+    assert exc.value.status_code == 409
+    assert "Saved dynamic constraint 6 is invalid" in exc.value.detail
+    db.commit.assert_not_called()
+    db.add.assert_not_called()
+
+
 def test_working_days_rejects_invalid_json():
     term = SimpleNamespace(working_days_json="{not-json")
 
