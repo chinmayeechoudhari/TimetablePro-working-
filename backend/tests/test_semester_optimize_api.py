@@ -297,3 +297,60 @@ def test_infeasible_result_does_not_persist_a_draft(monkeypatch):
     assert exc.value.detail["status"] == "infeasible"
     assert not added
     db.commit.assert_not_called()
+
+
+def test_optimize_applies_global_and_matching_semester_constraints_only(monkeypatch):
+    import json
+    import app.api.semester_optimize as api
+    from app.models.models import Constraint
+
+    global_payload = {
+        "constraint_type": "hard",
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Monday"
+        }},
+        "explanation": "Global rule",
+        "assumptions": [],
+    }
+    term_payload = {
+        "constraint_type": "hard",
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Tuesday"
+        }},
+        "explanation": "Semester 7 rule",
+        "assumptions": [],
+    }
+    other_term_payload = {
+        "constraint_type": "hard",
+        "expression": {"kind": "forbid", "filter": {
+            "kind": "atomic", "field": "day", "operator": "eq", "value": "Friday"
+        }},
+        "explanation": "Semester 8 rule",
+        "assumptions": [],
+    }
+    saved = [
+        SimpleNamespace(constraint_id=1, constraint_type="hard", parameters_json=json.dumps(global_payload)),
+        SimpleNamespace(constraint_id=2, constraint_type="hard", parameters_json=json.dumps({
+            "scope": {"term_id": 7}, "constraint": term_payload,
+        })),
+        SimpleNamespace(constraint_id=3, constraint_type="hard", parameters_json=json.dumps({
+            "scope": {"term_id": 8}, "constraint": other_term_payload,
+        })),
+    ]
+    db, _ = _persistence_db(monkeypatch, {"status": "infeasible", "reason": "test", "sessions": []})
+    original_query = db.query.side_effect
+    db.query.side_effect = lambda model: FakeQuery(all_rows=saved) if model is Constraint else original_query(model)
+    captured = {}
+    def capture_solver(data, max_time_seconds):
+        captured["constraints"] = data["dynamic_constraints"]
+        return {"status": "infeasible", "reason": "test", "sessions": []}
+    monkeypatch.setattr(api, "solve_semester_schedule", capture_solver)
+
+    with pytest.raises(HTTPException) as exc:
+        optimize_semester(term_id=7, db=db)
+
+    assert exc.value.status_code == 409
+    assert [constraint.explanation for constraint in captured["constraints"]] == [
+        "Global rule", "Semester 7 rule"
+    ]
+    db.commit.assert_not_called()
