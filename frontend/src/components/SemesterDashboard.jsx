@@ -16,6 +16,7 @@ export default function SemesterDashboard() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [optimizationResult, setOptimizationResult] = useState(null)
 
   async function refresh(id = termId) {
     if (!id) return
@@ -47,6 +48,38 @@ export default function SemesterDashboard() {
     try { const r = await axios.post(API + '/semester/terms/' + termId + '/preview'); setPreview(r.data); setNotice('Calendar-aware semester preview refreshed. No timetable version was changed.') }
     catch (e) { setError(e.response?.data?.detail || 'Could not preview this semester. Generate a weekly timetable first.') }
     finally { setBusy(false) }
+  }
+
+  async function optimizeSemester() {
+    if (!termId) return
+    setBusy(true); setError(''); setNotice(''); setOptimizationResult(null)
+    try {
+      const response = await axios.post(API + '/semester/terms/' + termId + '/optimize')
+      const result = response.data
+      setOptimizationResult({
+        status: result.status,
+        objective_value: result.objective_value,
+        session_count: result.session_count,
+        version_number: result.version_number,
+        message: result.message || 'Draft saved. Review it before publishing.',
+      })
+      await refresh(termId)
+      const versionResponse = await axios.get(API + '/semester/versions/' + result.version_id)
+      setSelected(versionResponse.data)
+      setNotice('Semester optimization completed. Draft version ' + result.version_number + ' is saved; the published timetable has not changed.')
+    } catch (e) {
+      const detail = e.response?.data?.detail
+      if (detail && typeof detail === 'object') {
+        const conflictCount = Array.isArray(detail.locked_conflicts) ? detail.locked_conflicts.length : 0
+        const reason = detail.reason ? ' Reason: ' + detail.reason : ''
+        const conflicts = conflictCount ? ' Locked-session conflicts: ' + conflictCount + '.' : ''
+        setError((detail.message || 'Semester optimization could not create a valid schedule.') + reason + conflicts)
+      } else {
+        setError(typeof detail === 'string' ? detail : 'Semester optimization failed. Check the term, weekly subject targets, teacher assignments, room setup, calendar and saved constraints.')
+      }
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function createDraft() {
@@ -102,8 +135,18 @@ export default function SemesterDashboard() {
   const metrics = [['Required periods', summary.required_periods || 0], ['Scheduled', summary.scheduled || 0], ['Completed', summary.completed || 0], ['Cancelled', summary.cancelled || 0], ['Rescheduled', summary.rescheduled || 0], ['Outstanding', summary.outstanding || 0]]
 
   return <main style={{ padding: 28, maxWidth: 1500, margin: '0 auto', color: 'var(--text-primary, #111827)' }}>
-    <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}><div><div style={{ color: '#2563eb', fontSize: 12, fontWeight: 800 }}>SCHEDULING OPERATIONS</div><h1>Semester timetable</h1><p>Review dated sessions, protect locked assignments, and publish versions.</p></div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button style={button} disabled={!termId || busy} onClick={refreshPreview}>Preview calendar impact</button><button style={{ ...button, background: '#2563eb', color: 'white' }} disabled={!termId || busy} onClick={createDraft}>{busy ? 'Working…' : 'Generate draft from weekly template'}</button></div></header>
-    {error && <p role='alert' style={{ color: '#b91c1c' }}>{String(error)}</p>}{notice && <p role='status' style={{ color: '#166534' }}>{notice}</p>}
+    <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}><div><div style={{ color: '#2563eb', fontSize: 12, fontWeight: 800 }}>SCHEDULING OPERATIONS</div><h1>Semester timetable</h1><p>Optimize dated sessions across the term, review calendar impacts, and publish only after administrator approval.</p></div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button style={button} disabled={!termId || busy} onClick={refreshPreview}>Preview calendar impact</button><button style={{ ...button, background: '#2563eb', color: 'white' }} disabled={!termId || busy} onClick={optimizeSemester}>{busy ? 'Working…' : 'Optimize semester'}</button><button style={button} disabled={!termId || busy} onClick={createDraft}>Expand weekly template</button></div></header>
+    {error && <p role='alert' style={{ color: '#b91c1c', padding: 12, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8 }}>{String(error)}</p>}{notice && <p role='status' style={{ color: '#166534', padding: 12, border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8 }}>{notice}</p>}
+    {optimizationResult && <section aria-live="polite" style={{ padding: 16, border: '1px solid #bfdbfe', borderRadius: 12, marginBottom: 16, background: '#eff6ff' }}>
+      <strong>Optimization result · Draft version {optimizationResult.version_number}</strong>
+      <p style={{ margin: '8px 0' }}>{optimizationResult.message}</p>
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', color: '#1e3a8a', fontSize: 13 }}>
+        <span>Solver status: <strong>{optimizationResult.status}</strong></span>
+        <span>Sessions scheduled: <strong>{optimizationResult.session_count}</strong></span>
+        <span>Objective value: <strong>{optimizationResult.objective_value ?? '—'}</strong></span>
+      </div>
+      <p style={{ marginBottom: 0, fontSize: 12, color: '#1e40af' }}>This is a draft only. Review the dated sessions below before publishing; the current published version remains unchanged.</p>
+    </section>}
     <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><label>Academic term <select value={termId} onChange={e => setTermId(e.target.value)} style={{ marginLeft: 12, padding: 8 }}>{terms.map(t => <option key={t.term_id} value={t.term_id}>{t.academic_year} · {t.term_name} ({t.start_date} — {t.end_date})</option>)}</select></label></section>
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginBottom: 16 }}>{metrics.map(([label, value]) => <div key={label} style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}><div style={{ color: '#6b7280', fontSize: 12 }}>{label}</div><strong style={{ fontSize: 26 }}>{value}</strong></div>)}</section>
     {dashboard && <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><strong>{dashboard.incomplete ? 'Completion needs attention' : 'No recorded outstanding work'}</strong><p>{summary.unresolved_locked_conflicts || 0} unresolved locked-session closure conflict(s). Drafts do not replace the published timetable until published.</p></section>}
