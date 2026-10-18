@@ -133,8 +133,20 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         model.Add(assign[key_prefix] == 1)
         locked_keys.add(key_prefix)
 
-    # Soft preference: distribute a subject's weekly meetings over different days.
+    # Soft preference: discourage exceeding a teacher's daily workload target.
     penalties = []
+    teacher_daily = defaultdict(list)
+    for (session_date, slot_id, class_id, subject_id, teacher_id, room_id), var in assign.items():
+        teacher_daily[(teacher_id, session_date)].append(var)
+    teacher_max = {t["teacher_id"]: max(0, int(t.get("max_periods_per_day") or 0)) for t in teachers}
+    for (teacher_id, session_date), variables in teacher_daily.items():
+        limit = teacher_max.get(teacher_id, 0)
+        if limit and len(variables) > limit:
+            overflow = model.NewIntVar(0, len(variables), f"daily_overflow_t{teacher_id}_{session_date}")
+            model.Add(overflow >= sum(variables) - limit)
+            penalties.append(overflow)
+
+    # Soft preference: distribute a subject's weekly meetings over different days.
     for week in _week_starts(start, end):
         for subject in subjects:
             day_vars = []
