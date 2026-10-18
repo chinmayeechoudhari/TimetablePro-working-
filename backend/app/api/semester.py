@@ -68,6 +68,71 @@ def _event_state(events, day, working_days):
     return working and not closed, closed, active
 
 
+def _find_replacement(db: Session, original: ScheduledSession, term: AcademicTerm, version: TimetableVersion):
+    """Find earliest valid replacement; prefer the original week, then later weeks."""
+    events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == term.term_id,
+        CalendarEvent.approval_status == "approved",
+    ).all()
+    working_days = set(json.loads(term.working_days_json or "[]"))
+    slots = db.query(TimeSlot).order_by(TimeSlot.period_number.asc()).all()
+    start_week = original.session_date - timedelta(days=original.session_date.weekday())
+    candidates = []
+    day = max(term.start_date, original.session_date + timedelta(days=1))
+    while day <= term.end_date:
+        is_working, is_closed, _ = _event_state(events, day, working_days)
+        if is_working and not is_closed:
+            same_week = (day - timedelta(days=day.weekday())) == start_week
+            for slot in slots:
+                if slot.day != day.strftime("%A"):
+                    continue
+                candidates.append((0 if same_week else 1, day, slot.period_number, slot.slot_id))
+        day += timedelta(days=1)
+    candidates.sort(key=lambda x: (x[0], x[1], x[2]))
+    for _, day, period, slot_id in candidates:
+        existing = db.query(ScheduledSession).filter(
+            ScheduledSession.version_id == version.version_id,
+            ScheduledSession.session_date == day,
+            ScheduledSession.period_number == period,
+            ScheduledSession.session_status.in_(["scheduled", "completed"]),
+        ).all()
+        if any(s.class_id == original.class_id or s.teacher_id == original.teacher_id or s.room_id == original.room_id for s in existing):
+            continue
+        return day, period, slot_id
+    return None
+
+
+def _apply_replacement(db: Session, original: ScheduledSession, term: AcademicTerm, version: TimetableVersion, approved: bool = True, note: str | None = None):
+    if original.is_locked:
+        original.closure_conflict = True
+        return None
+    found = _find_replacement(db, original, term, version)
+    if not found:
+        original.session_status = "outstanding"
+        original.outcome_note = note or "No valid replacement slot was found within the semester."
+        return None
+    day, period, slot_id = found
+    replacement = ScheduledSession(
+        version_id=version.version_id,
+        session_date=day,
+        weekday=day.strftime("%A"),
+        period_number=period,
+        slot_id=slot_id,
+        class_id=original.class_id,
+        subject_id=original.subject_id,
+        teacher_id=original.teacher_id,
+        room_id=original.room_id,
+        session_status="scheduled" if approved else "outstanding",
+        original_session_id=original.session_id,
+        replacement_approved=approved,
+        outcome_note=note,
+    )
+    original.session_status = "rescheduled" if approved else "outstanding"
+    original.outcome_note = note or original.outcome_note
+    db.add(replacement)
+    return replacement
+
+
 def _serialize_session(item):
     return {
         "session_id": item.session_id,
@@ -248,6 +313,9 @@ def set_session_outcome(session_id: int, payload: OutcomeUpdate, db: Session = D
         raise HTTPException(status_code=409, detail="Unlock this session before marking a locked session cancelled or missed.")
     item.session_status = payload.status
     item.outcome_note = payload.note
+    if payload.status == "missed":
+        term = _term(db, version.term_id)
+        _apply_replacement(db, item, term, version, approved=True, note=payload.note or "Automatically rescheduled after being marked missed.")
     db.commit()
     db.refresh(item)
     return _serialize_session(item)
@@ -335,7 +403,11 @@ def term_dashboard(term_id: int, db: Session = Depends(get_db)):
     first_monday = term.start_date - timedelta(days=term.start_date.weekday())
     last_sunday = term.end_date + timedelta(days=6 - term.end_date.weekday())
     weeks = ((last_sunday - first_monday).days // 7) + 1
-    required = sum(max(0, int(subjects[s.subject_id].periods_per_week or 0)) * weeks for s in weekly_template if s.subject_id in subjects)
+    unique_class_subjects = {(row.class_id, row.subject_id) for row in weekly_template}
+    required = sum(
+        max(0, int(subjects[subject_id].periods_per_week or 0)) * weeks
+        for _, subject_id in unique_class_subjects if subject_id in subjects
+    )
     subject_counts = defaultdict(Counter)
     for s in sessions:
         subject_counts[(s.class_id, s.subject_id)][s.session_status] += 1
