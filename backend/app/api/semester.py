@@ -253,7 +253,10 @@ def create_draft(term_id: int, created_by: str | None = None, notes: str | None 
         CalendarEvent.term_id == term_id,
         CalendarEvent.approval_status == "approved",
     ).order_by(CalendarEvent.start_date, CalendarEvent.event_id).all()
-    working_days = set(json.loads(term.working_days_json or "[]"))
+    try:
+        working_days = set(json.loads(term.working_days_json or "[]"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Term working days are not valid JSON.")
     if not working_days or not working_days.issubset(WORKING_DAYS):
         raise HTTPException(status_code=422, detail="Term working days are invalid.")
 
