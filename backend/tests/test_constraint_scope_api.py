@@ -160,3 +160,27 @@ def test_invalid_term_scope_returns_404():
         api.list_constraints(term_id=999, db=db)
 
     assert exc.value.status_code == 404
+
+def test_create_constraint_rejects_duplicate_in_same_semester_scope(monkeypatch):
+    payload = _constraint_payload().model_dump(mode="json")
+    existing_scoped = SimpleNamespace(
+        constraint_id=7, constraint_name="Term 22", constraint_type="hard",
+        parameters_json=json.dumps({"scope": {"term_id": 22}, "constraint": payload}),
+    )
+    db = Mock()
+    db.query.side_effect = lambda model: (
+        FakeQuery(first=SimpleNamespace(term_id=22)) if model is AcademicTerm
+        else FakeQuery(rows=[existing_scoped]) if model is Constraint
+        else (_ for _ in ()).throw(AssertionError(f"Unexpected model queried: {model}"))
+    )
+    monkeypatch.setattr(api, "_validate_for_constraint_studio", lambda db, constraint: None)
+
+    with pytest.raises(HTTPException) as exc:
+        api.create_constraint(
+            api.SaveConstraintRequest(constraint=_constraint_payload()),
+            term_id=22,
+            db=db,
+        )
+
+    assert exc.value.status_code == 409
+    db.commit.assert_not_called()
