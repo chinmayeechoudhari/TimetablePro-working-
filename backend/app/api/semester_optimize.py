@@ -44,8 +44,10 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         try:
             payload = json.loads(row.parameters_json or "{}")
             parsed = GeneratedConstraint.model_validate(payload)
+            if row.constraint_type != parsed.constraint_type:
+                raise ValueError("Saved constraint type does not match its payload.")
             if parsed.constraint_type == "soft" and parsed.weight not in (1, 2, 3):
-                parsed = parsed.model_copy(update={"weight": 3})
+                raise ValueError("Soft constraint priority must be 1, 2, or 3.")
             dynamic_constraints.append(parsed)
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             raise HTTPException(
