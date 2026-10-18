@@ -87,7 +87,7 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({
     title: '', event_type: 'holiday', start_date: '', end_date: '',
-    is_closure: true, approval_status: 'approved', source: 'manual', notes: ''
+    is_closure: true, approval_status: 'pending', source: 'manual', notes: ''
   })
   const [events, setEvents] = useState([])
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
@@ -287,7 +287,7 @@ export default function CalendarPage() {
       form.append('file', calendarFile)
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/upload`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : ''))
+      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : ''))
       setCalendarFile(null)
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not import the calendar file.')
@@ -315,7 +315,7 @@ export default function CalendarPage() {
       const payload = { ...eventForm, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
       await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
       await loadEvents(selectedTerm.term_id)
-      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
+      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '' })
       setShowEventForm(false)
       setNotice('Calendar event saved.')
     } catch (err) {
@@ -1740,8 +1740,8 @@ export default function CalendarPage() {
                     value={eventForm.approval_status}
                     onChange={e => setEventField('approval_status', e.target.value)}
                   >
-                    <option value="approved">Approved</option>
                     <option value="pending">Pending review</option>
+                    <option value="approved">Approved</option>
                   </select>
                 </FieldInput>
                 <FieldInput label="Start date">
