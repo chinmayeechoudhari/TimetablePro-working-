@@ -301,7 +301,7 @@ export default function CalendarPage() {
     try {
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/region`)
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message || `Loaded ${response.data.imported} regional holiday suggestions.`)
+      setNotice((response.data.message || `Loaded ${response.data.imported} regional holiday suggestions.`) + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : ''))
     } catch (err) {
       setError(err.response?.data?.detail || 'Regional holiday import failed.')
     } finally { setImportingHolidays(false) }
