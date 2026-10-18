@@ -223,14 +223,21 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
         event_date = date.fromisoformat(raw_date)
         if not term.start_date <= event_date <= term.end_date:
             continue
-        exists = db.query(CalendarEvent).filter(
+        overlapping = db.query(CalendarEvent).filter(
             CalendarEvent.term_id == term_id,
-            CalendarEvent.start_date == event_date,
-            CalendarEvent.title == title,
-        ).first()
+            CalendarEvent.start_date <= event_date,
+            CalendarEvent.end_date >= event_date,
+        ).all()
+        exists = next((
+            event for event in overlapping
+            if event.start_date == event_date
+            and event.end_date == event_date
+            and event.title.strip().casefold() == title.strip().casefold()
+        ), None)
         if exists:
             skipped += 1
             continue
+        needs_review = bool(overlapping)
         db.add(CalendarEvent(
             term_id=term_id,
             title=title,
@@ -240,8 +247,12 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
             is_closure=is_closure,
             is_working_day_override=False,
             source="College Academic Activity Calendar AY 2026-27 Sem I",
-            approval_status="approved",
-            notes="Imported from the college-provided academic activity calendar. Please verify against the latest official circular.",
+            approval_status="pending" if needs_review else "approved",
+            notes=(
+                "Overlaps another calendar entry; administrator review required."
+                if needs_review else
+                "Imported from the college-provided academic activity calendar. Please verify against the latest official circular."
+            ),
         ))
         imported += 1
     db.commit()
