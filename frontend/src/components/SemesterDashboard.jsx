@@ -17,11 +17,19 @@ export default function SemesterDashboard() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [optimizationResult, setOptimizationResult] = useState(null)
+  const [events, setEvents] = useState([])
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [classFilter, setClassFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [showTermSettings, setShowTermSettings] = useState(false)
 
   async function refresh(id = termId) {
     if (!id) return
     const [v, d, p, w] = await Promise.all([axios.get(API + '/semester/terms/' + id + '/versions'), axios.get(API + '/semester/terms/' + id + '/dashboard'), axios.post(API + '/semester/terms/' + id + '/preview').catch(() => ({ data: null })), axios.get(API + '/semester/terms/' + id + '/weekly-progress').catch(() => ({ data: [] }))])
     setVersions(v.data); setDashboard(d.data); setPreview(p.data); setWeeklyProgress(Array.isArray(w.data) ? w.data : (w.data?.shortfalls || w.data?.weeks || w.data?.rows || []))
+    const eventResponse = await axios.get(API + '/calendar/terms/' + id + '/events').catch(() => ({ data: [] }))
+    setEvents(Array.isArray(eventResponse.data) ? eventResponse.data : [])
   }
   useEffect(() => {
     axios.get(API + '/calendar/terms').then(r => {
@@ -32,6 +40,25 @@ export default function SemesterDashboard() {
   }, [])
   useEffect(() => { if (termId) refresh(termId).then(() => setSelected(null)).catch(e => setError(e.response?.data?.detail || 'Could not load semester data.')) }, [termId])
 
+  const activeTerm = terms.find(t => String(t.term_id) === String(termId))
+  const workingDays = activeTerm?.working_days || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+  async function updateWorkingDays(nextDays) {
+    if (!activeTerm || !nextDays.length) return
+    setBusy(true); setError(''); setNotice('')
+    try { const response = await axios.patch(API + '/calendar/terms/' + termId, { working_days: nextDays }); setTerms(old => old.map(t => t.term_id === response.data.term_id ? response.data : t)); setNotice('Teaching days updated. Run semester optimization again to apply changes to a new draft.') }
+    catch (e) { setError(e.response?.data?.detail || 'Could not update teaching days.') }
+    finally { setBusy(false) }
+  }
+
+  async function importInstitutionCalendar() {
+    if (!termId || !window.confirm('Import the built-in academic calendar for this term?')) return
+    setBusy(true); setError(''); setNotice('')
+    try { await axios.post(API + '/calendar/terms/' + termId + '/holidays/import'); await refresh(termId); setNotice('Calendar import completed. Review the events and optimize a new draft.') }
+    catch (e) { setError(e.response?.data?.detail || 'Could not import the academic calendar.') }
+    finally { setBusy(false) }
+  }
   async function openVersion(item) {
     setError('')
     try {
@@ -133,9 +160,14 @@ export default function SemesterDashboard() {
   const version = selected || versions[0]
   const summary = dashboard?.summary || {}
   const metrics = [['Required periods', summary.required_periods || 0], ['Scheduled', summary.scheduled || 0], ['Completed', summary.completed || 0], ['Cancelled', summary.cancelled || 0], ['Rescheduled', summary.rescheduled || 0], ['Outstanding', summary.outstanding || 0]]
+  const filteredSessions = (version?.sessions || []).filter(s => (!dateFrom || s.date >= dateFrom) && (!dateTo || s.date <= dateTo) && (classFilter === 'all' || String(s.class_id) === classFilter) && (statusFilter === 'all' || (s.closure_conflict ? 'closure_conflict' : s.status) === statusFilter))
+  const classIds = [...new Set((version?.sessions || []).map(s => String(s.class_id)))]
+  const approvedEvents = events.filter(e => e.approval_status === 'approved')
+  const closures = approvedEvents.filter(e => e.is_closure)
+  const versionIsDraft = version?.status === 'draft'
 
   return <main style={{ padding: 28, maxWidth: 1500, margin: '0 auto', color: 'var(--text-primary, #111827)' }}>
-    <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}><div><div style={{ color: '#2563eb', fontSize: 12, fontWeight: 800 }}>SCHEDULING OPERATIONS</div><h1>Semester timetable</h1><p>Optimize dated sessions across the term, review calendar impacts, and publish only after administrator approval.</p></div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button style={button} disabled={!termId || busy} onClick={refreshPreview}>Preview calendar impact</button><button style={{ ...button, background: '#2563eb', color: 'white' }} disabled={!termId || busy} onClick={optimizeSemester}>{busy ? 'Working…' : 'Optimize semester'}</button><button style={button} disabled={!termId || busy} onClick={createDraft}>Expand weekly template</button></div></header>
+    <header style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 22 }}><div><div style={{ color: '#2563eb', fontSize: 12, fontWeight: 800 }}>SEMESTER SCHEDULING WORKSPACE</div><h1>Semester Planner</h1><p>Configure the academic calendar, optimize actual dated sessions, validate teaching requirements, then review and publish a draft.</p></div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button style={button} disabled={!termId || busy} onClick={() => setShowTermSettings(v => !v)}>{showTermSettings ? 'Hide term settings' : 'Configure term'}</button><button style={button} disabled={!termId || busy} onClick={refreshPreview}>Preview calendar impact</button><button style={{ ...button, background: '#2563eb', color: 'white', borderColor: '#2563eb', fontWeight: 700 }} disabled={!termId || busy} onClick={optimizeSemester}>{busy ? 'Optimizing…' : 'Run semester optimizer'}</button></div></header>
     {error && <p role='alert' style={{ color: '#b91c1c', padding: 12, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8 }}>{String(error)}</p>}{notice && <p role='status' style={{ color: '#166534', padding: 12, border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8 }}>{notice}</p>}
     {optimizationResult && <section aria-live="polite" style={{ padding: 16, border: '1px solid #bfdbfe', borderRadius: 12, marginBottom: 16, background: '#eff6ff' }}>
       <strong>Optimization result · Draft version {optimizationResult.version_number}</strong>
@@ -147,7 +179,7 @@ export default function SemesterDashboard() {
       </div>
       <p style={{ marginBottom: 0, fontSize: 12, color: '#1e40af' }}>This is a draft only. Review the dated sessions below before publishing; the current published version remains unchanged.</p>
     </section>}
-    <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><label>Academic term <select value={termId} onChange={e => setTermId(e.target.value)} style={{ marginLeft: 12, padding: 8 }}>{terms.map(t => <option key={t.term_id} value={t.term_id}>{t.academic_year} · {t.term_name} ({t.start_date} — {t.end_date})</option>)}</select></label></section>
+    <section style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 14, marginBottom: 16 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}><div><h2>1 · Academic term</h2><p style={{ color: '#64748b', margin: 0 }}>The selected term defines the date range used by the optimizer.</p></div><select aria-label='Select academic term' value={termId} onChange={e => setTermId(e.target.value)} style={{ padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 }}>{terms.map(t => <option key={t.term_id} value={t.term_id}>{t.academic_year} · {t.term_name} ({t.start_date} — {t.end_date})</option>)}</select></div>{activeTerm && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginTop: 14 }}>{[['Start date',activeTerm.start_date],['End date',activeTerm.end_date],['Holiday region',activeTerm.holiday_region],['Timezone',activeTerm.timezone],['Reschedule policy',activeTerm.reschedule_policy]].map(([label,value])=><div key={label} style={{ padding: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 9 }}><div style={{ color: '#64748b', fontSize: 12 }}>{label}</div><strong>{value || 'Not set'}</strong></div>)}</div>}{showTermSettings && <div style={{ marginTop: 16 }}><strong>Normal teaching days</strong><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{weekdays.map(day=><label key={day} style={{ border: '1px solid #cbd5e1', borderRadius: 8, padding: 8 }}><input type='checkbox' checked={workingDays.includes(day)} disabled={busy || (workingDays.length === 1 && workingDays.includes(day))} onChange={e=>updateWorkingDays(e.target.checked ? [...workingDays,day] : workingDays.filter(d=>d!==day))}/> {day}</label>)}</div><div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}><button style={button} disabled={busy} onClick={importInstitutionCalendar}>Import institution calendar</button><button style={button} onClick={()=>window.location.assign('/calendar')}>Manage calendar events ↗</button></div></div>}</section>
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12, marginBottom: 16 }}>{metrics.map(([label, value]) => <div key={label} style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}><div style={{ color: '#6b7280', fontSize: 12 }}>{label}</div><strong style={{ fontSize: 26 }}>{value}</strong></div>)}</section>
     {dashboard && <section style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}><strong>{dashboard.incomplete ? 'Completion needs attention' : 'No recorded outstanding work'}</strong><p>{summary.unresolved_locked_conflicts || 0} unresolved locked-session closure conflict(s). Drafts do not replace the published timetable until published.</p></section>}
     {preview && <section style={{ padding: 16, border: '1px solid #bfdbfe', borderRadius: 12, marginBottom: 16, background: '#eff6ff' }}>
