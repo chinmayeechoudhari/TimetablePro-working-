@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.api.semester_optimize import _working_days, optimize_semester
 from app.models.calendar import AcademicTerm
-from app.models.models import Constraint
+from app.models.models import AcademicGroup, Constraint
 
 
 class FakeQuery:
@@ -184,6 +184,7 @@ def _persistence_db(monkeypatch, solver_result):
     rows = {
         AcademicTerm: FakeQuery(first=term),
         Constraint: FakeQuery(count=0),
+        AcademicGroup: FakeQuery(all_rows=[]),
         TimeSlot: FakeQuery(all_rows=[SimpleNamespace(slot_id=1, day="Wednesday", period_number=1)]),
         Subject: FakeQuery(all_rows=[SimpleNamespace(subject_id=2, class_id=3, periods_per_week=1, subject_type="theory")]),
         Teacher: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, max_periods_per_day=6)]),
