@@ -47,7 +47,12 @@ def _term(db: Session, term_id: int) -> AcademicTerm:
 
 
 def _working_days(term: AcademicTerm) -> set[str]:
-    working_days = _working_days(term)
+    try:
+        working_days = _working_days(term)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Term working days are not valid JSON.")
+    if not working_days or not working_days.issubset(WORKING_DAYS):
+        raise HTTPException(status_code=422, detail="Term working days are invalid.")
     return working_days
 
 
@@ -441,7 +446,7 @@ def create_replacement(session_id: int, payload: ReplacementRequest, db: Session
         CalendarEvent.term_id == term.term_id,
         CalendarEvent.approval_status == "approved",
     ).all()
-    is_working, is_closed, _ = _event_state(events, payload.replacement_date, set(json.loads(term.working_days_json or "[]")))
+    is_working, is_closed, _ = _event_state(events, payload.replacement_date, _working_days(term))
     if not is_working or is_closed:
         raise HTTPException(status_code=422, detail="Replacement date is not an eligible teaching day.")
     slot = db.query(TimeSlot).filter(TimeSlot.slot_id == payload.slot_id).first() if payload.slot_id else None
@@ -520,7 +525,7 @@ def approve_replacement(session_id: int, db: Session = Depends(get_db)):
         CalendarEvent.term_id == term.term_id,
         CalendarEvent.approval_status == "approved",
     ).all()
-    eligible, closed, _ = _event_state(events, replacement.session_date, set(json.loads(term.working_days_json or "[]")))
+    eligible, closed, _ = _event_state(events, replacement.session_date, _working_days(term))
     if not eligible or closed:
         raise HTTPException(status_code=409, detail="The replacement date is no longer an eligible teaching day.")
     if replacement.slot_id:
