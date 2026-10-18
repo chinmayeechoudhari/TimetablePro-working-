@@ -10,6 +10,7 @@ from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
 from app.models.models import Constraint, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
 from app.models.semester import ScheduledSession, TimetableVersion
+from app.constraints.schemas import GeneratedConstraint
 from app.solver.semester_solver import solve_semester_schedule
 
 router = APIRouter(prefix="/semester", tags=["semester-optimization"])
@@ -36,14 +37,17 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     if term.end_date < term.start_date:
         raise HTTPException(status_code=422, detail="Term end date must be on or after its start date.")
 
-    # Do not silently ignore user-authored constraints until the compiler has
-    # a date-aware key adapter. The weekly solver continues to support them.
-    saved_constraints = db.query(Constraint).count()
-    if saved_constraints:
-        raise HTTPException(
-            status_code=409,
-            detail="Semester optimization is not enabled while saved dynamic constraints exist; date-aware constraint compilation must be enabled first. The weekly solver remains available.",
-        )
+    saved_constraints = db.query(Constraint).all()
+    dynamic_constraints = []
+    for row in saved_constraints:
+        try:
+            payload = json.loads(row.parameters_json or "{}")
+            dynamic_constraints.append(GeneratedConstraint.model_validate(payload))
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Saved dynamic constraint {row.constraint_id} is invalid and must be repaired before semester optimization.",
+            ) from exc
 
     slots = db.query(TimeSlot).all()
     subjects = db.query(Subject).all()
@@ -82,6 +86,12 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         } for session in latest.sessions if session.is_locked]
 
     result = solve_semester_schedule({
+        "db": db,
+        "dynamic_constraints": dynamic_constraints,
+        "slot_period": {s.slot_id: s.period_number for s in slots},
+        "slot_day": {s.slot_id: s.day for s in slots},
+        "room_types": {r.room_id: str(r.room_type or "classroom").strip().lower() for r in rooms},
+        "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
         "start_date": term.start_date,
         "end_date": term.end_date,
         "working_days": _working_days(term),
