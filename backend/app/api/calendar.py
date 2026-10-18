@@ -346,21 +346,21 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
             import re
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(raw))
-            extracted = "\\n".join(page.extract_text() or "" for page in reader.pages)
+            extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
             if not extracted.strip():
                 raise HTTPException(status_code=422, detail="No selectable text was found in this PDF. It may be scanned; use OCR or upload CSV/XLSX.")
             rows = [["Date", "Title", "Type", "Closure"]]
-            date_pattern = re.compile(r"(?P<date>\\b(?:\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}|\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}\\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\\s+\\d{4})?)\\b)", re.I)
+            date_pattern = re.compile(r"(?P<date>\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:\s+\d{4})?)\b)", re.I)
             for line in extracted.splitlines():
-                line = re.sub(r"\\s+", " ", line).strip(" •|\\t-")
+                line = re.sub(r"\s+", " ", line).strip(" •|\t-")
                 match = date_pattern.search(line)
                 if not match:
                     continue
                 date_text = match.group("date").strip()
-                event_title = (line[:match.start()] + " " + line[match.end():]).strip(" :-|\\t•")
+                event_title = (line[:match.start()] + " " + line[match.end():]).strip(" :-|\t•")
                 if not event_title or len(event_title) > 160:
                     continue
-                if not re.search(r"\\d{4}", date_text):
+                if not re.search(r"\d{4}", date_text):
                     date_text = f"{date_text} {term.start_date.year}"
                 rows.append([date_text, event_title, "holiday", "yes"])
             if len(rows) == 1:
