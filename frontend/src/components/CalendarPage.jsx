@@ -1163,6 +1163,7 @@ export default function CalendarPage() {
                 const versions = await axios.get(API + '/semester/terms/' + selectedTerm.term_id + '/versions')
                 setSemesterVersions(versions.data || [])
                 setSelectedVersionId(String(result.data.version_id))
+                setNotice('Semester optimization ' + result.data.status + ': draft v' + result.data.version_number + ' created with ' + result.data.session_count + ' dated sessions. Objective score: ' + (result.data.objective_value ?? 'not reported') + '. Review sessions and teaching load before publishing.')
               } catch (e) {
                 const detail = e.response?.data?.detail
                 setVersionError(typeof detail === 'string' ? detail : detail?.message || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
@@ -1188,6 +1189,7 @@ export default function CalendarPage() {
               <span style={{padding:'8px 12px',background:'#ecfdf5',borderRadius:8,fontSize:12}}>Completed: <b>{versionSessions.filter(s=>s.status==='completed').length}</b></span>
               <span style={{padding:'8px 12px',background:'#fef3c7',borderRadius:8,fontSize:12}}>Locked: <b>{versionSessions.filter(s=>s.is_locked).length}</b></span>
               <span style={{padding:'8px 12px',background:'#fff7ed',borderRadius:8,fontSize:12}}>Pending replacements: <b>{versionSessions.filter(s=>s.status==='outstanding' && s.original_session_id).length}</b></span>
+              <span style={{padding:'8px 12px',background:versionSessions.some(s=>s.closure_conflict && s.is_locked)?'#fef2f2':'#ecfdf5',borderRadius:8,fontSize:12}}>Feasibility check: <b>{versionSessions.some(s=>s.closure_conflict && s.is_locked)?'Needs attention':'No locked closure conflicts reported'}</b></span>
               {semesterVersions.some(v=>String(v.version_id)===selectedVersionId && v.status==='draft') && <button type="button" className="cal-btn-add" onClick={async()=>{
                 if(!window.confirm('Publish this draft timetable? This replaces the currently published version.')) return
                 setVersionError('')
