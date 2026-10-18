@@ -270,7 +270,7 @@ function ConstraintWizard({ clarification, originalText, onBack, onDone, selecte
       const results = []
       if (globalAll) {
         const res = await axios.post(`${BASE}/constraints/preview`, { text: originalText, selection: { subject_id: null, class_id: null, subject_type: null } }, scopeRequestConfig(selectedTermId))
-        if (res.data?.constraint) results.push({ constraint: res.data.constraint, label: "All Classes (Global)" })
+        if (res.data?.constraint) results.push({ constraint: res.data.constraint, label: "All Classes" })
       } else {
         for (const key of selectedKeys) {
           const opt = options.find(o => optKey(o) === key)
@@ -890,6 +890,9 @@ export default function ConstraintsPage() {
                         <p style={{ fontSize: 14.5, fontWeight: 600, color: "#111827", lineHeight: 1.5, margin: 0 }}>
                           {rule.constraint?.explanation || rule.constraint_name || "Saved constraint"}
                         </p>
+                        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.04em", color: rule.scope === "semester" ? "#1d4ed8" : "#64748b", marginTop: 5 }}>
+                          {rule.scope === "semester" ? `SEMESTER-SPECIFIC · ${terms.find(t => String(t.term_id) === String(rule.term_id))?.term_name || `Term ${rule.term_id}`}` : "GLOBAL · Applies to all semesters"}
+                        </div>
                         <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 8 }}>
                           ID #{rule.constraint_id} &bull; Added {formatConstraintDate(rule)}
                         </div>
