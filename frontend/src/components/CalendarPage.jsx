@@ -1184,14 +1184,33 @@ export default function CalendarPage() {
                 <tbody>{versionSessions.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'') || a.period_number-b.period_number).map(s=><tr key={s.session_id} style={{borderTop:'1px solid #e2e8f0'}}>
                   <td style={{padding:9,whiteSpace:'nowrap'}}>{s.date}</td><td style={{padding:9}}>{s.weekday}</td><td style={{padding:9}}>{s.period_number}</td><td style={{padding:9}}>{s.class_id}</td><td style={{padding:9}}>{s.subject_id}</td><td style={{padding:9}}>{s.teacher_id}</td><td style={{padding:9}}>{s.room_id}</td>
                   <td style={{padding:7}}><select value={s.status||'scheduled'} disabled={semesterVersions.find(v=>String(v.version_id)===selectedVersionId)?.status==='archived'} onChange={async e=>{
-                    try { await axios.patch(API+'/semester/sessions/'+s.session_id+'/outcome',{status:e.target.value,note:null}); const r=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(r.data.sessions||[]) }
-                    catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not update session status.')}
+                    try {
+                      const status=e.target.value
+                      if (status === 'scheduled') await axios.patch(API+'/semester/sessions/'+s.session_id,{session_status:status})
+                      else await axios.patch(API+'/semester/sessions/'+s.session_id+'/outcome',{status,note:null})
+                      const r=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(r.data.sessions||[])
+                    } catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not update session status.')}
                   }}><option value="scheduled">Scheduled</option><option value="completed">Completed</option><option value="missed">Missed</option><option value="cancelled">Cancelled</option></select></td>
                   <td style={{padding:7}}><button type="button" className="cal-btn-add" disabled={semesterVersions.find(v=>String(v.version_id)===selectedVersionId)?.status==='archived'} onClick={async()=>{
                     const locked=!s.is_locked; const reason=locked?(window.prompt('Reason for locking this session?','Protected by administrator')||'Protected by administrator'):null
                     try { await axios.patch(API+'/semester/sessions/'+s.session_id+'/lock',{locked,reason,actor:'administrator'}); const r=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(r.data.sessions||[]) }
                     catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not change session lock.')}
-                  }}>{s.is_locked?'Unlock':'Lock'}</button></td>
+                  }}>{s.is_locked?'Unlock':'Lock'}</button>
+                  <button type="button" className="cal-btn-add" disabled={s.is_locked || semesterVersions.find(v=>String(v.version_id)===selectedVersionId)?.status==='archived'} onClick={async()=>{
+                    const date=window.prompt('Proposed replacement date (YYYY-MM-DD):',s.date)
+                    if(!date) return
+                    const period=Number(window.prompt('Proposed period number:',String(s.period_number)))
+                    if(!Number.isInteger(period)||period<1) { setVersionError('Enter a valid period number.'); return }
+                    try {
+                      const created=await axios.post(API+'/semester/sessions/'+s.session_id+'/replacement',{replacement_date:date,period_number:period,approved:false,note:'Proposed by administrator; approval required.'})
+                      const updated=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(updated.data.sessions||[])
+                      setNotice('Replacement proposed. It is pending administrator approval.')
+                    } catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not propose replacement.')}
+                  }}>Propose reschedule</button>
+                  {s.status==='outstanding' && s.original_session_id && <button type="button" className="cal-btn-generate" onClick={async()=>{
+                    try { await axios.post(API+'/semester/sessions/'+s.session_id+'/replacement/approve'); const updated=await axios.get(API+'/semester/versions/'+selectedVersionId); setVersionSessions(updated.data.sessions||[]); setNotice('Replacement approved.') }
+                    catch(err){const d=err.response?.data?.detail;setVersionError(typeof d==='string'?d:d?.message||'Could not approve replacement.')}
+                  }}>Approve replacement</button>}</td>
                 </tr>)}</tbody>
               </table>
             </div>
