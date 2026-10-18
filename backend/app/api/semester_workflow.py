@@ -55,7 +55,8 @@ def _weekly_target(periods_per_week, start, end, events, working_days):
     if eligible_days == 0:
         return 0
     # Integer ceiling avoids floating-point rounding surprises.
-    return (periods * eligible_days + len(working_days) - 1) // len(working_days)
+    prorated = (periods * eligible_days + len(working_days) - 1) // len(working_days)
+    return min(periods, prorated)
 
 
 @router.post("/terms/{term_id}/preview")
