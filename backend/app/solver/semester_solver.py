@@ -134,18 +134,18 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 if start <= candidate_day <= end
                 and candidate_day.strftime("%A") in working_days
             ]
-            # A week is closed only if it had at least one configured working
-            # date and every such date is closed by the calendar. A partial
-            # boundary week with no configured working weekday is not a closure.
-            calendar_open_weeks[week] = bool(configured_workdays) and any(
-                not _event_state(candidate_day, events, working_days)[1]
-                for candidate_day in configured_workdays
+            # A week is closed only if it contains at least one configured
+            # working date and every such date is explicitly closed by the
+            # calendar. No configured workday in a partial boundary week is
+            # not evidence of a closure and must not grant makeup capacity.
+            calendar_open_weeks[week] = (
+                bool(configured_workdays)
+                and all(_event_state(candidate_day, events, working_days)[1]
+                        for candidate_day in configured_workdays)
             )
 
-        # Roll only genuinely calendar-closed weeks into makeup capacity. This
-        # prevents partial term weeks or resource/subject eligibility gaps from
-        # silently granting extra teaching capacity.
-        closed_weeks = sum(1 for is_open in calendar_open_weeks.values() if not is_open)
+        # Only fully calendar-closed weeks contribute extra makeup capacity.
+        closed_weeks = sum(1 for is_closed in calendar_open_weeks.values() if is_closed)
         weekly_capacity = target * (1 + closed_weeks)
         for week, matching in weekly_candidates.items():
             if matching:
