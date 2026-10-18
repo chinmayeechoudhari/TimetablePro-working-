@@ -104,6 +104,30 @@ def test_solver_enforces_saved_hard_constraint():
     assert result["sessions"] == []
 
 
+
+def test_solver_makes_up_closed_week_load_in_another_week():
+    data = _solver_data([])
+    data.update({
+        "start_date": date(2026, 7, 6),
+        "end_date": date(2026, 7, 13),
+        "events": [{
+            "start_date": date(2026, 7, 6),
+            "end_date": date(2026, 7, 6),
+            "is_closure": True,
+        }],
+        "slots": [
+            {"slot_id": 1, "day": "Monday", "period_number": 1},
+            {"slot_id": 2, "day": "Monday", "period_number": 2},
+        ],
+        "slot_period": {1: 1, 2: 2},
+    })
+    result = solve_semester_schedule(data)
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 2
+    assert {session["date"] for session in result["sessions"]} == {date(2026, 7, 13)}
+    assert {session["period_number"] for session in result["sessions"]} == {1, 2}
+
+
 def test_solver_soft_constraint_produces_a_feasible_schedule():
     constraint = _constraint({
         "constraint_type": "soft",
