@@ -46,6 +46,7 @@ def test_optimize_returns_404_when_term_does_not_exist():
 def test_optimize_rejects_malformed_saved_dynamic_constraint():
     term = SimpleNamespace(
         term_id=7,
+        academic_year="2026-27",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 12, 31),
         working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
@@ -77,6 +78,7 @@ def test_optimize_rejects_malformed_saved_dynamic_constraint():
 def test_optimize_rejects_unsupported_saved_soft_priority():
     term = SimpleNamespace(
         term_id=7,
+        academic_year="2026-27",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 12, 31),
         working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
@@ -116,6 +118,7 @@ def test_optimize_rejects_unsupported_saved_soft_priority():
 def test_optimize_rejects_saved_constraint_type_mismatch():
     term = SimpleNamespace(
         term_id=7,
+        academic_year="2026-27",
         start_date=date(2026, 7, 1),
         end_date=date(2026, 12, 31),
         working_days_json='["Monday","Tuesday","Wednesday","Thursday","Friday"]',
