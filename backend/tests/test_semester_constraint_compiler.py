@@ -140,11 +140,16 @@ def test_solver_respects_multi_day_calendar_closure():
             "is_closure": True,
             "is_working_day_override": False,
         }],
-        "slots": [{"slot_id": 1, "day": "Monday", "period_number": 1}],
+        "slots": [
+            {"slot_id": 1, "day": "Monday", "period_number": 1},
+            {"slot_id": 2, "day": "Monday", "period_number": 2},
+            {"slot_id": 3, "day": "Monday", "period_number": 3},
+        ],
+        "slot_period": {1: 1, 2: 2, 3: 3},
     })
     result = solve_semester_schedule(data)
     assert result["status"] in {"optimal", "feasible"}
-    assert result["sessions"]
+    assert len(result["sessions"]) == 3
     assert all(
         session["session_date"] not in {date(2026, 7, 6), date(2026, 7, 13)}
         for session in result["sessions"]
