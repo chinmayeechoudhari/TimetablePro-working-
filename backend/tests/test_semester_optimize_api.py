@@ -92,3 +92,98 @@ def test_working_days_accepts_valid_configured_days():
     term = SimpleNamespace(working_days_json='["Monday","Saturday"]')
 
     assert _working_days(term) == {"Monday", "Saturday"}
+
+
+def _persistence_db(monkeypatch, solver_result):
+    from app.models.calendar import CalendarEvent
+    from app.models.models import Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
+    from app.models.semester import ScheduledSession, TimetableVersion
+    import app.api.semester_optimize as api
+
+    term = SimpleNamespace(
+        term_id=7,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 7),
+        working_days_json='["Wednesday"]',
+    )
+    rows = {
+        AcademicTerm: FakeQuery(first=term),
+        Constraint: FakeQuery(count=0),
+        TimeSlot: FakeQuery(all_rows=[SimpleNamespace(slot_id=1, day="Wednesday", period_number=1)]),
+        Subject: FakeQuery(all_rows=[SimpleNamespace(subject_id=2, class_id=3, periods_per_week=1, subject_type="theory")]),
+        Teacher: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, max_periods_per_day=6)]),
+        Room: FakeQuery(all_rows=[SimpleNamespace(room_id=5, room_type="classroom")]),
+        CalendarEvent: FakeQuery(all_rows=[]),
+        TeacherAvailability: FakeQuery(all_rows=[]),
+        TeacherSubject: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, subject_id=2)]),
+        TimetableVersion: FakeQuery(first=None),
+    }
+    db = Mock()
+    db.query.side_effect = lambda model: rows[model]
+    added = []
+    db.add.side_effect = added.append
+    def flush():
+        for obj in added:
+            if isinstance(obj, TimetableVersion):
+                obj.version_id = 70
+    db.flush.side_effect = flush
+    def refresh(version):
+        version.sessions = [
+            obj for obj in added if isinstance(obj, ScheduledSession)
+        ]
+        for index, session in enumerate(version.sessions, start=1):
+            session.session_id = index
+    db.refresh.side_effect = refresh
+    monkeypatch.setattr(api, "solve_semester_schedule", lambda data, max_time_seconds: solver_result)
+    return db, added
+
+
+def test_optimize_saves_feasible_result_as_new_draft(monkeypatch):
+    session = {
+        "session_date": date(2026, 7, 1),
+        "weekday": "Wednesday",
+        "period_number": 1,
+        "slot_id": 1,
+        "class_id": 3,
+        "subject_id": 2,
+        "teacher_id": 4,
+        "room_id": 5,
+        "is_locked": False,
+    }
+    db, added = _persistence_db(
+        monkeypatch,
+        {"status": "feasible", "objective_value": 0, "sessions": [session]},
+    )
+
+    response = optimize_semester(term_id=7, created_by="tester", notes="test draft", db=db)
+
+    versions = [obj for obj in added if isinstance(obj, __import__(
+        "app.models.semester", fromlist=["TimetableVersion"]
+    ).TimetableVersion)]
+    saved_sessions = [obj for obj in added if isinstance(obj, __import__(
+        "app.models.semester", fromlist=["ScheduledSession"]
+    ).ScheduledSession)]
+    assert len(versions) == 1
+    assert versions[0].status == "draft"
+    assert versions[0].version_number == 1
+    assert versions[0].created_by == "tester"
+    assert len(saved_sessions) == 1
+    assert response["draft_only"] is True
+    assert response["session_count"] == 1
+    assert response["sessions"][0]["session_id"] == 1
+    db.commit.assert_called_once()
+
+
+def test_infeasible_result_does_not_persist_a_draft(monkeypatch):
+    db, added = _persistence_db(
+        monkeypatch,
+        {"status": "infeasible", "reason": "locked session conflict", "sessions": []},
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        optimize_semester(term_id=7, db=db)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail["status"] == "infeasible"
+    assert not added
+    db.commit.assert_not_called()
