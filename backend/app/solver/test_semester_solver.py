@@ -48,6 +48,33 @@ def test_approved_closure_removes_date_from_candidate_slots():
     assert all(item["session_date"] != date(2026, 10, 19) for item in result["sessions"])
 
 
+def test_partial_week_closure_can_make_up_sessions_in_later_semester_week():
+    data = _base_data()
+    data["end_date"] = date(2026, 10, 30)
+    data["subjects"][0]["periods_per_week"] = 3
+    data["events"] = [{
+        "start_date": date(2026, 10, 19),
+        "end_date": date(2026, 10, 21),
+        "is_closure": True,
+        "is_working_day_override": None,
+    }]
+    # Three original sessions were displaced by the three-day closure.
+    data["makeup_preferences"] = [
+        {"class_id": 100, "subject_id": 10, "original_date": date(2026, 10, 19)},
+        {"class_id": 100, "subject_id": 10, "original_date": date(2026, 10, 20)},
+        {"class_id": 100, "subject_id": 10, "original_date": date(2026, 10, 21)},
+    ]
+
+    result = solve_semester_schedule(data)
+
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 6
+    first_week = [s for s in result["sessions"] if s["session_date"] <= date(2026, 10, 25)]
+    second_week = [s for s in result["sessions"] if s["session_date"] >= date(2026, 10, 26)]
+    assert len(first_week) == 2
+    assert len(second_week) == 4
+
+
 def test_teacher_unavailability_is_respected():
     data = _base_data()
     data["unavailable_pairs"] = [(20, 1), (20, 2)]
