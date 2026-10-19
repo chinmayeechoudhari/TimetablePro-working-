@@ -122,6 +122,14 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if target <= 0:
             continue
         weekly_candidates = {}
+        closure_affected_weeks = set()
+        day = start
+        while day <= end:
+            eligible, closed = _event_state(day, events, working_days)
+            if closed and day.strftime("%A") in working_days:
+                closure_affected_weeks.add(_week_starts(day, day)[0])
+            day += timedelta(days=1)
+
         for week in weeks:
             week_end = week + timedelta(days=6)
             matching = [
@@ -132,14 +140,17 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             weekly_candidates[week] = matching
             semester_vars.extend(matching)
 
-        # A closure does not need to wipe out an entire week before makeup is
-        # needed. Let the class/subject exceed its normal weekly target by the
-        # number of its displaced sessions, so CP-SAT can recover them in any
-        # later eligible week inside the semester date range. The semester-wide
-        # target below remains authoritative; this is capacity, not extra demand.
+        # If an approved closure was imported before the first timetable exists,
+        # there are no previous sessions to count. Estimate makeup capacity from
+        # affected calendar weeks as well. Capacity only expands in the affected
+        # week and weeks after it; earlier weeks cannot "borrow" future demand.
         displaced_count = makeup_counts[(subject["class_id"], subject["subject_id"])]
-        weekly_capacity = target + displaced_count
         for week, matching in weekly_candidates.items():
+            earlier_or_current_closures = sum(
+                1 for closure_week in closure_affected_weeks if closure_week <= week
+            )
+            estimated_displaced = target * earlier_or_current_closures
+            weekly_capacity = target + max(displaced_count, estimated_displaced)
             if matching:
                 weekly_total = sum(matching)
                 model.Add(weekly_total <= weekly_capacity)
