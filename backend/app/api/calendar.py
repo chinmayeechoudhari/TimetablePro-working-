@@ -175,15 +175,18 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
     """Permanently remove one semester's data while preserving shared structure and faculty.
 
     Academic groups, divisions/classes, global teachers, rooms, and time slots are
-    deliberately retained. Subject definitions and assignments for the term's
-    academic year are cleared because the current schema scopes these records to
-    academic year/group rather than directly to a semester.
+    deliberately retained. The legacy schema stores subjects and timetable rows
+    globally rather than directly on a term, so all generated timetable snapshots,
+    subject definitions, assignments, and legacy timetable rows are cleared to
+    prevent stale semester data and foreign-key references from surviving.
     """
     term = get_term_or_404(db, term_id)
     try:
         # Delete version snapshots through the ORM so scheduled-session
         # relationships are removed even when database cascade settings differ.
-        versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).all()
+        # Subject IDs are shared by legacy timetable snapshots, so remove all
+        # generated snapshots as part of switching to the next single semester.
+        versions = db.query(TimetableVersion).all()
         for version in versions:
             db.delete(version)
         db.flush()
