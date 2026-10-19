@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import UpcomingEventsModal from './UpcomingEventsModal'
 import { API_BASE } from '../lib/config'
@@ -81,7 +80,6 @@ const inputCls = {
 }
 
 export default function CalendarPage() {
-  const navigate = useNavigate()
   const [terms, setTerms] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
@@ -1155,7 +1153,6 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {versionError && <div role="alert" style={{margin:'12px 0',padding:12,border:'1px solid #fecaca',background:'#fef2f2',color:'#991b1b',borderRadius:10}}>{versionError}</div>}
         {/* ─── Filter & View Switcher Row ─── */}
         <div className="cal-filter-row">
           <div className="cal-pills-group">
