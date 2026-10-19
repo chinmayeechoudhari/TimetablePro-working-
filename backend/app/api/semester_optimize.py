@@ -101,15 +101,31 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         .filter(SubjectDefinition.term_id == term_id)
         .all()
     )
-    subject_ids = {assignment.subject_id for assignment in assignments}
-    subjects = db.query(Subject).filter(
-        Subject.subject_id.in_(subject_ids),
-        Subject.term_id == term_id,
-    ).all() if subject_ids else []
+    # Include every subject configured for this semester, not only subjects
+    # that already have an assignment. Otherwise unassigned subjects could be
+    # silently omitted from the generated timetable.
+    subjects = db.query(Subject).filter(Subject.term_id == term_id).all()
     teacher_subject_pairs = sorted({
         (assignment.teacher_id, assignment.subject_id)
         for assignment in assignments
     })
+    assigned_subject_ids = {assignment.subject_id for assignment in assignments}
+    unassigned_subjects = [
+        subject for subject in subjects if subject.subject_id not in assigned_subject_ids
+    ]
+    if unassigned_subjects:
+        missing = ", ".join(
+            f"subject {subject.subject_name} (class {subject.class_id})"
+            for subject in unassigned_subjects[:12]
+        )
+        extra = f" and {len(unassigned_subjects) - 12} more" if len(unassigned_subjects) > 12 else ""
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Every subject in the selected semester needs a faculty assignment "
+                f"before optimization. Missing assignments: {missing}{extra}."
+            ),
+        )
 
     if not slots or not subjects or not teachers or not rooms:
         raise HTTPException(
