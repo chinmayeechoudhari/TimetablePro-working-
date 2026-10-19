@@ -296,6 +296,7 @@ export default function CalendarPage() {
 
   async function optimizeAfterCalendarApproval(eventTitle) {
     if (!selectedTerm) return
+    setRescheduleReport(null)
     try {
       const response = await axios.post(`${API}/semester/terms/${selectedTerm.term_id}/optimize`)
       const report = response.data.calendar_reschedule_report
