@@ -239,7 +239,7 @@ def _serialize_version(item, include_sessions=False):
 def list_versions(term_id: int, db: Session = Depends(get_db)):
     _term(db, term_id)
     rows = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
-    return [_serialize_version(row) for row in rows]
+    return [_serialize_version(row, include_sessions=True) for row in rows]
 
 
 @router.post("/terms/{term_id}/versions/draft", status_code=201)
