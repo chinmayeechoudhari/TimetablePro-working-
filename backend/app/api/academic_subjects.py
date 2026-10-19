@@ -163,7 +163,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{group_id}/{subject_name}")
-def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, term_id: int | None = None, db: Session = Depends(get_db)):
+def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, term_id: int, db: Session = Depends(get_db)):
     """Update a subject that may span one or two SubjectDefinition rows
     (theory / lab components). Handles switching between theory-only,
     lab-only and theory+lab, renaming, and period changes, keeping the
@@ -172,7 +172,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
     if not group:
         raise HTTPException(status_code=404, detail="Academic group not found.")
 
-    if term_id is not None and not db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first():
+    if not db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first():
         raise HTTPException(status_code=404, detail="Academic term not found.")
 
     old_name = subject_name.strip()
@@ -180,8 +180,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
         SubjectDefinition.group_id == group_id,
         SubjectDefinition.subject_name.ilike(old_name),
     )
-    if term_id is not None:
-        query = query.filter(SubjectDefinition.term_id == term_id)
+    query = query.filter(SubjectDefinition.term_id == term_id)
     existing_defs = query.all()
     if not existing_defs:
         raise HTTPException(status_code=404, detail="Subject not found.")
@@ -202,7 +201,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
                 db.query(SubjectDefinition)
                 .filter(
                     SubjectDefinition.group_id == group_id,
-                    SubjectDefinition.term_id == term_id if term_id is not None else SubjectDefinition.term_id.is_(None),
+                    SubjectDefinition.term_id == term_id,
                     SubjectDefinition.subject_name.ilike(new_name),
                     SubjectDefinition.subject_type == component_type,
                 )
@@ -228,7 +227,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
                 .filter(TeachingAssignment.definition_id == definition.definition_id)
                 .count()
             )
-            _delete_subject_rows(db, class_ids, old_name, old_type, term_id if term_id is not None else definition.term_id)
+            _delete_subject_rows(db, class_ids, old_name, old_type, term_id)
             db.delete(definition)  # cascades to TeachingAssignment
 
     # 2) Update surviving components / create newly-added ones.
@@ -242,8 +241,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
                 Subject.subject_name.ilike(old_name),
                 Subject.subject_type == component_type,
             )
-            if term_id is not None:
-                subject_query = subject_query.filter(Subject.term_id == term_id)
+            subject_query = subject_query.filter(Subject.term_id == term_id)
             rows = subject_query.all()
             for row in rows:
                 row.subject_name = new_name
@@ -281,7 +279,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
 
 
 @router.delete("/{group_id}/{subject_name}")
-def delete_subject(group_id: int, subject_name: str, term_id: int | None = None, db: Session = Depends(get_db)):
+def delete_subject(group_id: int, subject_name: str, term_id: int, db: Session = Depends(get_db)):
     """Delete a subject (all of its theory/lab components) from every
     division of the academic group."""
     group = db.query(AcademicGroup).filter(AcademicGroup.group_id == group_id).first()
@@ -309,7 +307,7 @@ def delete_subject(group_id: int, subject_name: str, term_id: int | None = None,
     )
 
     for definition in definitions:
-        _delete_subject_rows(db, class_ids, name, definition.subject_type, term_id if term_id is not None else definition.term_id)
+        _delete_subject_rows(db, class_ids, name, definition.subject_type, term_id)
         db.delete(definition)  # cascades to TeachingAssignment
 
     db.commit()
