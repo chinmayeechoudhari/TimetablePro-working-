@@ -180,11 +180,6 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
     academic year/group rather than directly to a semester.
     """
     term = get_term_or_404(db, term_id)
-    def normalize_year(value):
-        return (value or "").strip().casefold().replace("–", "-").replace("—", "-").replace(" ", "")
-
-    academic_year = normalize_year(term.academic_year)
-
     try:
         # Delete version snapshots through the ORM so scheduled-session
         # relationships are removed even when database cascade settings differ.
