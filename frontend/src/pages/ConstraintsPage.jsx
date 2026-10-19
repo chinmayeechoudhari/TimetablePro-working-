@@ -528,10 +528,10 @@ export default function ConstraintsPage() {
         if (!alive) return
         const list = Array.isArray(res.data) ? res.data : []
         setTerms(list)
-        const chosen = list.find(term => term.term_name?.trim().toLowerCase() === "semester 1")
-          || list.find(term => term.status === "active")
-          || list[0]
-        if (chosen) setSelectedTermId(String(chosen.term_id))
+        const chosen = list.find(term => term.status === "active") || null
+        const activeTerms = chosen ? [chosen] : []
+        setTerms(activeTerms)
+        setSelectedTermId(chosen ? String(chosen.term_id) : "")
       })
       .catch(err => { if (alive) setError(err?.response?.data?.detail || "Could not load academic semesters") })
       .finally(() => { if (alive) setTermsLoading(false) })
@@ -743,7 +743,7 @@ export default function ConstraintsPage() {
             Apply new constraints to
             <select value={selectedTermId} onChange={e => { setSelectedTermId(e.target.value); setPreview(null); setConfirmedPreview(null); setPreviewWarnings([]); setClarification(null); setError(null); setSuccess(null) }} disabled={termsLoading} style={{ padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 9, background: "#fff", color: "#111827", fontSize: 13 }}>
               <option value="">Global — all semesters</option>
-              {terms.map(term => <option key={term.term_id} value={String(term.term_id)}>{term.term_name} · {term.academic_year}</option>)}
+              {terms.map(term => <option key={term.term_id} value={String(term.term_id)}>{term.term_name} · {term.academic_year} (active)</option>)}
             </select>
           </label>
           <div style={{ padding: "8px 12px", borderRadius: 9, background: selectedTermId ? "#eff6ff" : "#f1f5f9", color: selectedTermId ? "#1d4ed8" : "#475569", fontSize: 12, fontWeight: 700 }}>
