@@ -45,26 +45,28 @@ def migrate() -> None:
         # term; otherwise use the latest term in that same academic year.
         connection.execute(text("""
             UPDATE subject_definition
-            SET term_id = (
-                SELECT t.term_id
-                FROM academic_group g
-                JOIN academic_term t
-                  ON lower(trim(replace(replace(t.academic_year, '–', '-'), '—', '-')))
-                   = lower(trim(replace(replace(g.academic_year, '–', '-'), '—', '-')))
-                WHERE g.group_id = subject_definition.group_id
-                ORDER BY CASE WHEN lower(trim(t.status)) = 'active' THEN 0 ELSE 1 END,
-                         t.start_date DESC, t.term_id DESC
-                LIMIT 1
+            SET term_id = COALESCE(
+                (
+                    SELECT t.term_id
+                    FROM academic_group g
+                    JOIN academic_term t
+                      ON lower(trim(replace(replace(t.academic_year, '–', '-'), '—', '-')))
+                       = lower(trim(replace(replace(g.academic_year, '–', '-'), '—', '-')))
+                    WHERE g.group_id = subject_definition.group_id
+                    ORDER BY CASE WHEN lower(trim(t.status)) = 'active' THEN 0 ELSE 1 END,
+                             t.start_date DESC, t.term_id DESC
+                    LIMIT 1
+                ),
+                (
+                    SELECT t.term_id
+                    FROM academic_term t
+                    ORDER BY CASE WHEN lower(trim(t.status)) = 'active' THEN 0 ELSE 1 END,
+                             t.start_date DESC, t.term_id DESC
+                    LIMIT 1
+                )
             )
             WHERE term_id IS NULL
-              AND EXISTS (
-                SELECT 1
-                FROM academic_group g
-                JOIN academic_term t
-                  ON lower(trim(replace(replace(t.academic_year, '–', '-'), '—', '-')))
-                   = lower(trim(replace(replace(g.academic_year, '–', '-'), '—', '-')))
-                WHERE g.group_id = subject_definition.group_id
-              )
+              AND EXISTS (SELECT 1 FROM academic_term)
         """))
 
         # Connect the class-level Subject rows to the term of their matching
