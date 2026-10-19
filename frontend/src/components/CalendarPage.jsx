@@ -89,6 +89,7 @@ export default function CalendarPage() {
     preferred_replacement_date: '', preferred_replacement_period: ''
   })
   const [events, setEvents] = useState([])
+  const [rescheduleReport, setRescheduleReport] = useState(null)
 
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
   const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
@@ -1160,6 +1161,23 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        {rescheduleReport?.unresolved_sessions?.length > 0 && (
+          <div role="alert" style={{margin:'12px 0 16px',padding:14,border:'1px solid #fbbf24',background:'#fffbeb',color:'#78350f',borderRadius:10}}>
+            <div style={{fontWeight:800,fontSize:13,marginBottom:8}}>Unresolved makeup sessions</div>
+            <div style={{fontSize:12,lineHeight:1.55,marginBottom:8}}>
+              The solver preserved hard constraints but could not place every makeup session inside this semester. Review these items and adjust availability, rooms, assignments or preferences before optimizing again.
+            </div>
+            <div style={{display:'grid',gap:6}}>
+              {rescheduleReport.unresolved_sessions.map((item,index) => (
+                <div key={`${item.original_session_id ?? 'new'}-${item.class_id}-${item.subject_id}-${index}`} style={{padding:'7px 9px',background:'rgba(255,255,255,.65)',borderRadius:7}}>
+                  <strong>{item.date ? `Original date ${item.date}` : 'Makeup session'} · Class {item.class_id} · Subject {item.subject_id}</strong>
+                  {item.period_number ? ` · Period ${item.period_number}` : ''}
+                  <div>{item.reason}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* ─── Filter & View Switcher Row ─── */}
         <div className="cal-filter-row">
           <div className="cal-pills-group">
