@@ -325,7 +325,7 @@ export default function CalendarPage() {
       form.append('file', calendarFile)
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/upload`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : ''))
+      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : '') + ' Review imported entries and approve valid closures; then regenerate the timetable to apply calendar changes.')
       setCalendarFile(null)
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not import the calendar file.')
@@ -341,7 +341,7 @@ export default function CalendarPage() {
         source: event.source, approval_status: 'approved', notes: event.notes,
       })
       await loadEvents(selectedTerm.term_id)
-      setNotice(`Approved "${event.title}".`)
+      setNotice(`Approved "${event.title}". If this is a closure, regenerate the timetable to reschedule affected sessions.`)
     } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
   }
 
@@ -355,7 +355,7 @@ export default function CalendarPage() {
       await loadEvents(selectedTerm.term_id)
       setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '' })
       setShowEventForm(false)
-      setNotice('Calendar event saved.')
+      setNotice('Calendar event saved for review. After approving a closure, regenerate the timetable to apply calendar changes.')
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not save this calendar event.')
     } finally { setSavingEvent(false) }
