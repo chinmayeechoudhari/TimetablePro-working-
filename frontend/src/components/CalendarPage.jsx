@@ -357,7 +357,7 @@ export default function CalendarPage() {
 
   async function deleteSelectedTerm() {
     if (!selectedTerm) return
-    if (!window.confirm('Permanently remove ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + ')? This also clears all generated timetable versions, subject definitions, teaching assignments, legacy timetable rows, and semester-scoped constraints because the current database stores these outside a semester-specific boundary. Departments, classes/divisions, global faculty, rooms, time slots, and global constraints will be kept. This cannot be undone.')) return
+    if (!window.confirm('Permanently remove ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + ')? This removes only this semester’s calendar events, saved timetable versions, subjects, teaching assignments and semester-scoped constraints. Global departments, classes/divisions, faculty, rooms, time slots, global constraints and other semesters will remain. This cannot be undone.')) return
     setError(''); setNotice('')
     try {
       await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
