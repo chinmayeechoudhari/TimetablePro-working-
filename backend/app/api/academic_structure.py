@@ -1,4 +1,5 @@
 from typing import List
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,6 +10,16 @@ from app.core.config import get_db
 from app.models.models import AcademicGroup, Class, Division
 
 router = APIRouter(prefix="/academic-structure", tags=["academic-structure"])
+
+
+def _normalize_academic_year(value: str) -> str:
+    """Store equivalent AY labels in one stable YYYY-YY format."""
+    text = re.sub(r"\s+", "", str(value or "").strip()).replace("–", "-").replace("—", "-").replace("−", "-")
+    match = re.fullmatch(r"(\d{4})[-/](\d{2}|\d{4})", text)
+    if match:
+        start, end = match.groups()
+        return f"{start}-{end[-2:]}"
+    return text
 
 
 class YearConfig(BaseModel):
@@ -68,7 +79,7 @@ def list_structure(db: Session = Depends(get_db)):
 
 @router.post("", status_code=201)
 def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get_db)):
-    academic_year = payload.academic_year.strip()
+    academic_year = _normalize_academic_year(payload.academic_year)
     department = payload.department.strip()
     if not academic_year or not department:
         raise HTTPException(status_code=400, detail="Academic year and department are required.")
@@ -161,7 +172,7 @@ def remove_department(department: str, db: Session = Depends(get_db)):
 
 @router.post("/adopt-class")
 def adopt_existing_class(payload: AdoptClassRequest, db: Session = Depends(get_db)):
-    academic_year = payload.academic_year.strip()
+    academic_year = _normalize_academic_year(payload.academic_year)
     department = payload.department.strip()
     division_name = payload.division_name.strip().upper()
     if not academic_year or not department:
