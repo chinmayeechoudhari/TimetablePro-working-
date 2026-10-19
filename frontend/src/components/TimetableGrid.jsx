@@ -113,6 +113,8 @@ function yearLabel(n) {
 
 export default function TimetableGrid() {
   const [timetable, setTimetable] = useState([])
+  const [legacyTimetable, setLegacyTimetable] = useState([])
+  const [semesterVersion, setSemesterVersion] = useState(null)
   const [teachers, setTeachers] = useState({})
   const [subjects, setSubjects] = useState({})
   const [rooms, setRooms] = useState({})
@@ -150,12 +152,45 @@ export default function TimetableGrid() {
 
   useEffect(() => {
     let alive = true
-    if (!activeTerm?.term_id) { setCalendarEvents([]); return () => { alive = false } }
+    if (!activeTerm?.term_id) {
+      setCalendarEvents([])
+      setSemesterVersion(null)
+      setTimetable(legacyTimetable)
+      return () => { alive = false }
+    }
     axios.get(`${BASE}/calendar/terms/${activeTerm.term_id}/events`)
       .then(response => { if (alive) setCalendarEvents((response.data || []).filter(item => item.approval_status === 'approved')) })
       .catch(() => { if (alive) setCalendarEvents([]) })
+
+    // The semester CP-SAT version is the source of truth for the weekly view.
+    // Prefer the published version; if none exists, show the latest draft and
+    // label it clearly. Only fall back to the legacy weekly template when no
+    // semester version exists for this term.
+    axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
+      .then(response => {
+        if (!alive) return
+        const versions = response.data || []
+        const chosen = versions.find(item => item.status === 'published') || versions[0] || null
+        if (chosen) {
+          setSemesterVersion(chosen)
+          setTimetable((chosen.sessions || []).map(session => ({
+            ...session,
+            session_date: session.date || session.session_date,
+          })))
+        } else {
+          setSemesterVersion(null)
+          setTimetable(legacyTimetable)
+        }
+      })
+      .catch(err => {
+        console.error('Unable to load semester timetable version:', err)
+        if (alive) {
+          setSemesterVersion(null)
+          setTimetable(legacyTimetable)
+        }
+      })
     return () => { alive = false }
-  }, [activeTerm?.term_id])
+  }, [activeTerm?.term_id, legacyTimetable])
 
 
 
@@ -176,7 +211,7 @@ export default function TimetableGrid() {
       const classMap = {}; cRes.data.forEach(c => { classMap[c.class_id] = c.class_name })
       const colors = {}; sRes.data.forEach((s, i) => { colors[s.subject_id] = COLORS[i % COLORS.length] })
 
-      setTimetable(ttRes.data); setTeachers(teacherMap); setSubjects(subjectMap)
+      setLegacyTimetable(ttRes.data); setTimetable(ttRes.data); setTeachers(teacherMap); setSubjects(subjectMap)
       setRooms(roomMap); setClasses(classMap); setSubjectColors(colors)
       setAllClasses(cRes.data); setAllTeachers(tRes.data); setAllRooms(rRes.data)
       setSlots(slRes.data)
@@ -229,7 +264,13 @@ export default function TimetableGrid() {
   const getCell = (fKey, fVal, day, period) => {
     const slotId = getSlotId(day, period)
     if (!slotId) return null
-    return timetable.find(t => t[fKey] === fVal && t.slot_id === slotId) || null
+    const targetDate = dateKey(dateForWeekday(day))
+    return timetable.find(t =>
+      t[fKey] === fVal &&
+      (semesterVersion
+        ? (t.session_date === targetDate && t.period_number === period)
+        : t.slot_id === slotId)
+    ) || null
   }
 
   const switchView = (v) => {
@@ -461,6 +502,7 @@ export default function TimetableGrid() {
             </div>
             <div style={{ marginTop: 3, fontSize: 11, color: '#64748b' }}>
               Showing dates for the current week{activeTerm ? ` · ${activeTerm.academic_year} ${activeTerm.term_name}` : ''}. Approved closures suppress class cards; approved working-day overrides take precedence.
+              {semesterVersion && <span style={{ display: 'inline-block', marginLeft: 6, padding: '2px 7px', borderRadius: 999, background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7', color: semesterVersion.status === 'published' ? '#166534' : '#92400e', fontWeight: 800 }}>Semester v{semesterVersion.version_number} · {semesterVersion.status}</span>}
             </div>
           </div>
         </div>
@@ -477,9 +519,9 @@ export default function TimetableGrid() {
             <Icon name="printer" size={16} />
             Export all views
           </button>
-          <button type="button" className="secondary-action" onClick={() => { window.location.href = '/semester' }}>
+          <button type="button" className="secondary-action" onClick={() => { window.location.href = '/calendar' }}>
             <Icon name="calendar" size={16} />
-            Open dated semester timetable
+            Open academic calendar
           </button>
         </div>
 
