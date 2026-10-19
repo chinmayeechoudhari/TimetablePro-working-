@@ -193,9 +193,8 @@ export default function CalendarPage() {
     const response = await axios.get(`${API}/calendar/terms`)
     setTerms(response.data)
     const preferred = response.data.find(term => String(term.term_id) === String(preferId))
-    const semesterOne = response.data.find(term => term.term_name?.trim().toLowerCase() === 'semester 1')
     const active = response.data.find(term => term.status === 'active')
-    const next = preferred || semesterOne || active || response.data[0]
+    const next = preferred || active || response.data[0]
     setSelectedId(next ? String(next.term_id) : '')
     if (next) {
       const today = localDateKey(new Date())
@@ -217,7 +216,7 @@ export default function CalendarPage() {
         if (!alive) return
         const list = response.data
         setTerms(list)
-        const chosen = list.find(term => term.term_name?.trim().toLowerCase() === 'semester 1') || list.find(term => term.status === 'active') || list[0]
+        const chosen = list.find(term => term.status === 'active') || list[0]
         if (chosen) {
           setSelectedId(String(chosen.term_id))
           const today = localDateKey(new Date())
@@ -364,15 +363,18 @@ export default function CalendarPage() {
 
   async function deleteSelectedTerm() {
     if (!selectedTerm) return
-    if (!window.confirm('Delete ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + ')? This is only allowed when the semester has no timetable history.')) return
+    if (!window.confirm('Permanently remove ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + '), including its calendar, generated timetables, semester-specific subjects, and assignments? Departments, classes/divisions, and global faculty will be kept. This cannot be undone.')) return
     setError(''); setNotice('')
     try {
       await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
       const remaining = terms.filter(t => String(t.term_id) !== String(selectedTerm.term_id))
       setTerms(remaining)
-      const preferred = remaining.find(t => /semester\s*1/i.test(t.term_name)) || remaining[0]
+      const preferred = remaining.find(t => t.status === 'active') || remaining[0]
       setSelectedId(preferred ? String(preferred.term_id) : '')
-      setNotice('Semester deleted.')
+      if (!preferred) setShowTermForm(true)
+      setNotice(preferred
+        ? 'Semester removed. The next remaining semester is now active.'
+        : 'Semester removed. Create a new semester to continue.')
     } catch (e) {
       const d = e.response?.data?.detail
       setError(typeof d === 'string' ? d : d?.message || 'This semester could not be deleted. Preserve semesters that already have timetable history.')
@@ -1266,22 +1268,11 @@ export default function CalendarPage() {
             {/* Pill 1: Academic Year & Term */}
             <div className="cal-pill">
               <CapIcon />
-              {terms.length ? (
-                <select
-                  value={selectedId}
-                  onChange={e => setSelectedId(e.target.value)}
-                  aria-label="Select term"
-                >
-                  {terms.map(t => (
-                    <option key={t.term_id} value={t.term_id}>
-                      {t.academic_year} · {t.term_name}
-                    </option>
-                  ))}
-                </select>
+              {selectedTerm ? (
+                <span>{selectedTerm.academic_year} · {selectedTerm.term_name}</span>
               ) : (
-                <span>2026 – 27 · Semester 1</span>
+                <span>No active semester — create one</span>
               )}
-              <ChevronDown />
             </div>
 
             {/* Pill 2: Term Date Range */}
@@ -1487,7 +1478,7 @@ export default function CalendarPage() {
             className="cal-action-pill danger"
             disabled={!selectedTerm}
             onClick={deleteSelectedTerm}
-            title="Only semesters without timetable history can be deleted"
+            title="Permanently remove this semester and its semester-specific data; shared structure and global faculty are preserved"
           >
             <TrashIcon /> Delete semester
           </button>
