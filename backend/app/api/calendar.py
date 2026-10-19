@@ -203,7 +203,7 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
             except (TypeError, ValueError):
                 continue
             scope = stored.get("scope") if isinstance(stored, dict) else None
-            if isinstance(scope, dict) and str(scope.get("term_id")) == str(term_id):
+            if isinstance(scope, dict) and scope.get("term_id") is not None:
                 db.delete(rule)
 
         # The legacy schema does not attach subjects directly to a term.
