@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
-import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
+import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/AcademicShortCodes'
 import Icon from './AcademicIcon'
 
 import { API_BASE } from '../lib/config'
