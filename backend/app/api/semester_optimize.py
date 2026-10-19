@@ -158,6 +158,8 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         "end_date": event.end_date,
         "is_closure": event.is_closure,
         "is_working_day_override": event.is_working_day_override,
+        "preferred_replacement_date": event.preferred_replacement_date,
+        "preferred_replacement_period": event.preferred_replacement_period,
     } for event in events]
 
     availability = db.query(TeacherAvailability).filter(TeacherAvailability.is_available.is_(False)).all()
