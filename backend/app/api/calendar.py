@@ -737,6 +737,8 @@ def update_event(event_id: int, payload: EventCreate, db: Session = Depends(get_
     term = get_term_or_404(db, event.term_id)
     if payload.start_date < term.start_date or payload.end_date > term.end_date:
         raise HTTPException(status_code=422, detail="Calendar events must fall within the selected term dates.")
+    if payload.preferred_replacement_date and not (term.start_date <= payload.preferred_replacement_date <= term.end_date):
+        raise HTTPException(status_code=422, detail="Preferred replacement date must fall within the selected term.")
     overlaps = _overlapping_events(
         db.query(CalendarEvent).filter(
             CalendarEvent.term_id == event.term_id,
