@@ -180,7 +180,10 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
     academic year/group rather than directly to a semester.
     """
     term = get_term_or_404(db, term_id)
-    academic_year = (term.academic_year or "").strip().casefold()
+    def normalize_year(value):
+        return (value or "").strip().casefold().replace("–", "-").replace("—", "-").replace(" ", "")
+
+    academic_year = normalize_year(term.academic_year)
 
     try:
         # Delete version snapshots through the ORM so scheduled-session
@@ -211,7 +214,7 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
         groups = db.query(AcademicGroup).all()
         scoped_group_ids = [
             group.group_id for group in groups
-            if (group.academic_year or "").strip().casefold() == academic_year
+            if normalize_year(group.academic_year) == academic_year
         ]
         if scoped_group_ids:
             definitions = db.query(SubjectDefinition).filter(
