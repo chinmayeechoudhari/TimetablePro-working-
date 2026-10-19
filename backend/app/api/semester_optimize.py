@@ -179,6 +179,24 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "is_locked": session.is_locked,
         } for session in latest.sessions if session.is_locked]
 
+    makeup_preferences = []
+    closure_events = [event for event in events if event.is_closure]
+    if latest and closure_events:
+        for old_session in latest.sessions:
+            closure = next((
+                event for event in closure_events
+                if event.start_date <= old_session.session_date <= event.end_date
+            ), None)
+            if closure:
+                makeup_preferences.append({
+                    "class_id": old_session.class_id,
+                    "subject_id": old_session.subject_id,
+                    "original_date": old_session.session_date,
+                    "preferred_date": closure.preferred_replacement_date,
+                    "preferred_period": closure.preferred_replacement_period,
+                    "event_id": closure.event_id,
+                })
+
     try:
         result = solve_semester_schedule({
             "db": db,
@@ -206,6 +224,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "teacher_subjects": teacher_subject_pairs,
             "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
             "locked_sessions": locked_sessions,
+            "makeup_preferences": makeup_preferences,
         }, max_time_seconds=max_time_seconds)
     
     
