@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
+from app.models.models import AcademicGroup, Constraint, Division, SubjectDefinition, Timetable, TeachingAssignment
 from app.models.semester import TimetableVersion
 
 router = APIRouter(prefix="/calendar", tags=["academic-calendar"])
@@ -161,12 +162,75 @@ def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)
 
 @router.delete("/terms/{term_id}", status_code=204)
 def delete_term(term_id: int, db: Session = Depends(get_db)):
+    """Permanently remove one semester's data while preserving shared structure and faculty.
+
+    Academic groups, divisions/classes, global teachers, rooms, and time slots are
+    deliberately retained. Subject definitions and assignments for the term's
+    academic year are cleared because the current schema scopes these records to
+    academic year/group rather than directly to a semester.
+    """
     term = get_term_or_404(db, term_id)
-    versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).count()
-    if versions:
-        raise HTTPException(status_code=409, detail="This semester has timetable history. Archive it instead of deleting it; existing drafts and published versions must be preserved.")
-    db.delete(term)
-    db.commit()
+    academic_year = (term.academic_year or "").strip().casefold()
+
+    try:
+        # Delete version snapshots through the ORM so scheduled-session
+        # relationships are removed even when database cascade settings differ.
+        versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).all()
+        for version in versions:
+            db.delete(version)
+        db.flush()
+
+        # Remove dated calendar events before the term. This also avoids stale
+        # source-event references in installations without ON DELETE SET NULL.
+        db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id).delete(synchronize_session=False)
+
+        # Dynamic constraints are stored in JSON envelopes; legacy/global rules
+        # are intentionally retained.
+        for rule in db.query(Constraint).all():
+            try:
+                stored = json.loads(rule.parameters_json or "{}")
+            except (TypeError, ValueError):
+                continue
+            scope = stored.get("scope") if isinstance(stored, dict) else None
+            if isinstance(scope, dict) and str(scope.get("term_id")) == str(term_id):
+                db.delete(rule)
+
+        # The current data model attaches subjects to academic groups, not terms.
+        # Clear those subject definitions/assignments for this academic year but
+        # keep the groups and divisions so department/class counts survive.
+        groups = db.query(AcademicGroup).all()
+        scoped_group_ids = [
+            group.group_id for group in groups
+            if (group.academic_year or "").strip().casefold() == academic_year
+        ]
+        if scoped_group_ids:
+            definitions = db.query(SubjectDefinition).filter(
+                SubjectDefinition.group_id.in_(scoped_group_ids)
+            ).all()
+            definition_ids = [definition.definition_id for definition in definitions]
+            if definition_ids:
+                db.query(TeachingAssignment).filter(
+                    TeachingAssignment.definition_id.in_(definition_ids)
+                ).delete(synchronize_session=False)
+                for definition in definitions:
+                    db.delete(definition)
+
+            # Legacy timetable rows for these retained classes must not leave
+            # the previous semester's subjects visible in the weekly timetable.
+            division_rows = db.query(Division).filter(
+                Division.group_id.in_(scoped_group_ids)
+            ).all()
+            class_ids = [division.class_id for division in division_rows]
+            if class_ids:
+                db.query(Timetable).filter(Timetable.class_id.in_(class_ids)).delete(
+                    synchronize_session=False
+                )
+
+        db.delete(term)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return None
 
 
