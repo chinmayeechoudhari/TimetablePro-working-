@@ -223,7 +223,7 @@ def test_working_days_accepts_valid_configured_days():
 
 def _persistence_db(monkeypatch, solver_result):
     from app.models.calendar import CalendarEvent
-    from app.models.models import Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TimeSlot
+    from app.models.models import Room, Subject, Teacher, TeacherAvailability, TeachingAssignment, TimeSlot
     from app.models.semester import ScheduledSession, TimetableVersion
     import app.api.semester_optimize as api
 
