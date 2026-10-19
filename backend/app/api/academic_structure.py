@@ -81,10 +81,9 @@ def list_structure(db: Session = Depends(get_db)):
 
 @router.post("", status_code=201)
 def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get_db)):
-    academic_year = _normalize_academic_year(payload.academic_year)
     department = payload.department.strip()
-    if not academic_year or not department:
-        raise HTTPException(status_code=400, detail="Academic year and department are required.")
+    if not department:
+        raise HTTPException(status_code=400, detail="Department is required.")
 
     years = {item.year_of_study: item.division_count for item in payload.years}
     if not years:
@@ -132,7 +131,7 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
 
     db.commit()
     return {
-        "message": "Academic structure created.",
+        "message": "Global academic structure saved. Existing department/year groups were reused, so classes and divisions were not duplicated across semesters.",
         "groups": [
             {"group_id": g.group_id, "department": g.department, "year_of_study": g.year_of_study,
              "divisions": [d.division_name for d in sorted(g.divisions, key=lambda x: x.division_name)]}
