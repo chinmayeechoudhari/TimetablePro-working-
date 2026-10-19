@@ -143,7 +143,7 @@ export default function TimetableGrid() {
       if (!alive) return
       const rows = response.data || []
       setTerms(rows)
-      setActiveTerm(rows.find(item => item.status === 'active') || rows[0] || null)
+      setActiveTerm(rows.find(item => item.status === 'active') || null)
     }).catch(() => { if (alive) { setTerms([]); setActiveTerm(null); setCalendarEvents([]) } })
     return () => { alive = false }
   }, [])
@@ -466,12 +466,9 @@ export default function TimetableGrid() {
         </div>
 
         <div className="hero-actions no-print">
-          {terms.length > 0 && <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#475569' }}>
-            Calendar term
-            <select value={activeTerm?.term_id ?? ''} onChange={event => setActiveTerm(terms.find(term => String(term.term_id) === event.target.value) || null)} style={{ padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: 8, background: 'white', maxWidth: 220 }}>
-              {terms.map(term => <option key={term.term_id} value={term.term_id}>{term.academic_year} · {term.term_name}</option>)}
-            </select>
-          </label>}
+          {activeTerm && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#475569', padding: '9px 10px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+            Active semester: <strong>{activeTerm.academic_year} · {activeTerm.term_name}</strong>
+          </div>}
           <button type="button" className="secondary-action" onClick={handleExport}>
             <Icon name="download" size={16} />
             Export current view
