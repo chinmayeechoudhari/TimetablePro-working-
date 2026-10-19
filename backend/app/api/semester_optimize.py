@@ -214,10 +214,12 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         ) from exc
 
     if result["status"] not in {"optimal", "feasible"}:
+        reason = result.get("reason") or "The solver could not find a feasible schedule."
         raise HTTPException(status_code=409, detail={
             "message": "Semester optimization could not produce a valid schedule.",
             "status": result["status"],
-            "reason": result.get("reason"),
+            "reason": reason,
+            "diagnostic": f"Solver status: {result['status']}. {reason}",
             "locked_conflicts": result.get("locked_conflicts", []),
         })
 
