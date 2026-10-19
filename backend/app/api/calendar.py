@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date, datetime
 from typing import Literal
 
@@ -14,6 +15,16 @@ from app.models.semester import TimetableVersion
 
 router = APIRouter(prefix="/calendar", tags=["academic-calendar"])
 WEEKDAYS = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+
+
+def _normalize_academic_year(value: str) -> str:
+    """Canonicalize AY labels so terms and academic groups use the same format."""
+    text = re.sub(r"\s+", "", str(value or "").strip()).replace("–", "-").replace("—", "-").replace("−", "-")
+    match = re.fullmatch(r"(\d{4})[-/](\d{2}|\d{4})", text)
+    if match:
+        start, end = match.groups()
+        return f"{start}-{end[-2:]}"
+    return text
 
 
 class TermCreate(BaseModel):
@@ -123,7 +134,7 @@ def list_terms(db: Session = Depends(get_db)):
 @router.post("/terms", status_code=201)
 def create_term(payload: TermCreate, db: Session = Depends(get_db)):
     term = AcademicTerm(
-        academic_year=payload.academic_year.strip(),
+        academic_year=_normalize_academic_year(payload.academic_year),
         term_name=payload.term_name.strip(),
         start_date=payload.start_date,
         end_date=payload.end_date,
@@ -153,6 +164,8 @@ def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)
     data = payload.model_dump(exclude_unset=True)
     for field, value in data.items():
         if value is not None:
+            if field == "academic_year":
+                value = _normalize_academic_year(value)
             setattr(term, field, value)
     if term.status == "active":
         db.query(AcademicTerm).filter(
