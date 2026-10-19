@@ -1177,7 +1177,10 @@ export default function CalendarPage() {
                 setNotice('Semester optimization ' + result.data.status + ': draft v' + result.data.version_number + ' created with ' + result.data.session_count + ' dated sessions. Objective score: ' + (result.data.objective_value ?? 'not reported') + '.' + reportText + ' Review the draft and resolve any reported issues before publishing.')
               } catch (e) {
                 const detail = e.response?.data?.detail
-                setVersionError(typeof detail === 'string' ? detail : detail?.message || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
+                const diagnostic = typeof detail === 'string'
+                  ? detail
+                  : [detail?.message, detail?.diagnostic || (detail?.reason ? 'Reason: ' + detail.reason : ''), detail?.status ? 'Status: ' + detail.status : ''].filter(Boolean).join(' ')
+                setVersionError(diagnostic || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
               } finally { setOptimizingSemester(false) }
             }}>
               <SparklesIcon /> {optimizingSemester ? 'Optimizing…' : 'Optimize semester'}
