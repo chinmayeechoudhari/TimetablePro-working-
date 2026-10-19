@@ -12,11 +12,9 @@ def load_solver_data(db: Session) -> dict:
         AcademicTerm.status == "active"
     ).order_by(AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()).first()
     if active_term:
-        # Keep the weekly-template generator usable as a legacy fallback, but
-        # never mix subjects from multiple semesters into one generated grid.
+        # Never fall back to unscoped/older subject rows when a semester exists:
+        # an empty term must stay empty until its own subjects are configured.
         subjects = db.query(Subject).filter(Subject.term_id == active_term.term_id).all()
-        if not subjects:
-            subjects = db.query(Subject).filter(Subject.term_id.is_(None)).all()
     else:
         subjects = db.query(Subject).filter(Subject.term_id.is_(None)).all()
     teachers = db.query(Teacher).all()
