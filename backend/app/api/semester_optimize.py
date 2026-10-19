@@ -347,6 +347,31 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             })
         reschedule_report["replacements_found"] = len(reschedule_report["replacements"])
 
+    # The solver can leave an explicit shortfall when hard constraints prevent
+    # every makeup session from fitting. Surface any such remainder, including
+    # the first generation when there is no previous session ID to reference.
+    already_reported = {}
+    for unresolved in reschedule_report["unresolved_sessions"]:
+        pair = (unresolved.get("class_id"), unresolved.get("subject_id"))
+        already_reported[pair] = already_reported.get(pair, 0) + 1
+    for missing in result.get("unresolved_makeups", []):
+        pair = (missing["class_id"], missing["subject_id"])
+        remaining = max(
+            0,
+            int(missing.get("unresolved_count", 0)) - already_reported.get(pair, 0),
+        )
+        for _ in range(remaining):
+            reschedule_report["unresolved_sessions"].append({
+                "original_session_id": None,
+                "date": None,
+                "class_id": missing["class_id"],
+                "subject_id": missing["subject_id"],
+                "period_number": None,
+                "closure_event": None,
+                "reason": missing.get("reason") or "No eligible replacement slot remained within the semester range.",
+            })
+        already_reported[pair] = already_reported.get(pair, 0) + remaining
+
     next_number = (latest.version_number + 1) if latest else 1
     version = TimetableVersion(
         term_id=term_id,
