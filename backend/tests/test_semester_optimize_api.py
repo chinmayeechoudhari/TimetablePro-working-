@@ -31,6 +31,9 @@ class FakeQuery:
     def all(self):
         return self.all_result
 
+    def join(self, *args, **kwargs):
+        return self
+
 
 def test_optimize_returns_404_when_term_does_not_exist():
     db = Mock()
@@ -155,7 +158,9 @@ def test_optimize_rejects_saved_constraint_type_mismatch():
 
 
 
-def test_optimize_rejects_mismatched_academic_year_instead_of_using_global_subjects():
+def test_optimize_requires_subjects_and_assignments_for_the_selected_term():
+    from app.models.models import Room, Subject, SubjectDefinition, Teacher, TeachingAssignment, TimeSlot
+
     term = SimpleNamespace(
         term_id=7,
         academic_year="2026-27",
@@ -170,20 +175,24 @@ def test_optimize_rejects_mismatched_academic_year_instead_of_using_global_subje
             return FakeQuery(first=term)
         if model is Constraint:
             return FakeQuery(all_rows=[])
-        if model is AcademicGroup:
-            return FakeQuery(all_rows=[
-                SimpleNamespace(group_id=3, academic_year="2025-26")
-            ])
-        raise AssertionError(
-            f"Optimizer must stop on academic-year mismatch before querying {model}."
-        )
+        if model is TimeSlot:
+            return FakeQuery(all_rows=[SimpleNamespace(slot_id=1, day="Wednesday", period_number=1)])
+        if model is Teacher:
+            return FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, max_periods_per_day=6)])
+        if model is Room:
+            return FakeQuery(all_rows=[SimpleNamespace(room_id=5, room_type="classroom")])
+        if model is TeachingAssignment:
+            return FakeQuery(all_rows=[])
+        if model is Subject:
+            return FakeQuery(all_rows=[])
+        raise AssertionError(f"Unexpected database query: {model}")
 
     db.query.side_effect = query_for
     with pytest.raises(HTTPException) as exc:
         optimize_semester(term_id=7, db=db)
 
     assert exc.value.status_code == 409
-    assert "No academic groups match academic year '2026-27'" in exc.value.detail
+    assert "semester subjects" in exc.value.detail
     db.commit.assert_not_called()
     db.add.assert_not_called()
 
@@ -228,14 +237,14 @@ def _persistence_db(monkeypatch, solver_result):
     rows = {
         AcademicTerm: FakeQuery(first=term),
         Constraint: FakeQuery(count=0),
-        AcademicGroup: FakeQuery(all_rows=[]),
         TimeSlot: FakeQuery(all_rows=[SimpleNamespace(slot_id=1, day="Wednesday", period_number=1)]),
-        Subject: FakeQuery(all_rows=[SimpleNamespace(subject_id=2, class_id=3, periods_per_week=1, subject_type="theory")]),
+        TeachingAssignment: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, subject_id=2, definition_id=10)]),
+        SubjectDefinition: FakeQuery(all_rows=[SimpleNamespace(definition_id=10, term_id=7, group_id=1)]),
+        Subject: FakeQuery(all_rows=[SimpleNamespace(subject_id=2, class_id=3, periods_per_week=1, subject_type="theory", term_id=7)]),
         Teacher: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, max_periods_per_day=6)]),
         Room: FakeQuery(all_rows=[SimpleNamespace(room_id=5, room_type="classroom")]),
         CalendarEvent: FakeQuery(all_rows=[]),
         TeacherAvailability: FakeQuery(all_rows=[]),
-        TeacherSubject: FakeQuery(all_rows=[SimpleNamespace(teacher_id=4, subject_id=2)]),
         TimetableVersion: FakeQuery(first=None),
     }
     db = Mock()
