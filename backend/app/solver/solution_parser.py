@@ -7,7 +7,7 @@ from app.models.models import Timetable
 logger = logging.getLogger("timetable.solver")
 
 
-def parse_and_save_solution(solver, assign, db: Session):
+def parse_and_save_solution(solver, assign, db: Session, scope_subject_ids=None):
     """Read solved BoolVars and write Timetable rows to DB."""
 
     new_entries = []
