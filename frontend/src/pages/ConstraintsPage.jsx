@@ -527,7 +527,6 @@ export default function ConstraintsPage() {
       .then(res => {
         if (!alive) return
         const list = Array.isArray(res.data) ? res.data : []
-        setTerms(list)
         const chosen = list.find(term => term.status === "active") || null
         const activeTerms = chosen ? [chosen] : []
         setTerms(activeTerms)
