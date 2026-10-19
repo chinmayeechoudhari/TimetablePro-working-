@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import (AcademicGroup, Constraint, Division, Room, Subject, Teacher, TeacherAvailability, TeacherSubject, TeachingAssignment, TimeSlot)
+from app.models.models import (Constraint, Room, Subject, SubjectDefinition, Teacher, TeacherAvailability, TeachingAssignment, TimeSlot)
 from app.models.semester import ScheduledSession, TimetableVersion
 from app.constraints.schemas import GeneratedConstraint
 from app.constraints.resolver import EntityResolutionError
@@ -55,23 +55,6 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     if term.end_date < term.start_date:
         raise HTTPException(status_code=422, detail="Term end date must be on or after its start date.")
 
-    # Validate academic-year scoping before loading slots, constraints, or other
-    # scheduling data. Never proceed with another year's assignments.
-    all_groups = db.query(AcademicGroup).all()
-    term_year = _normalize_academic_year(term.academic_year)
-    scoped_groups = [
-        group for group in all_groups
-        if _normalize_academic_year(group.academic_year) == term_year
-    ]
-    if all_groups and not scoped_groups:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"No academic groups match academic year '{term.academic_year}'. "
-                "Check the term's academic year and the department/year setup; "
-                "the optimizer will not fall back to another year's subjects."
-            ),
-        )
 
     saved_constraints = db.query(Constraint).all()
     dynamic_constraints = []
@@ -109,45 +92,34 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     teachers = db.query(Teacher).all()
     rooms = db.query(Room).all()
 
-    if scoped_groups:
-        scoped_group_ids = {group.group_id for group in scoped_groups}
-        scoped_divisions = db.query(Division).filter(
-            Division.group_id.in_(scoped_group_ids)
-        ).all()
-        assignments = db.query(TeachingAssignment).filter(
-            TeachingAssignment.division_id.in_(
-                [division.division_id for division in scoped_divisions]
-            )
-        ).all() if scoped_divisions else []
-        scoped_subject_ids = {assignment.subject_id for assignment in assignments}
-        subjects = db.query(Subject).filter(
-            Subject.subject_id.in_(scoped_subject_ids)
-        ).all() if scoped_subject_ids else []
-        teacher_subject_pairs = sorted({
-            (assignment.teacher_id, assignment.subject_id)
-            for assignment in assignments
-        })
-        if not scoped_divisions or not subjects or not assignments:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"No complete teaching assignments are configured for academic year "
-                    f"'{term.academic_year}'. Add subjects and teacher assignments for "
-                    "the selected academic year before optimizing."
-                ),
-            )
-    else:
-        # Backward compatibility for installations that have not migrated to
-        # the academic-group workflow yet. Once any groups exist, we never mix
-        # legacy global subjects into a term with scoped academic data.
-        subjects = db.query(Subject).all()
-        teacher_subject_pairs = [
-            (link.teacher_id, link.subject_id)
-            for link in db.query(TeacherSubject).all()
-        ]
+    # Academic structure, divisions, rooms and teachers are global. Only the
+    # subject definitions and teaching assignments for this selected term feed
+    # its solver model; never fall back to another semester's subjects.
+    assignments = (
+        db.query(TeachingAssignment)
+        .join(SubjectDefinition, TeachingAssignment.definition_id == SubjectDefinition.definition_id)
+        .filter(SubjectDefinition.term_id == term_id)
+        .all()
+    )
+    subject_ids = {assignment.subject_id for assignment in assignments}
+    subjects = db.query(Subject).filter(
+        Subject.subject_id.in_(subject_ids),
+        Subject.term_id == term_id,
+    ).all() if subject_ids else []
+    teacher_subject_pairs = sorted({
+        (assignment.teacher_id, assignment.subject_id)
+        for assignment in assignments
+    })
 
     if not slots or not subjects or not teachers or not rooms:
-        raise HTTPException(status_code=409, detail="Add time slots, subjects, teachers, and rooms before optimizing.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The selected semester is missing required scheduling data. "
+                "Configure time slots, rooms, global faculty, semester subjects, "
+                "and faculty-subject assignments for this semester before optimizing."
+            ),
+        )
 
     events = db.query(CalendarEvent).filter(
         CalendarEvent.term_id == term_id,
@@ -166,23 +138,15 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     latest = db.query(TimetableVersion).filter(
         TimetableVersion.term_id == term_id,
     ).order_by(TimetableVersion.version_number.desc()).first()
-    locked_sessions = []
-    if latest:
-        locked_sessions = [{
-            "session_date": session.session_date,
-            "class_id": session.class_id,
-            "subject_id": session.subject_id,
-            "teacher_id": session.teacher_id,
-            "room_id": session.room_id,
-            "slot_id": session.slot_id,
-            "period_number": session.period_number,
-            "is_locked": session.is_locked,
-        } for session in latest.sessions if session.is_locked]
+    # Session locking is intentionally outside this workflow phase. Closure
+    # rescheduling is solved from the current term data without carrying locks.
 
     makeup_preferences = []
     closure_events = [event for event in events if event.is_closure]
     if latest and closure_events:
         for old_session in latest.sessions:
+            if old_session.session_status != "scheduled":
+                continue
             closure = next((
                 event for event in closure_events
                 if event.start_date <= old_session.session_date <= event.end_date
@@ -223,7 +187,6 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
             "teacher_subjects": teacher_subject_pairs,
             "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
-            "locked_sessions": locked_sessions,
             "makeup_preferences": makeup_preferences,
         }, max_time_seconds=max_time_seconds)
     
@@ -251,6 +214,8 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     affected_sessions = []
     if latest and closure_events:
         for old_session in latest.sessions:
+            if old_session.session_status != "scheduled":
+                continue
             matching_closure = next((event for event in closure_events
                 if event.start_date <= old_session.session_date <= event.end_date), None)
             if matching_closure:
@@ -274,7 +239,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         # class as a makeup session.
         unaffected_old_occurrences = set()
         for old_session in latest.sessions:
-            if not is_closed_day(old_session.session_date):
+            if old_session.session_status == "scheduled" and not is_closed_day(old_session.session_date):
                 unaffected_old_occurrences.add((
                     old_session.class_id,
                     old_session.subject_id,
