@@ -648,10 +648,14 @@ def get_term_schedule(term_id: int, version_id: int | None = Query(default=None)
     term = get_term_or_404(db, term_id)
     version_query = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id)
     if version_id is not None:
-        version_query = version_query.filter(TimetableVersion.version_id == version_id)
+        version = version_query.filter(TimetableVersion.version_id == version_id).first()
     else:
-        version_query = version_query.filter(TimetableVersion.status == "published")
-    version = version_query.order_by(TimetableVersion.version_number.desc()).first()
+        version = version_query.filter(TimetableVersion.status == "published").order_by(
+            TimetableVersion.version_number.desc()
+        ).first()
+        if version is None:
+            # Match Weekly Timetable: show the latest draft until a version is published.
+            version = version_query.order_by(TimetableVersion.version_number.desc()).first()
     if version:
         sessions = db.query(ScheduledSession).filter(
             ScheduledSession.version_id == version.version_id
