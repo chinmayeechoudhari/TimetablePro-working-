@@ -105,6 +105,9 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [timetableSlots, setTimetableSlots] = useState([])
+  const [latestDraftSessions, setLatestDraftSessions] = useState([])
+  const [replacementChoice, setReplacementChoice] = useState('target')
   const fileInputRef = useRef(null)
 
   const selectedTerm = useMemo(() => terms.find(term => String(term.term_id) === String(selectedId)), [terms, selectedId])
@@ -236,6 +239,49 @@ export default function CalendarPage() {
       .catch(() => { if (alive) setError('Could not load calendar events for this term.') })
     return () => { alive = false }
   }, [selectedId])
+
+  useEffect(() => {
+    let alive = true
+    axios.get(`${API}/timeslots`)
+      .then(r => { if (alive) setTimetableSlots(r.data || []) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedId) { setLatestDraftSessions([]); return }
+    let alive = true
+    axios.get(`${API}/semester/terms/${selectedId}/versions`)
+      .then(r => {
+        if (!alive) return
+        const list = r.data || []
+        const latest = list[0]
+        setLatestDraftSessions(latest?.sessions || [])
+      })
+      .catch(() => { if (alive) setLatestDraftSessions([]) })
+    return () => { alive = false }
+  }, [selectedId])
+
+  const availablePeriods = useMemo(() => {
+    const set = new Set()
+    timetableSlots.forEach(s => {
+      if (s.period_number) set.add(Number(s.period_number))
+    })
+    return Array.from(set).sort((a, b) => a - b)
+  }, [timetableSlots])
+
+  const slotEvaluation = useMemo(() => {
+    const d = eventForm.preferred_replacement_date
+    const p = eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null
+    if (!d || !p) return null
+    const conflicts = latestDraftSessions.filter(s => (s.date === d || s.session_date === d) && Number(s.period_number) === p)
+    return {
+      date: d,
+      period: p,
+      isVacant: conflicts.length === 0,
+      conflictCount: conflicts.length,
+    }
+  }, [eventForm.preferred_replacement_date, eventForm.preferred_replacement_period, latestDraftSessions])
 
   async function createTerm(event) {
     event.preventDefault()
@@ -1183,13 +1229,34 @@ export default function CalendarPage() {
         {/* ─── Filter & View Switcher Row ─── */}
         <div className="cal-filter-row">
           <div className="cal-pills-group">
-            {/* Pill 1: Academic Year & Term */}
-            <div className="cal-pill">
+            {/* Pill 1: Academic Year & Term – interactive selector */}
+            <div className="cal-pill" style={{ padding: '0 10px', gap: 6 }}>
               <CapIcon />
-              {selectedTerm ? (
-                <span>{selectedTerm.academic_year} · {selectedTerm.term_name}</span>
+              {terms.length > 0 ? (
+                <select
+                  value={selectedId}
+                  onChange={e => setSelectedId(e.target.value)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '2px 0',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {terms.map(term => (
+                    <option key={term.term_id} value={String(term.term_id)}
+                      style={{ background: '#1e293b', color: '#f1f5f9' }}>
+                      {term.academic_year} · {term.term_name}{term.status === 'archived' ? ' (archived)' : term.status === 'draft' ? ' (draft)' : ''}
+                    </option>
+                  ))}
+                </select>
               ) : (
-                <span>No active semester — create one</span>
+                <span>No semester — create one</span>
               )}
             </div>
 
@@ -1838,11 +1905,75 @@ export default function CalendarPage() {
                   <input style={inputCls} type="date" min={selectedTerm.start_date} max={selectedTerm.end_date} value={eventForm.preferred_replacement_date || ''} onChange={e => setEventField('preferred_replacement_date', e.target.value)} />
                 </FieldInput>
                 <FieldInput label="Preferred replacement period (optional)">
-                  <input style={inputCls} type="number" min="1" max="20" value={eventForm.preferred_replacement_period || ''} onChange={e => setEventField('preferred_replacement_period', e.target.value)} placeholder="e.g. 3" />
+                  {availablePeriods.length > 0 ? (
+                    <select
+                      style={inputCls}
+                      value={eventForm.preferred_replacement_period || ''}
+                      onChange={e => setEventField('preferred_replacement_period', e.target.value)}
+                    >
+                      <option value="">Any period (Solver decides)</option>
+                      {availablePeriods.map(p => (
+                        <option key={p} value={p}>Period {p}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input style={inputCls} type="number" min="1" max="20" value={eventForm.preferred_replacement_period || ''} onChange={e => setEventField('preferred_replacement_period', e.target.value)} placeholder="e.g. 3" />
+                  )}
                 </FieldInput>
-                <div style={{ gridColumn: '1 / -1', marginTop: -6, fontSize: 11.5, lineHeight: 1.45, color: '#64748b' }}>
-                  Preferred date and period are optional soft preferences. Leave them blank and the solver will choose a valid replacement slot, preferring the same week and then later weeks within this semester.
-                </div>
+
+                {slotEvaluation && slotEvaluation.isVacant && (
+                  <div style={{ gridColumn: '1 / -1', padding: '11px 14px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #86efac', marginTop: 2 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>✓</span> Slot is vacant on {slotEvaluation.date}, Period {slotEvaluation.period}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#15803d', marginTop: 3 }}>
+                      No classes are currently scheduled in this slot. How would you like to handle this rescheduled class?
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#166534', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="slot_action_prompt"
+                          checked={replacementChoice === 'target'}
+                          onChange={() => setReplacementChoice('target')}
+                          style={{ accentColor: '#16a34a' }}
+                        />
+                        Schedule in this slot
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#166534', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="slot_action_prompt"
+                          checked={replacementChoice === 'auto'}
+                          onChange={() => {
+                            setReplacementChoice('auto')
+                            setEventField('preferred_replacement_date', '')
+                            setEventField('preferred_replacement_period', '')
+                          }}
+                          style={{ accentColor: '#16a34a' }}
+                        />
+                        Let solver find & optimize
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {slotEvaluation && !slotEvaluation.isVacant && (
+                  <div style={{ gridColumn: '1 / -1', padding: '11px 14px', borderRadius: 8, background: '#fefce8', border: '1px solid #fde047', marginTop: 2 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#854d0e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>⚠️</span> Slot currently has {slotEvaluation.conflictCount} scheduled session(s)
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#713f12', marginTop: 3 }}>
+                      The solver will treat this slot as a soft preference, or choose another vacant slot if teacher or room constraints prevent using it.
+                    </div>
+                  </div>
+                )}
+
+                {!slotEvaluation && (
+                  <div style={{ gridColumn: '1 / -1', marginTop: -6, fontSize: 11.5, lineHeight: 1.45, color: '#64748b' }}>
+                    Preferred date and period are optional. If left blank or if you choose &ldquo;Let solver find &amp; optimize&rdquo;, the CP-SAT solver automatically searches for eligible vacant slots in the same week and throughout the semester.
+                  </div>
+                )}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <FieldInput label="Notes (optional)">
                     <input

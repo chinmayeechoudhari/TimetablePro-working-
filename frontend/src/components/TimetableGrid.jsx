@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import SubjectTypeBadge from './SubjectTypeBadge'
 
@@ -92,6 +92,16 @@ function Icon({ name, size = 20, stroke = 1.9 }) {
         <path d="m21 16-5 5" />
       </>
     ),
+    calendar: (
+      <>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </>
+    ),
+    chevronLeft: <polyline points="15 18 9 12 15 6" />,
+    chevronRight: <polyline points="9 18 15 12 9 6" />,
   }
 
   return <svg {...common}>{paths[name]}</svg>
@@ -109,6 +119,33 @@ function parseClassName(name) {
 function yearLabel(n) {
   const sfx = ['', 'st', 'nd', 'rd']
   return `${n}${sfx[n] || 'th'} Year`
+}
+
+function getSemesterWeeks(startDateStr, endDateStr) {
+  if (!startDateStr || !endDateStr) return []
+  const start = new Date(startDateStr + 'T12:00:00')
+  const end = new Date(endDateStr + 'T12:00:00')
+  const curr = new Date(start)
+  const dayOfWeek = (curr.getDay() + 6) % 7 // Monday = 0
+  curr.setDate(curr.getDate() - dayOfWeek)
+
+  const weeks = []
+  let weekIndex = 1
+  while (curr <= end) {
+    const monday = new Date(curr)
+    const sunday = new Date(curr)
+    sunday.setDate(sunday.getDate() + 6)
+    weeks.push({
+      index: weekIndex,
+      monday,
+      sunday,
+      label: `Week ${weekIndex} (${monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})`,
+      mondayKey: `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`,
+    })
+    curr.setDate(curr.getDate() + 7)
+    weekIndex++
+  }
+  return weeks
 }
 
 export default function TimetableGrid() {
@@ -132,10 +169,30 @@ export default function TimetableGrid() {
   const [terms, setTerms] = useState([])
   const [activeTerm, setActiveTerm] = useState(null)
   const [today] = useState(() => new Date())
+  const [selectedWeekIdx, setSelectedWeekIdx] = useState(0)
 
   // Hierarchical drill-down state for class view
   const [selDept, setSelDept] = useState(null)
   const [selYear, setSelYear] = useState(null)
+
+  const semesterWeeks = useMemo(() => {
+    return getSemesterWeeks(activeTerm?.start_date, activeTerm?.end_date)
+  }, [activeTerm?.start_date, activeTerm?.end_date])
+
+  useEffect(() => {
+    if (!semesterWeeks.length) {
+      setSelectedWeekIdx(0)
+      return
+    }
+    const todayMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+    const todayMondayKey = `${todayMonday.getFullYear()}-${String(todayMonday.getMonth() + 1).padStart(2, '0')}-${String(todayMonday.getDate()).padStart(2, '0')}`
+    const matchingIdx = semesterWeeks.findIndex(w => w.mondayKey === todayMondayKey)
+    if (matchingIdx >= 0) {
+      setSelectedWeekIdx(matchingIdx)
+    } else {
+      setSelectedWeekIdx(0)
+    }
+  }, [semesterWeeks, today])
 
   useEffect(() => { fetchAll() }, [])
 
@@ -302,7 +359,17 @@ export default function TimetableGrid() {
 
   const filterKey = view === 'class' ? 'class_id' : view === 'teacher' ? 'teacher_id' : 'room_id'
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  const mondayThisWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+  const currentWeek = semesterWeeks[selectedWeekIdx] || null
+  const mondayThisWeek = currentWeek
+    ? currentWeek.monday
+    : new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+
+  const todayWeekIdx = useMemo(() => {
+    const todayMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+    const todayMondayKey = `${todayMonday.getFullYear()}-${String(todayMonday.getMonth() + 1).padStart(2, '0')}-${String(todayMonday.getDate()).padStart(2, '0')}`
+    return semesterWeeks.findIndex(w => w.mondayKey === todayMondayKey)
+  }, [semesterWeeks, today])
+
   const dateForWeekday = (weekday) => {
     const date = new Date(mondayThisWeek)
     date.setDate(date.getDate() + DAYS.indexOf(weekday))
@@ -556,6 +623,112 @@ export default function TimetableGrid() {
         </div>
       </section>
 
+      {/* =========================================================
+          SEMESTER WEEK NAVIGATION TOOLBAR
+      ========================================================= */}
+      {semesterWeeks.length > 0 && (
+        <section
+          className="timetable-week-nav no-print"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: '12px 18px',
+            marginBottom: 20,
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border, #e2e8f0)',
+            borderRadius: 12,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 750, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Semester Week
+            </span>
+
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={selectedWeekIdx <= 0}
+              onClick={() => setSelectedWeekIdx(i => Math.max(0, i - 1))}
+              style={{ padding: '6px 11px', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, opacity: selectedWeekIdx <= 0 ? 0.45 : 1, cursor: selectedWeekIdx <= 0 ? 'not-allowed' : 'pointer' }}
+            >
+              <Icon name="chevronLeft" size={14} />
+              Prev
+            </button>
+
+            <select
+              aria-label="Select semester week"
+              value={selectedWeekIdx}
+              onChange={e => setSelectedWeekIdx(Number(e.target.value))}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border, #cbd5e1)',
+                background: 'var(--surface, #ffffff)',
+                color: 'var(--text-main, #0f172a)',
+                fontSize: 13,
+                fontWeight: 650,
+                cursor: 'pointer',
+                minWidth: 240,
+              }}
+            >
+              {semesterWeeks.map((w, idx) => (
+                <option key={w.mondayKey} value={idx}>
+                  {w.label} {todayWeekIdx === idx ? ' • (Current Week)' : ''}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={selectedWeekIdx >= semesterWeeks.length - 1}
+              onClick={() => setSelectedWeekIdx(i => Math.min(semesterWeeks.length - 1, i + 1))}
+              style={{ padding: '6px 11px', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, opacity: selectedWeekIdx >= semesterWeeks.length - 1 ? 0.45 : 1, cursor: selectedWeekIdx >= semesterWeeks.length - 1 ? 'not-allowed' : 'pointer' }}
+            >
+              Next
+              <Icon name="chevronRight" size={14} />
+            </button>
+
+            {todayWeekIdx >= 0 && selectedWeekIdx !== todayWeekIdx && (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setSelectedWeekIdx(todayWeekIdx)}
+                style={{ padding: '6px 12px', fontSize: 12, color: '#2563eb', borderColor: '#bfdbfe', background: '#eff6ff' }}
+              >
+                Jump to Current Week
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {activeDays.some(day => dayCalendarState(dateForWeekday(day)).closures.length > 0) && (
+              <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: '#fee2e2', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>●</span> Holiday / Closure in this week
+              </span>
+            )}
+
+            {semesterVersion && (
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 750,
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7',
+                  color: semesterVersion.status === 'published' ? '#166534' : '#92400e',
+                }}
+              >
+                Version {semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* =========================================================
           GRID CARD
