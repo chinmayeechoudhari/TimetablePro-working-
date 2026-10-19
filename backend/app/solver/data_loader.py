@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from app.models.calendar import AcademicTerm
 from app.models.models import (
     Class, Subject, Teacher, Room, TimeSlot,
     TeacherSubject, TeacherAvailability
@@ -7,7 +8,17 @@ from app.models.models import (
 def load_solver_data(db: Session) -> dict:
     """Load all scheduling data from DB into solver-friendly format."""
     classes = db.query(Class).all()
-    subjects = db.query(Subject).all()
+    active_term = db.query(AcademicTerm).filter(
+        AcademicTerm.status == "active"
+    ).order_by(AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()).first()
+    if active_term:
+        # Keep the weekly-template generator usable as a legacy fallback, but
+        # never mix subjects from multiple semesters into one generated grid.
+        subjects = db.query(Subject).filter(Subject.term_id == active_term.term_id).all()
+        if not subjects:
+            subjects = db.query(Subject).filter(Subject.term_id.is_(None)).all()
+    else:
+        subjects = db.query(Subject).filter(Subject.term_id.is_(None)).all()
     teachers = db.query(Teacher).all()
     rooms = db.query(Room).all()
     slots = db.query(TimeSlot).all()
