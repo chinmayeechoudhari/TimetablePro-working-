@@ -135,6 +135,12 @@ def migrate() -> None:
         )
 
     with engine.begin() as connection:
+        term_count = connection.execute(text("SELECT COUNT(*) FROM academic_term")).scalar_one()
+        if term_count < 1:
+            raise RuntimeError(
+                "Create at least one academic semester before running this migration, "
+                "so legacy subjects can be assigned to the correct term."
+            )
         _ensure_column(connection, "subject_definition", "term_id")
         _ensure_column(connection, "subject", "term_id")
 
