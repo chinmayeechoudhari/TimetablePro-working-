@@ -313,7 +313,7 @@ export default function CalendarPage() {
 
   async function approveImportedEvent(event) {
     try {
-      await axios.patch(`${API}/calendar/events/${event.event_id}`, {
+      const savedEvent = await axios.patch(`${API}/calendar/events/${event.event_id}`, {
         title: event.title, event_type: event.event_type, start_date: event.start_date,
         end_date: event.end_date, is_closure: event.is_closure,
         is_working_day_override: event.is_working_day_override,
@@ -322,8 +322,12 @@ export default function CalendarPage() {
         source: event.source, approval_status: 'approved', notes: event.notes,
       })
       await loadEvents(selectedTerm.term_id)
+      if (savedEvent.data.approval_status !== 'approved') {
+        setNotice(`"${event.title}" remains pending because overlapping calendar entries need review first.`)
+        return
+      }
       setNotice(`Approved "${event.title}".`)
-      if (event.is_closure) await optimizeAfterCalendarApproval(event.title)
+      if (savedEvent.data.is_closure) await optimizeAfterCalendarApproval(event.title)
     } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
   }
 
