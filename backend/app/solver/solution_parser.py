@@ -36,7 +36,12 @@ def parse_and_save_solution(solver, assign, db: Session, scope_subject_ids=None)
 
     # Overwrite old timetable inside a transaction
     try:
-        db.query(Timetable).delete()
+        if scope_subject_ids is not None:
+            scoped_ids = list(scope_subject_ids)
+            if scoped_ids:
+                db.query(Timetable).filter(Timetable.subject_id.in_(scoped_ids)).delete(synchronize_session=False)
+        else:
+            db.query(Timetable).delete()
         db.bulk_save_objects(new_entries)
         db.commit()
     except Exception:
