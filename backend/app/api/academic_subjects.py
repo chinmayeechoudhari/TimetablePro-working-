@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.core.config import get_db
+from app.models.calendar import AcademicTerm
 from app.models.models import AcademicGroup, Division, Subject, SubjectDefinition, TeachingAssignment, Timetable
 
 router = APIRouter(prefix="/academic-subjects", tags=["academic-subjects"])
@@ -9,6 +10,7 @@ router = APIRouter(prefix="/academic-subjects", tags=["academic-subjects"])
 
 class SubjectCreate(BaseModel):
     group_id: int
+    term_id: int
     subject_name: str
     subject_type: str = Field(default="theory", pattern="^(theory|lab|theory\\+lab)$")
     periods_per_week: int = Field(default=3, ge=1, le=30)
@@ -35,19 +37,18 @@ def _components_for(subject_type: str, periods_per_week: int, theory_periods_per
     return {subject_type: periods_per_week}
 
 
-def _delete_subject_rows(db, class_ids, subject_name, subject_type):
+def _delete_subject_rows(db, class_ids, subject_name, subject_type, term_id: int | None = None):
     """Delete the per-division Subject rows (and any Timetable rows that
     reference them — Subject->Timetable has no cascade at the DB layer, so
     this must be explicit, mirroring api/subjects.py's delete_subject)."""
-    rows = (
-        db.query(Subject)
-        .filter(
-            Subject.class_id.in_(class_ids),
-            Subject.subject_name.ilike(subject_name),
-            Subject.subject_type == subject_type,
-        )
-        .all()
+    query = db.query(Subject).filter(
+        Subject.class_id.in_(class_ids),
+        Subject.subject_name.ilike(subject_name),
+        Subject.subject_type == subject_type,
     )
+    if term_id is not None:
+        query = query.filter(Subject.term_id == term_id)
+    rows = query.all()
     for row in rows:
         db.query(Timetable).filter(Timetable.subject_id == row.subject_id).delete(synchronize_session=False)
         db.delete(row)
@@ -57,6 +58,7 @@ def _definition_payload(r):
     return {
         "definition_id": r.definition_id,
         "group_id": r.group_id,
+        "term_id": r.term_id,
         "subject_name": r.subject_name,
         "subject_type": r.subject_type,
         "periods_per_week": r.periods_per_week,
@@ -64,10 +66,12 @@ def _definition_payload(r):
 
 
 @router.get("")
-def list_subjects(group_id: int | None = None, db: Session = Depends(get_db)):
+def list_subjects(group_id: int | None = None, term_id: int | None = None, db: Session = Depends(get_db)):
     query = db.query(SubjectDefinition)
     if group_id:
         query = query.filter(SubjectDefinition.group_id == group_id)
+    if term_id is not None:
+        query = query.filter(SubjectDefinition.term_id == term_id)
     rows = query.order_by(SubjectDefinition.subject_name, SubjectDefinition.subject_type).all()
     return [_definition_payload(r) for r in rows]
 
@@ -77,6 +81,9 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
     group = db.query(AcademicGroup).filter(AcademicGroup.group_id == payload.group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Academic group not found.")
+    term = db.query(AcademicTerm).filter(AcademicTerm.term_id == payload.term_id).first()
+    if not term:
+        raise HTTPException(status_code=404, detail="Academic term not found.")
 
     name = payload.subject_name.strip()
     if not name:
@@ -96,6 +103,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
             db.query(SubjectDefinition)
             .filter(
                 SubjectDefinition.group_id == group.group_id,
+                SubjectDefinition.term_id == payload.term_id,
                 SubjectDefinition.subject_name.ilike(name),
                 SubjectDefinition.subject_type == component_type,
             )
@@ -116,6 +124,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
         for component_type, component_periods in components:
             definition = SubjectDefinition(
                 group_id=group.group_id,
+                term_id=payload.term_id,
                 subject_name=name,
                 subject_type=component_type,
                 periods_per_week=component_periods,
@@ -127,6 +136,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
             for division in divisions:
                 db.add(
                     Subject(
+                        term_id=payload.term_id,
                         subject_name=name,
                         periods_per_week=component_periods,
                         subject_type=component_type,
@@ -153,7 +163,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{group_id}/{subject_name}")
-def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db: Session = Depends(get_db)):
+def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, term_id: int | None = None, db: Session = Depends(get_db)):
     """Update a subject that may span one or two SubjectDefinition rows
     (theory / lab components). Handles switching between theory-only,
     lab-only and theory+lab, renaming, and period changes, keeping the
@@ -162,15 +172,17 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
     if not group:
         raise HTTPException(status_code=404, detail="Academic group not found.")
 
+    if term_id is not None and not db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first():
+        raise HTTPException(status_code=404, detail="Academic term not found.")
+
     old_name = subject_name.strip()
-    existing_defs = (
-        db.query(SubjectDefinition)
-        .filter(
-            SubjectDefinition.group_id == group_id,
-            SubjectDefinition.subject_name.ilike(old_name),
-        )
-        .all()
+    query = db.query(SubjectDefinition).filter(
+        SubjectDefinition.group_id == group_id,
+        SubjectDefinition.subject_name.ilike(old_name),
     )
+    if term_id is not None:
+        query = query.filter(SubjectDefinition.term_id == term_id)
+    existing_defs = query.all()
     if not existing_defs:
         raise HTTPException(status_code=404, detail="Subject not found.")
 
@@ -190,6 +202,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
                 db.query(SubjectDefinition)
                 .filter(
                     SubjectDefinition.group_id == group_id,
+                    SubjectDefinition.term_id == term_id if term_id is not None else SubjectDefinition.term_id.is_(None),
                     SubjectDefinition.subject_name.ilike(new_name),
                     SubjectDefinition.subject_type == component_type,
                 )
@@ -215,7 +228,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
                 .filter(TeachingAssignment.definition_id == definition.definition_id)
                 .count()
             )
-            _delete_subject_rows(db, class_ids, old_name, old_type)
+            _delete_subject_rows(db, class_ids, old_name, old_type, term_id if term_id is not None else definition.term_id)
             db.delete(definition)  # cascades to TeachingAssignment
 
     # 2) Update surviving components / create newly-added ones.
@@ -224,21 +237,21 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
         if definition:
             definition.subject_name = new_name
             definition.periods_per_week = component_periods
-            rows = (
-                db.query(Subject)
-                .filter(
-                    Subject.class_id.in_(class_ids),
-                    Subject.subject_name.ilike(old_name),
-                    Subject.subject_type == component_type,
-                )
-                .all()
+            subject_query = db.query(Subject).filter(
+                Subject.class_id.in_(class_ids),
+                Subject.subject_name.ilike(old_name),
+                Subject.subject_type == component_type,
             )
+            if term_id is not None:
+                subject_query = subject_query.filter(Subject.term_id == term_id)
+            rows = subject_query.all()
             for row in rows:
                 row.subject_name = new_name
                 row.periods_per_week = component_periods
         else:
             new_definition = SubjectDefinition(
                 group_id=group_id,
+                term_id=term_id,
                 subject_name=new_name,
                 subject_type=component_type,
                 periods_per_week=component_periods,
@@ -247,6 +260,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
             for division in divisions:
                 db.add(
                     Subject(
+                        term_id=term_id,
                         subject_name=new_name,
                         periods_per_week=component_periods,
                         subject_type=component_type,
@@ -267,7 +281,7 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, db:
 
 
 @router.delete("/{group_id}/{subject_name}")
-def delete_subject(group_id: int, subject_name: str, db: Session = Depends(get_db)):
+def delete_subject(group_id: int, subject_name: str, term_id: int | None = None, db: Session = Depends(get_db)):
     """Delete a subject (all of its theory/lab components) from every
     division of the academic group."""
     group = db.query(AcademicGroup).filter(AcademicGroup.group_id == group_id).first()
@@ -275,14 +289,13 @@ def delete_subject(group_id: int, subject_name: str, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Academic group not found.")
 
     name = subject_name.strip()
-    definitions = (
-        db.query(SubjectDefinition)
-        .filter(
-            SubjectDefinition.group_id == group_id,
-            SubjectDefinition.subject_name.ilike(name),
-        )
-        .all()
+    query = db.query(SubjectDefinition).filter(
+        SubjectDefinition.group_id == group_id,
+        SubjectDefinition.subject_name.ilike(name),
     )
+    if term_id is not None:
+        query = query.filter(SubjectDefinition.term_id == term_id)
+    definitions = query.all()
     if not definitions:
         raise HTTPException(status_code=404, detail="Subject not found.")
 
@@ -296,7 +309,7 @@ def delete_subject(group_id: int, subject_name: str, db: Session = Depends(get_d
     )
 
     for definition in definitions:
-        _delete_subject_rows(db, class_ids, name, definition.subject_type)
+        _delete_subject_rows(db, class_ids, name, definition.subject_type, term_id if term_id is not None else definition.term_id)
         db.delete(definition)  # cascades to TeachingAssignment
 
     db.commit()
