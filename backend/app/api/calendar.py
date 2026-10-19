@@ -347,7 +347,7 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
             is_closure=is_closure,
             is_working_day_override=False,
             source="College Academic Activity Calendar AY 2026-27 Sem I",
-            approval_status="pending" if needs_review else "approved",
+            approval_status="pending",
             notes=(
                 "Overlaps another calendar entry; administrator review required."
                 if needs_review else
@@ -360,7 +360,7 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
         "imported": imported,
         "skipped": skipped,
         "source": "College Academic Activity Calendar AY 2026-27 Sem I",
-        "message": f"Imported {imported} college calendar entries. Please verify dates against the latest college circular.",
+        "message": f"Imported {imported} college calendar entries as pending review. Approve entries individually before they affect the timetable.",
     }
 
 
@@ -446,7 +446,7 @@ def import_region_holidays(term_id: int, db: Session = Depends(get_db)):
                 start_date=event_date, end_date=event_date, is_closure=True,
                 is_working_day_override=False,
                 source=f"Regional public holidays ({term.holiday_region})",
-                approval_status="pending" if needs_review else "approved",
+                approval_status="pending",
                 notes="Overlaps another calendar entry; administrator review required." if needs_review else "Imported regional public-holiday suggestion. Verify against the relevant government notice.",
             ))
             imported += 1
