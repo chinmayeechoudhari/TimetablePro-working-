@@ -6,7 +6,7 @@ import './AcademicSubjectsBase.css'
 import './AcademicSubjects.css'
 import './AcademicSubjectsTable.css'
 import Icon from './AcademicIcon'
-import { loadShortCodes, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
+import { loadShortCodes, deriveShortCode, accentIndex } from '../lib/AcademicShortCodes'
 
 import { API_BASE } from '../lib/config'
 const BASE = API_BASE
