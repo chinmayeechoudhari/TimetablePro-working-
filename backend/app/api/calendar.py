@@ -189,75 +189,72 @@ def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)
 
 @router.delete("/terms/{term_id}", status_code=204)
 def delete_term(term_id: int, db: Session = Depends(get_db)):
-    """Permanently remove one semester's data while preserving shared structure and faculty.
-
-    Academic groups, divisions/classes, global teachers, rooms, and time slots are
-    deliberately retained. The legacy schema stores subjects and timetable rows
-    globally rather than directly on a term, so all generated timetable snapshots,
-    subject definitions, assignments, and legacy timetable rows are cleared to
-    prevent stale semester data and foreign-key references from surviving.
-    """
+    """Delete one term's data while preserving global structure and other terms."""
     term = get_term_or_404(db, term_id)
     try:
-        # Delete version snapshots through the ORM so scheduled-session
-        # relationships are removed even when database cascade settings differ.
-        # Subject IDs are shared by legacy timetable snapshots, so remove all
-        # generated snapshots as part of switching to the next single semester.
-        versions = db.query(TimetableVersion).all()
+        # Delete only versions belonging to this term. Their dated sessions are
+        # removed through the ORM relationship/cascade.
+        versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).all()
         for version in versions:
             db.delete(version)
         db.flush()
 
-        # Remove dated calendar events before the term. This also avoids stale
-        # source-event references in installations without ON DELETE SET NULL.
         db.query(CalendarEvent).filter(CalendarEvent.term_id == term_id).delete(synchronize_session=False)
 
-        # Dynamic constraints are stored in JSON envelopes; legacy/global rules
-        # are intentionally retained.
+        # Remove only constraints explicitly scoped to this term; global rules
+        # and other terms' constraints remain intact.
         for rule in db.query(Constraint).all():
             try:
                 stored = json.loads(rule.parameters_json or "{}")
             except (TypeError, ValueError):
                 continue
             scope = stored.get("scope") if isinstance(stored, dict) else None
-            if isinstance(scope, dict) and scope.get("term_id") is not None:
+            if isinstance(scope, dict) and scope.get("term_id") == term_id:
                 db.delete(rule)
 
-        # The legacy schema does not attach subjects directly to a term.
-        # In the single-active-semester workflow, clear all subject definitions,
-        # teacher assignments, and legacy timetable rows while retaining the
-        # classes/divisions that those records reference.
-        db.query(TeachingAssignment).delete(synchronize_session=False)
-        for definition in db.query(SubjectDefinition).all():
-            db.delete(definition)
-        db.query(Timetable).delete(synchronize_session=False)
-        legacy_subject_ids = [row.subject_id for row in db.query(Subject.subject_id).all()]
-        if legacy_subject_ids:
+        # Subjects and assignments belong to one term. Global departments,
+        # divisions/classes, teachers, rooms, time slots and other semesters'
+        # subject rows/assignments must remain untouched.
+        definitions = db.query(SubjectDefinition).filter(
+            SubjectDefinition.term_id == term_id
+        ).all()
+        definition_ids = [row.definition_id for row in definitions]
+        if definition_ids:
+            db.query(TeachingAssignment).filter(
+                TeachingAssignment.definition_id.in_(definition_ids)
+            ).delete(synchronize_session=False)
+            for definition in definitions:
+                db.delete(definition)
+
+        term_subjects = db.query(Subject).filter(Subject.term_id == term_id).all()
+        subject_ids = [row.subject_id for row in term_subjects]
+        if subject_ids:
             db.query(TeacherSubject).filter(
-                TeacherSubject.subject_id.in_(legacy_subject_ids)
+                TeacherSubject.subject_id.in_(subject_ids)
+            ).delete(synchronize_session=False)
+            db.query(Timetable).filter(
+                Timetable.subject_id.in_(subject_ids)
             ).delete(synchronize_session=False)
             db.query(Subject).filter(
-                Subject.subject_id.in_(legacy_subject_ids)
+                Subject.subject_id.in_(subject_ids)
             ).delete(synchronize_session=False)
 
         db.delete(term)
         db.flush()
-        # Promote the next remaining term so the admin can remove old terms
-        # one at a time without exposing a semester toggle in timetable view.
-        db.query(AcademicTerm).filter(AcademicTerm.status == "active").update(
-            {AcademicTerm.status: "archived"}, synchronize_session=False
-        )
-        next_term = db.query(AcademicTerm).order_by(
-            AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()
-        ).first()
-        if next_term:
-            next_term.status = "active"
+        if term.status == "active":
+            db.query(AcademicTerm).filter(AcademicTerm.status == "active").update(
+                {AcademicTerm.status: "archived"}, synchronize_session=False
+            )
+            next_term = db.query(AcademicTerm).order_by(
+                AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()
+            ).first()
+            if next_term:
+                next_term.status = "active"
         db.commit()
     except Exception:
         db.rollback()
         raise
     return None
-
 
 
 @router.post("/terms/{term_id}/holidays/import")
