@@ -195,9 +195,49 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             compiled = [penalty * int(weight) for penalty in compiled]
         dynamic_penalties.extend(compiled)
 
+    # Closure makeup preferences are soft objectives: preferred date/period first,
+    # then another date in the same ISO week, then any other eligible date.
+    preference_penalties = []
+    for index, preference in enumerate(data.get("makeup_preferences", [])):
+        class_id = preference["class_id"]
+        subject_id = preference["subject_id"]
+        original_date = preference["original_date"]
+        preferred_date = preference.get("preferred_date")
+        preferred_period = preference.get("preferred_period")
+        relevant = [
+            (key, var) for key, var in assign.items()
+            if key[2] == class_id and key[3] == subject_id and key[0] != original_date
+        ]
+        if not relevant:
+            continue
+        if preferred_date:
+            preferred_matches = [
+                var for key, var in relevant
+                if key[0] == preferred_date
+                and (preferred_period is None or slot_by_id[key[1]]["period_number"] == preferred_period)
+            ]
+            preferred_met = model.NewBoolVar(f"makeup_preferred_met_{index}")
+            if preferred_matches:
+                model.Add(sum(preferred_matches) >= 1).OnlyEnforceIf(preferred_met)
+                model.Add(sum(preferred_matches) == 0).OnlyEnforceIf(preferred_met.Not())
+            else:
+                model.Add(preferred_met == 0)
+            preference_penalties.append((preferred_met.Not(), 1000))
+        same_week_matches = [
+            var for key, var in relevant
+            if key[0].isocalendar()[:2] == original_date.isocalendar()[:2]
+        ]
+        if same_week_matches:
+            same_week_met = model.NewBoolVar(f"makeup_same_week_met_{index}")
+            model.Add(sum(same_week_matches) >= 1).OnlyEnforceIf(same_week_met)
+            model.Add(sum(same_week_matches) == 0).OnlyEnforceIf(same_week_met.Not())
+            preference_penalties.append((same_week_met.Not(), 100))
+    preference_weighted_penalties = [penalty * weight for penalty, weight in preference_penalties]
+
     # Soft preference: discourage exceeding a teacher's daily workload target.
     # Weekly-load preservation is a stronger objective than individual soft preferences.
     penalties = [penalty * 10 for penalty in makeup_penalties]
+    penalties.extend(preference_weighted_penalties)
     teacher_daily = defaultdict(list)
     for (session_date, slot_id, class_id, subject_id, teacher_id, room_id), var in assign.items():
         teacher_daily[(teacher_id, session_date)].append(var)
