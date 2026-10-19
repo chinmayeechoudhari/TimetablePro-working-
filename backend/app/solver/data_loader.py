@@ -26,6 +26,7 @@ def load_solver_data(db: Session) -> dict:
     avail = db.query(TeacherAvailability).filter(TeacherAvailability.is_available == False).all()
     return {
         "db": db,
+        "subject_ids": [s.subject_id for s in subjects],
         "class_ids": [c.class_id for c in classes],
         "subject_map": {s.subject_id: s.class_id for s in subjects},
         "subject_periods": {s.subject_id: s.periods_per_week for s in subjects},
