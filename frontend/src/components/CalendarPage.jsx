@@ -328,7 +328,10 @@ export default function CalendarPage() {
       }
       setNotice(`Approved "${event.title}".`)
       if (savedEvent.data.is_closure) await optimizeAfterCalendarApproval(event.title)
-    } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : detail?.message || 'Could not approve this event. Resolve any overlapping calendar entries and try again.')
+    }
   }
 
   async function saveEvent(event) {
@@ -1817,6 +1820,9 @@ export default function CalendarPage() {
                 <FieldInput label="Preferred replacement period (optional)">
                   <input style={inputCls} type="number" min="1" max="20" value={eventForm.preferred_replacement_period || ''} onChange={e => setEventField('preferred_replacement_period', e.target.value)} placeholder="e.g. 3" />
                 </FieldInput>
+                <div style={{ gridColumn: '1 / -1', marginTop: -6, fontSize: 11.5, lineHeight: 1.45, color: '#64748b' }}>
+                  Preferred date and period are optional soft preferences. Leave them blank and the solver will choose a valid replacement slot, preferring the same week and then later weeks within this semester.
+                </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <FieldInput label="Notes (optional)">
                     <input
