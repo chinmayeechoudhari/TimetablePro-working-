@@ -215,6 +215,21 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             else:
                 model.Add(preferred_met == 0)
             preference_penalties.append((preferred_met.Not(), 1000))
+        elif preferred_period is not None:
+            # A period can be selected independently of a date. Treat it as a
+            # soft preference across eligible replacement dates, never as a
+            # hard constraint that can make the semester infeasible.
+            period_matches = [
+                var for key, var in relevant
+                if slot_by_id[key[1]]["period_number"] == preferred_period
+            ]
+            period_met = model.NewBoolVar(f"makeup_period_met_{index}")
+            if period_matches:
+                model.Add(sum(period_matches) >= 1).OnlyEnforceIf(period_met)
+                model.Add(sum(period_matches) == 0).OnlyEnforceIf(period_met.Not())
+            else:
+                model.Add(period_met == 0)
+            preference_penalties.append((period_met.Not(), 500))
         same_week_matches = [
             var for key, var in relevant
             if key[0].isocalendar()[:2] == original_date.isocalendar()[:2]
