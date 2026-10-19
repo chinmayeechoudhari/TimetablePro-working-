@@ -1172,7 +1172,9 @@ export default function CalendarPage() {
                 const versions = await axios.get(API + '/semester/terms/' + selectedTerm.term_id + '/versions')
                 setSemesterVersions(versions.data || [])
                 setSelectedVersionId(String(result.data.version_id))
-                setNotice('Semester optimization ' + result.data.status + ': draft v' + result.data.version_number + ' created with ' + result.data.session_count + ' dated sessions. Objective score: ' + (result.data.objective_value ?? 'not reported') + '. Review sessions and teaching load before publishing.')
+                const report = result.data.calendar_reschedule_report
+                const reportText = report ? ` Calendar closures: ${report.affected_sessions} affected session(s), ${report.replacements_found} replacement candidate(s), ${report.unresolved_sessions?.length || 0} unresolved.` : ''
+                setNotice('Semester optimization ' + result.data.status + ': draft v' + result.data.version_number + ' created with ' + result.data.session_count + ' dated sessions. Objective score: ' + (result.data.objective_value ?? 'not reported') + '.' + reportText + ' Review the draft and resolve any reported issues before publishing.')
               } catch (e) {
                 const detail = e.response?.data?.detail
                 setVersionError(typeof detail === 'string' ? detail : detail?.message || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
