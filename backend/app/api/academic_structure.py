@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_db
+from app.models.calendar import AcademicTerm
 from app.models.models import AcademicGroup, Class, Division
 
 router = APIRouter(prefix="/academic-structure", tags=["academic-structure"])
@@ -28,7 +29,8 @@ class YearConfig(BaseModel):
 
 
 class AcademicStructureCreate(BaseModel):
-    academic_year: str
+    # Retained as legacy metadata only; structure identity is global, not per AY.
+    academic_year: str | None = None
     department: str
     years: List[YearConfig]
 
@@ -88,15 +90,34 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
     if not years:
         raise HTTPException(status_code=400, detail="Add at least one year with divisions.")
 
+    # The first created department/year grouping is the global record reused
+    # by subsequent semesters. Academic year is informational only.
+    active_term = db.query(AcademicTerm).filter(AcademicTerm.status == "active").order_by(AcademicTerm.start_date.desc()).first()
+    academic_year = _normalize_academic_year(payload.academic_year or (active_term.academic_year if active_term else "Global"))
     created = []
     for year, count in sorted(years.items()):
         existing = db.query(AcademicGroup).filter(
-            func.lower(func.trim(AcademicGroup.academic_year)) == academic_year.lower(),
             func.lower(func.trim(AcademicGroup.department)) == department.lower(),
             AcademicGroup.year_of_study == year,
-        ).first()
+        ).order_by(AcademicGroup.group_id.asc()).first()
         if existing:
-            raise HTTPException(status_code=409, detail=f"{department} {year_label(year)} already exists for {academic_year}.")
+            existing_divisions = sorted(existing.divisions, key=lambda item: item.division_name)
+            if count < len(existing_divisions):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"{department} {year_label(year)} already has {len(existing_divisions)} global division(s). "
+                        "Divisions are shared across semesters and are not removed by creating another term."
+                    ),
+                )
+            for index in range(len(existing_divisions), count):
+                division_name = chr(ord("A") + index)
+                class_obj = Class(class_name=f"{department} {year_label(year)} - {division_name}")
+                db.add(class_obj)
+                db.flush()
+                db.add(Division(group_id=existing.group_id, class_id=class_obj.class_id, division_name=division_name))
+            created.append(existing)
+            continue
 
         group = AcademicGroup(academic_year=academic_year, department=department, year_of_study=year)
         db.add(group)
@@ -134,7 +155,6 @@ def rename_department(payload: DepartmentRename, db: Session = Depends(get_db)):
     for group in groups:
         duplicate = db.query(AcademicGroup).filter(
             AcademicGroup.group_id != group.group_id,
-            func.lower(func.trim(AcademicGroup.academic_year)) == group.academic_year.lower(),
             func.lower(func.trim(AcademicGroup.department)) == new.lower(),
             AcademicGroup.year_of_study == group.year_of_study,
         ).first()
@@ -187,10 +207,9 @@ def adopt_existing_class(payload: AdoptClassRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=409, detail="This class is already linked to an academic division.")
 
     group = db.query(AcademicGroup).filter(
-        func.lower(func.trim(AcademicGroup.academic_year)) == academic_year.lower(),
         func.lower(func.trim(AcademicGroup.department)) == department.lower(),
         AcademicGroup.year_of_study == payload.year_of_study,
-    ).first()
+    ).order_by(AcademicGroup.group_id.asc()).first()
     if group is None:
         raise HTTPException(status_code=404, detail=f"Create {department} {year_label(payload.year_of_study)} first, then link the class.")
 
