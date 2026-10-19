@@ -99,37 +99,34 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if len(variables) > 1:
             model.Add(sum(variables) <= 1)
 
-    # Preserve the semester's total teaching requirement while allowing makeup
-    # sessions to move across weeks when an approved closure removes all usable
-    # slots from a week. Normal weeks still target periods_per_week; a week may
-    # carry up to one additional weekly target as makeup capacity. The objective
-    # below penalizes deviations so makeup is used only when calendar/resource
-    # constraints make the regular weekly target impossible.
+    # Preserve weekly targets while allowing displaced sessions to move later
+    # in the semester. If hard resource/calendar limits make some makeup work
+    # impossible, expose it as an explicit high-cost shortfall rather than
+    # violating a hard constraint or silently dropping sessions.
     weeks = list(_week_starts(start, end))
-    # Count sessions displaced by approved calendar closures for each class/subject.
-    # This amount is the extra per-week capacity the optimizer may use in later
-    # weeks when the original week has too few eligible dates/periods.
     makeup_counts = defaultdict(int)
     for preference in data.get("makeup_preferences", []):
         pair = (preference.get("class_id"), preference.get("subject_id"))
         if pair[0] is not None and pair[1] is not None:
             makeup_counts[pair] += 1
 
+    closure_affected_weeks = set()
+    day = start
+    while day <= end:
+        _eligible, closed = _event_state(day, events, working_days)
+        if closed and day.strftime("%A") in working_days:
+            closure_affected_weeks.add(_week_starts(day, day)[0])
+        day += timedelta(days=1)
+
     makeup_penalties = []
+    unresolved_makeups = []
+    unresolved_penalties = []
     for subject in subjects:
         target = max(0, int(subject.get("periods_per_week", 0) or 0))
         semester_vars = []
         if target <= 0:
             continue
         weekly_candidates = {}
-        closure_affected_weeks = set()
-        day = start
-        while day <= end:
-            eligible, closed = _event_state(day, events, working_days)
-            if closed and day.strftime("%A") in working_days:
-                closure_affected_weeks.add(_week_starts(day, day)[0])
-            day += timedelta(days=1)
-
         for week in weeks:
             week_end = week + timedelta(days=6)
             matching = [
@@ -140,11 +137,15 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             weekly_candidates[week] = matching
             semester_vars.extend(matching)
 
-        # If an approved closure was imported before the first timetable exists,
-        # there are no previous sessions to count. Estimate makeup capacity from
-        # affected calendar weeks as well. Capacity only expands in the affected
-        # week and weeks after it; earlier weeks cannot "borrow" future demand.
+        # Capacity expands in the closure week and subsequent weeks. If a prior
+        # version exists, use the number of specifically displaced sessions;
+        # otherwise estimate the possible displaced load from closed weeks.
         displaced_count = makeup_counts[(subject["class_id"], subject["subject_id"])]
+        estimated_closure_load = target * len(closure_affected_weeks)
+        allowed_shortfall = min(
+            target * len(weeks),
+            displaced_count if displaced_count > 0 else estimated_closure_load,
+        )
         for week, matching in weekly_candidates.items():
             earlier_or_current_closures = sum(
                 1 for closure_week in closure_affected_weeks if closure_week <= week
@@ -160,14 +161,18 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 )
                 model.AddAbsEquality(deviation, weekly_total - target)
                 makeup_penalties.append(deviation)
+
         required_semester_total = target * len(weeks)
-        if not semester_vars:
-            return {
-                "status": "infeasible",
-                "reason": f"Subject {subject['subject_id']} for class {subject['class_id']} has no eligible dated slots anywhere in the semester.",
-                "sessions": [],
-            }
-        model.Add(sum(semester_vars) == required_semester_total)
+        if allowed_shortfall > 0:
+            unresolved = model.NewIntVar(
+                0, allowed_shortfall,
+                f"unresolved_makeup_c{subject['class_id']}_s{subject['subject_id']}"
+            )
+            model.Add(sum(semester_vars) + unresolved == required_semester_total)
+            unresolved_makeups.append((subject, unresolved))
+            unresolved_penalties.append(unresolved)
+        else:
+            model.Add(sum(semester_vars) == required_semester_total)
 
     # Keep locked assignments fixed. A lock that cannot be represented is a
     # reported infeasibility rather than silently moved or dropped.
@@ -255,6 +260,10 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     # Soft preference: discourage exceeding a teacher's daily workload target.
     # Weekly-load preservation is a stronger objective than individual soft preferences.
     penalties = [penalty * 10 for penalty in makeup_penalties]
+    # An unresolved session is much more expensive than any preference or
+    # distribution penalty. CP-SAT therefore schedules every feasible makeup
+    # first, while still reporting the remainder if hard constraints prevent it.
+    penalties.extend(penalty * 1_000_000 for penalty in unresolved_penalties)
     penalties.extend(preference_weighted_penalties)
     teacher_daily = defaultdict(list)
     for (session_date, slot_id, class_id, subject_id, teacher_id, room_id), var in assign.items():
@@ -321,10 +330,22 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 "closure_conflict": False,
             })
     sessions.sort(key=lambda x: (x["session_date"], x["period_number"], x["class_id"]))
+    unresolved_summary = []
+    for subject, variable in unresolved_makeups:
+        missing_count = solver.Value(variable)
+        if missing_count > 0:
+            unresolved_summary.append({
+                "class_id": subject["class_id"],
+                "subject_id": subject["subject_id"],
+                "unresolved_count": missing_count,
+                "reason": "No additional eligible date/period remained inside the semester after applying hard constraints.",
+            })
+
     return {
         "status": "optimal" if status == cp_model.OPTIMAL else "feasible",
         "objective_value": solver.ObjectiveValue() if penalties else 0,
         "sessions": sessions,
+        "unresolved_makeups": unresolved_summary,
         "locked_conflicts": [],
     }
 
