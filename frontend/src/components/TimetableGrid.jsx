@@ -163,14 +163,15 @@ export default function TimetableGrid() {
       .catch(() => { if (alive) setCalendarEvents([]) })
 
     // The semester CP-SAT version is the source of truth for the weekly view.
-    // Prefer the published version; if none exists, show the latest draft and
-    // label it clearly. Only fall back to the legacy weekly template when no
+    // Use the newest saved version, including a draft created after approving
+    // a closure, so the admin can review the same canonical schedule before
+    // publishing it. Fall back to the legacy weekly template only when no
     // semester version exists for this term.
     axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
       .then(response => {
         if (!alive) return
         const versions = response.data || []
-        const chosen = versions.find(item => item.status === 'published') || versions[0] || null
+        const chosen = versions[0] || null
         if (chosen) {
           setSemesterVersion(chosen)
           setTimetable((chosen.sessions || []).map(session => ({
