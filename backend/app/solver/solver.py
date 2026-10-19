@@ -240,6 +240,7 @@ def build_and_solve(
             solver,
             assign,
             db,
+            scope_subject_ids=data.get("subject_ids"),
         )
 
         result["timetable"] = solution_to_dict(
