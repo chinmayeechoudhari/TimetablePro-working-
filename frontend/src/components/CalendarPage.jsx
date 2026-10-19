@@ -91,12 +91,6 @@ export default function CalendarPage() {
     preferred_replacement_date: '', preferred_replacement_period: ''
   })
   const [events, setEvents] = useState([])
-  const [semesterVersions, setSemesterVersions] = useState([])
-  const [selectedVersionId, setSelectedVersionId] = useState('')
-  const [versionSessions, setVersionSessions] = useState([])
-  const [optimizingSemester, setOptimizingSemester] = useState(false)
-  const [versionError, setVersionError] = useState('')
-  const [loadValidation, setLoadValidation] = useState(null)
 
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
   const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
@@ -236,38 +230,6 @@ export default function CalendarPage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedId) { setSemesterVersions([]); setSelectedVersionId(''); setVersionSessions([]); return }
-    let active = true
-    axios.get(API + '/semester/terms/' + selectedId + '/versions')
-      .then(r => {
-        if (!active) return
-        const versions = Array.isArray(r.data) ? r.data : []
-        setSemesterVersions(versions)
-        setSelectedVersionId(current => current && versions.some(v => String(v.version_id) === current) ? current : (versions.find(v => v.status === 'draft') || versions[0] ? String((versions.find(v => v.status === 'draft') || versions[0]).version_id) : ''))
-      })
-      .catch(() => { if (active) { setSemesterVersions([]); setVersionSessions([]) } })
-    return () => { active = false }
-  }, [selectedId])
-
-  useEffect(() => {
-    if (!selectedId || !selectedVersionId) { setLoadValidation(null); return }
-    let active = true
-    axios.get(API + '/semester/terms/' + selectedId + '/dashboard', { params: { version_id: selectedVersionId } })
-      .then(r => { if (active) setLoadValidation(r.data) })
-      .catch(() => { if (active) setLoadValidation(null) })
-    return () => { active = false }
-  }, [selectedId, selectedVersionId])
-
-  useEffect(() => {
-    if (!selectedVersionId) { setVersionSessions([]); return }
-    let active = true
-    axios.get(API + '/semester/versions/' + selectedVersionId)
-      .then(r => { if (active) setVersionSessions(r.data.sessions || []) })
-      .catch(() => { if (active) setVersionSessions([]) })
-    return () => { active = false }
-  }, [selectedVersionId])
-
-  useEffect(() => {
     if (!selectedId) { setEvents([]); return }
     let alive = true
     axios.get(`${API}/calendar/terms/${selectedId}/events`)
@@ -326,11 +288,29 @@ export default function CalendarPage() {
       form.append('file', calendarFile)
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/upload`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : '') + ' Review imported entries and approve valid closures; then regenerate the timetable to apply calendar changes.')
+      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : '') + ' Approve each valid entry. Approved closures will start date-aware rescheduling automatically.')
       setCalendarFile(null)
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not import the calendar file.')
     } finally { setImportingHolidays(false) }
+  }
+
+  async function optimizeAfterCalendarApproval(eventTitle) {
+    if (!selectedTerm) return
+    try {
+      const response = await axios.post(`${API}/semester/terms/${selectedTerm.term_id}/optimize`)
+      const report = response.data.calendar_reschedule_report
+      const reportText = report
+        ? ` ${report.affected_sessions} affected session(s), ${report.replacements_found} replacement(s) identified, ${report.unresolved_sessions?.length || 0} unresolved.`
+        : ''
+      setNotice(`Approved "${eventTitle}". Date-aware CP-SAT created draft v${response.data.version_number} with ${response.data.session_count} dated sessions.${reportText} Review the latest draft in Weekly Timetable before publishing.`)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      const diagnostic = typeof detail === 'string'
+        ? detail
+        : [detail?.message, detail?.diagnostic, detail?.reason ? `Reason: ${detail.reason}` : ''].filter(Boolean).join(' ')
+      setError(`"${eventTitle}" was approved, but automatic rescheduling could not create a semester draft: ${diagnostic || 'Check semester subjects, faculty assignments, rooms, time slots and constraints.'}`)
+    }
   }
 
   async function approveImportedEvent(event) {
@@ -344,7 +324,8 @@ export default function CalendarPage() {
         source: event.source, approval_status: 'approved', notes: event.notes,
       })
       await loadEvents(selectedTerm.term_id)
-      setNotice(`Approved "${event.title}". If this is a closure, regenerate the timetable to reschedule affected sessions.`)
+      setNotice(`Approved "${event.title}".`)
+      if (event.is_closure) await optimizeAfterCalendarApproval(event.title)
     } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
   }
 
@@ -354,11 +335,14 @@ export default function CalendarPage() {
     setError(''); setNotice(''); setSavingEvent(true)
     try {
       const payload = { ...eventForm, preferred_replacement_date: eventForm.preferred_replacement_date || null, preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
-      await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
+      const createdEvent = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
       await loadEvents(selectedTerm.term_id)
       setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
       setShowEventForm(false)
-      setNotice('Calendar event saved for review. After approving a closure, regenerate the timetable to apply calendar changes.')
+      setNotice(createdEvent.data.approval_status === 'pending' ? 'Calendar event saved for review. Approve a closure to start date-aware rescheduling.' : 'Calendar event saved.')
+      if (createdEvent.data.approval_status === 'approved' && createdEvent.data.is_closure) {
+        await optimizeAfterCalendarApproval(createdEvent.data.title || payload.title)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not save this calendar event.')
     } finally { setSavingEvent(false) }
@@ -1161,33 +1145,13 @@ export default function CalendarPage() {
         <div className="cal-header-row">
           <div>
             <h1 className="cal-title">Academic Calendar</h1>
-            <p className="cal-subtitle">Configure your semester, load the college-provided activity calendar, and add any extra holidays or events.</p>
+            <p className="cal-subtitle">Manage semester dates, import institutional calendars, and review holidays. Approved closures trigger date-aware rescheduling automatically.</p>
           </div>
           <div className="cal-header-actions">
             <button type="button" className="cal-btn-add" onClick={() => setShowEventForm(true)}>
               <PlusIcon /> Add event
             </button>
-            <button type="button" className="cal-btn-generate" disabled={!selectedTerm || optimizingSemester} onClick={async () => {
-              setVersionError('')
-              setOptimizingSemester(true)
-              try {
-                const result = await axios.post(API + '/semester/terms/' + selectedTerm.term_id + '/optimize')
-                const versions = await axios.get(API + '/semester/terms/' + selectedTerm.term_id + '/versions')
-                setSemesterVersions(versions.data || [])
-                setSelectedVersionId(String(result.data.version_id))
-                const report = result.data.calendar_reschedule_report
-                const reportText = report ? ` Calendar closures: ${report.affected_sessions} affected session(s), ${report.replacements_found} replacement candidate(s), ${report.unresolved_sessions?.length || 0} unresolved.` : ''
-                setNotice('Semester optimization ' + result.data.status + ': draft v' + result.data.version_number + ' created with ' + result.data.session_count + ' dated sessions. Objective score: ' + (result.data.objective_value ?? 'not reported') + '.' + reportText + ' Review the draft and resolve any reported issues before publishing.')
-              } catch (e) {
-                const detail = e.response?.data?.detail
-                const diagnostic = typeof detail === 'string'
-                  ? detail
-                  : [detail?.message, detail?.diagnostic || (detail?.reason ? 'Reason: ' + detail.reason : ''), detail?.status ? 'Status: ' + detail.status : ''].filter(Boolean).join(' ')
-                setVersionError(diagnostic || 'Semester optimization failed. Check the weekly schedule, assignments, rooms, availability and constraints.')
-              } finally { setOptimizingSemester(false) }
-            }}>
-              <SparklesIcon /> {optimizingSemester ? 'Optimizing…' : 'Optimize semester'}
-            </button>
+
           </div>
         </div>
 
