@@ -242,27 +242,53 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         "replacements": [],
     }
     if affected_sessions:
-        # Reserve unchanged same-class/subject dates first so they are not
-        # incorrectly counted as makeup sessions for a closure-affected occurrence.
-        unchanged_dates = {}
+        closure_ranges = [(event.start_date, event.end_date) for event in closure_events]
+
+        def is_closed_day(day):
+            return any(start_date <= day <= end_date for start_date, end_date in closure_ranges)
+
+        # Only count a replacement when the new solver output actually contains
+        # an occurrence on a date that was not already an unaffected occurrence
+        # in the previous version. This avoids labelling an ordinary recurring
+        # class as a makeup session.
+        unaffected_old_occurrences = set()
         for old_session in latest.sessions:
-            key = (old_session.class_id, old_session.subject_id)
-            unchanged_dates.setdefault(key, set()).add(old_session.session_date)
+            if not is_closed_day(old_session.session_date):
+                unaffected_old_occurrences.add((
+                    old_session.class_id,
+                    old_session.subject_id,
+                    old_session.session_date,
+                ))
+
         candidates_by_subject = {}
         for item in result["sessions"]:
             key = (item["class_id"], item["subject_id"])
             candidates_by_subject.setdefault(key, []).append(item)
+
         used_replacements = set()
-        for old_session, event in sorted(affected_sessions, key=lambda pair: pair[0].session_date):
+        for old_session, event in sorted(
+            affected_sessions,
+            key=lambda pair: (pair[0].session_date, pair[0].period_number, pair[0].session_id),
+        ):
             key = (old_session.class_id, old_session.subject_id)
             candidates = candidates_by_subject.get(key, [])
-            valid = [item for item in candidates
+            valid = [
+                item for item in candidates
                 if item["session_date"] != old_session.session_date
-                and not any(closure.start_date <= item["session_date"] <= closure.end_date for closure in closure_events)
-                and (item["session_date"], item["period_number"], item["class_id"], item["subject_id"]) not in used_replacements]
+                and not is_closed_day(item["session_date"])
+                and (item["class_id"], item["subject_id"], item["session_date"])
+                    not in unaffected_old_occurrences
+                and (
+                    item["session_date"],
+                    item["period_number"],
+                    item["class_id"],
+                    item["subject_id"],
+                ) not in used_replacements
+            ]
             valid.sort(key=lambda item: (
                 0 if item["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2] else 1,
-                item["session_date"], item["period_number"],
+                item["session_date"],
+                item["period_number"],
             ))
             if not valid:
                 reschedule_report["unresolved_sessions"].append({
@@ -272,20 +298,32 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
                     "subject_id": old_session.subject_id,
                     "period_number": old_session.period_number,
                     "closure_event": event.title,
-                    "reason": "No replacement occurrence for this class and subject could be identified in the generated draft.",
+                    "reason": "The new CP-SAT draft contains no additional eligible occurrence for this class and subject.",
                 })
                 continue
-            replacement = valid[0]
-            used_replacements.add((replacement["session_date"], replacement["period_number"], replacement["class_id"], replacement["subject_id"]))
+
+            moved = valid[0]
+            used_key = (
+                moved["session_date"],
+                moved["period_number"],
+                moved["class_id"],
+                moved["subject_id"],
+            )
+            used_replacements.add(used_key)
+            # Persist provenance on the actual replacement session in the draft.
+            moved["original_session_id"] = old_session.session_id
+            moved["source_event_id"] = event.event_id
+            moved["outcome_note"] = f"Makeup for {event.title} on {old_session.session_date.isoformat()}."
             reschedule_report["replacements"].append({
                 "original_session_id": old_session.session_id,
                 "original_date": old_session.session_date.isoformat(),
-                "replacement_date": replacement["session_date"].isoformat(),
-                "replacement_period": replacement["period_number"],
+                "replacement_date": moved["session_date"].isoformat(),
+                "replacement_period": moved["period_number"],
                 "class_id": old_session.class_id,
                 "subject_id": old_session.subject_id,
-                "same_week": replacement["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2],
+                "same_week": moved["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2],
                 "closure_event": event.title,
+                "replacement_is_in_solver_output": True,
             })
         reschedule_report["replacements_found"] = len(reschedule_report["replacements"])
 
