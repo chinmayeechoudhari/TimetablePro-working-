@@ -749,8 +749,28 @@ def update_event(event_id: int, payload: EventCreate, db: Session = Depends(get_
         payload.end_date,
         exclude_event_id=event.event_id,
     )
+    if overlaps and payload.approval_status == "approved":
+        # Approval must not silently resolve date conflicts. The administrator
+        # must edit/remove the conflicting entry first, then approve again.
+        conflict_summary = [
+            {
+                "event_id": item.event_id,
+                "title": item.title,
+                "start_date": item.start_date.isoformat(),
+                "end_date": item.end_date.isoformat(),
+                "approval_status": item.approval_status,
+            }
+            for item in overlaps
+        ]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This calendar entry overlaps another entry. Resolve the date overlap before approving it.",
+                "overlaps": conflict_summary,
+            },
+        )
     event_data = payload.model_dump()
-    if overlaps and payload.approval_status != "approved":
+    if overlaps:
         event_data["approval_status"] = "pending"
         review_note = "Overlaps another calendar entry; administrator review required."
         event_data["notes"] = f"{event_data.get('notes') or ''} {review_note}".strip()
