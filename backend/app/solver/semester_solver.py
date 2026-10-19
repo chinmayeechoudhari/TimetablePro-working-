@@ -106,6 +106,15 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     # below penalizes deviations so makeup is used only when calendar/resource
     # constraints make the regular weekly target impossible.
     weeks = list(_week_starts(start, end))
+    # Count sessions displaced by approved calendar closures for each class/subject.
+    # This amount is the extra per-week capacity the optimizer may use in later
+    # weeks when the original week has too few eligible dates/periods.
+    makeup_counts = defaultdict(int)
+    for preference in data.get("makeup_preferences", []):
+        pair = (preference.get("class_id"), preference.get("subject_id"))
+        if pair[0] is not None and pair[1] is not None:
+            makeup_counts[pair] += 1
+
     makeup_penalties = []
     for subject in subjects:
         target = max(0, int(subject.get("periods_per_week", 0) or 0))
@@ -113,7 +122,6 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if target <= 0:
             continue
         weekly_candidates = {}
-        calendar_open_weeks = {}
         for week in weeks:
             week_end = week + timedelta(days=6)
             matching = [
@@ -124,29 +132,13 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
             weekly_candidates[week] = matching
             semester_vars.extend(matching)
 
-            # Count a week as closed only when the calendar leaves no eligible
-            # date with a configured slot weekday inside the term. An empty
-            # subject candidate list alone is not proof of a calendar closure
-            # (for example, a partial boundary week may simply lack that weekday).
-            configured_workdays = [
-                candidate_day
-                for candidate_day in (week + timedelta(days=offset) for offset in range(7))
-                if start <= candidate_day <= end
-                and candidate_day.strftime("%A") in working_days
-            ]
-            # A week is closed only if it contains at least one configured
-            # working date and every such date is explicitly closed by the
-            # calendar. No configured workday in a partial boundary week is
-            # not evidence of a closure and must not grant makeup capacity.
-            calendar_open_weeks[week] = (
-                bool(configured_workdays)
-                and all(_event_state(candidate_day, events, working_days)[1]
-                        for candidate_day in configured_workdays)
-            )
-
-        # Only fully calendar-closed weeks contribute extra makeup capacity.
-        closed_weeks = sum(1 for is_closed in calendar_open_weeks.values() if is_closed)
-        weekly_capacity = target * (1 + closed_weeks)
+        # A closure does not need to wipe out an entire week before makeup is
+        # needed. Let the class/subject exceed its normal weekly target by the
+        # number of its displaced sessions, so CP-SAT can recover them in any
+        # later eligible week inside the semester date range. The semester-wide
+        # target below remains authoritative; this is capacity, not extra demand.
+        displaced_count = makeup_counts[(subject["class_id"], subject["subject_id"])]
+        weekly_capacity = target + displaced_count
         for week, matching in weekly_candidates.items():
             if matching:
                 weekly_total = sum(matching)
