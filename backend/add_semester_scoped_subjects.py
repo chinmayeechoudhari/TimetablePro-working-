@@ -14,6 +14,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import engine
+from app.models.calendar import AcademicTerm  # register the academic_term table before FK model use
 from app.models.models import AcademicGroup, Class, Division, Subject, SubjectDefinition, TeachingAssignment, Timetable
 
 
