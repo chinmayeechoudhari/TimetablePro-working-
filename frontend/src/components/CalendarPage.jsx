@@ -11,7 +11,7 @@ const DEFAULT_TERM = {
   end_date: '2026-12-30',
   holiday_region: 'Maharashtra, India',
   timezone: 'Asia/Kolkata',
-  reschedule_policy: 'suggest',
+  reschedule_policy: 'automatic',
   status: 'active',
 }
 const EVENT_TYPES = [
@@ -241,9 +241,10 @@ export default function CalendarPage() {
     event.preventDefault()
     setError(''); setNotice(''); setSavingTerm(true)
     try {
+      const termPayload = { ...termForm, reschedule_policy: 'automatic' }
       const response = editingTerm && selectedTerm
-        ? await axios.patch(`${API}/calendar/terms/${selectedTerm.term_id}`, termForm)
-        : await axios.post(`${API}/calendar/terms`, termForm)
+        ? await axios.patch(`${API}/calendar/terms/${selectedTerm.term_id}`, termPayload)
+        : await axios.post(`${API}/calendar/terms`, termPayload)
       const saved = response.data
       await loadTerms(saved.term_id)
       setShowTermForm(false)
@@ -1928,13 +1929,9 @@ export default function CalendarPage() {
                     <option value="America/New_York">America/New_York</option>
                   </select>
                 </FieldInput>
-                <FieldInput label="Rescheduling policy">
-                  <select style={inputCls} value={termForm.reschedule_policy} onChange={e => setTermField('reschedule_policy', e.target.value)}>
-                    <option value="cancel">Mark cancelled; no replacement</option>
-                    <option value="suggest">Suggest replacements for approval</option>
-                    <option value="automatic">Automatic rescheduling</option>
-                  </select>
-                </FieldInput>
+                <div style={{gridColumn:'1 / -1',fontSize:11.5,color:'#64748b',lineHeight:1.45}}>
+                  Approved closure dates are rescheduled automatically by the date-aware CP-SAT solver. Preferred replacement dates and periods are soft preferences; hard scheduling constraints always take priority.
+                </div>
                 <FieldInput label="Term status">
                   <select style={inputCls} value={termForm.status} onChange={e => setTermField('status', e.target.value)}>
                     <option value="draft">Draft</option>
