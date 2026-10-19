@@ -161,6 +161,24 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
                     "event_id": closure.event_id,
                 })
 
+    # When a semester has no prior draft yet, closure dates have no displaced
+    # session rows to derive preferences from. Still pass any manually selected
+    # replacement date/period into the same CP-SAT objective for each subject
+    # that belongs to the selected term. These remain soft preferences.
+    if not latest:
+        for closure in closure_events:
+            if closure.preferred_replacement_date is None and closure.preferred_replacement_period is None:
+                continue
+            for subject in subjects:
+                makeup_preferences.append({
+                    "class_id": subject.class_id,
+                    "subject_id": subject.subject_id,
+                    "original_date": closure.start_date,
+                    "preferred_date": closure.preferred_replacement_date,
+                    "preferred_period": closure.preferred_replacement_period,
+                    "event_id": closure.event_id,
+                })
+
     try:
         result = solve_semester_schedule({
             "db": db,
