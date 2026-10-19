@@ -1,6 +1,7 @@
 """Optimize a semester across dated slots and persist a new draft version."""
 import json
 from datetime import date, timedelta, datetime
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +17,17 @@ from app.constraints.resolver import EntityResolutionError
 from app.solver.semester_solver import solve_semester_schedule
 
 router = APIRouter(prefix="/semester", tags=["semester-optimization"])
+
+
+def _normalize_academic_year(value) -> str:
+    """Compare AY labels independently of dash characters, spaces, or full end years."""
+    text = str(value or "").strip().casefold()
+    text = re.sub(r"\s+", "", text).replace("–", "-").replace("—", "-").replace("−", "-")
+    match = re.fullmatch(r"(\d{4})[-/](\d{2}|\d{4})", text)
+    if match:
+        start, end = match.groups()
+        return f"{start}-{end[-2:]}"
+    return text
 
 
 def _working_days(term, slots=None):
@@ -46,10 +58,10 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     # Validate academic-year scoping before loading slots, constraints, or other
     # scheduling data. Never proceed with another year's assignments.
     all_groups = db.query(AcademicGroup).all()
-    term_year = str(term.academic_year or "").strip().casefold()
+    term_year = _normalize_academic_year(term.academic_year)
     scoped_groups = [
         group for group in all_groups
-        if str(group.academic_year or "").strip().casefold() == term_year
+        if _normalize_academic_year(group.academic_year) == term_year
     ]
     if all_groups and not scoped_groups:
         raise HTTPException(
