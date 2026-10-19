@@ -75,6 +75,38 @@ def test_partial_week_closure_can_make_up_sessions_in_later_semester_week():
     assert len(second_week) == 4
 
 
+def test_reports_unresolved_makeup_when_no_valid_capacity_remains():
+    data = _base_data()
+    data["end_date"] = date(2026, 10, 30)
+    data["slots"] = [{"slot_id": 1, "day": "Monday", "period_number": 1}]
+    data["subjects"][0]["periods_per_week"] = 1
+    data["events"] = [{
+        "start_date": date(2026, 10, 19),
+        "end_date": date(2026, 10, 19),
+        "is_closure": True,
+        "is_working_day_override": None,
+    }]
+    data["makeup_preferences"] = [{
+        "class_id": 100,
+        "subject_id": 10,
+        "original_date": date(2026, 10, 19),
+        "preferred_date": None,
+        "preferred_period": None,
+        "event_id": 1,
+    }]
+
+    result = solve_semester_schedule(data)
+
+    assert result["status"] in {"optimal", "feasible"}
+    assert len(result["sessions"]) == 1
+    assert result["unresolved_makeups"] == [{
+        "class_id": 100,
+        "subject_id": 10,
+        "unresolved_count": 1,
+        "reason": "No additional eligible date/period remained inside the semester after applying hard constraints.",
+    }]
+
+
 def test_teacher_unavailability_is_respected():
     data = _base_data()
     data["unavailable_pairs"] = [(20, 1), (20, 2)]
