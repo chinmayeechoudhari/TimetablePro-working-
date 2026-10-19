@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import AcademicGroup, Constraint, Division, SubjectDefinition, Timetable, TeachingAssignment
+from app.models.models import AcademicGroup, Constraint, Division, Subject, SubjectDefinition, TeacherSubject, Timetable, TeachingAssignment
 from app.models.semester import TimetableVersion
 
 router = APIRouter(prefix="/calendar", tags=["academic-calendar"])
@@ -132,6 +132,11 @@ def create_term(payload: TermCreate, db: Session = Depends(get_db)):
         reschedule_policy=payload.reschedule_policy,
         status=payload.status,
     )
+    # The admin workflow supports one active semester at a time.
+    if term.status == "active":
+        db.query(AcademicTerm).filter(AcademicTerm.status == "active").update(
+            {AcademicTerm.status: "archived"}, synchronize_session=False
+        )
     db.add(term)
     try:
         db.commit()
@@ -149,6 +154,11 @@ def update_term(term_id: int, payload: TermUpdate, db: Session = Depends(get_db)
     for field, value in data.items():
         if value is not None:
             setattr(term, field, value)
+    if term.status == "active":
+        db.query(AcademicTerm).filter(
+            AcademicTerm.term_id != term_id,
+            AcademicTerm.status == "active",
+        ).update({AcademicTerm.status: "archived"}, synchronize_session=False)
     if term.end_date < term.start_date:
         raise HTTPException(status_code=422, detail="Term end date must be on or after the start date.")
     try:
@@ -222,11 +232,31 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
             ).all()
             class_ids = [division.class_id for division in division_rows]
             if class_ids:
+                legacy_subject_ids = [
+                    row.subject_id for row in db.query(Subject.subject_id).filter(
+                        Subject.class_id.in_(class_ids)
+                    ).all()
+                ]
                 db.query(Timetable).filter(Timetable.class_id.in_(class_ids)).delete(
                     synchronize_session=False
                 )
+                if legacy_subject_ids:
+                    db.query(TeacherSubject).filter(
+                        TeacherSubject.subject_id.in_(legacy_subject_ids)
+                    ).delete(synchronize_session=False)
+                    db.query(Subject).filter(
+                        Subject.subject_id.in_(legacy_subject_ids)
+                    ).delete(synchronize_session=False)
 
         db.delete(term)
+        db.flush()
+        # Promote the next remaining term so the admin can remove old terms
+        # one at a time without exposing a semester toggle in timetable view.
+        next_term = db.query(AcademicTerm).order_by(
+            AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()
+        ).first()
+        if next_term:
+            next_term.status = "active"
         db.commit()
     except Exception:
         db.rollback()
