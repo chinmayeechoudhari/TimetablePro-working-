@@ -368,9 +368,7 @@ export default function CalendarPage() {
     try {
       await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
       const remaining = terms.filter(t => String(t.term_id) !== String(selectedTerm.term_id))
-      setTerms(remaining)
-      const preferred = remaining.find(t => t.status === 'active') || remaining[0]
-      setSelectedId(preferred ? String(preferred.term_id) : '')
+      const preferred = await loadTerms('')
       if (!preferred) setShowTermForm(true)
       setNotice(preferred
         ? 'Semester removed. The next remaining semester is now active.'
