@@ -27,7 +27,7 @@ jobs:
         env:
           DATABASE_URL: sqlite:///./test-semester-workflow.db
         run: |
-          pytest -q app/solver/test_semester_solver.py tests/test_semester_optimize_api.py tests/test_semester_api.py tests/test_constraint_scope_api.py
+          pytest -q app/solver/test_semester_solver.py tests/test_semester_optimize_api.py tests/test_semester_api.py tests/test_semester_constraint_compiler.py
 
   frontend-build:
     runs-on: ubuntu-latest
