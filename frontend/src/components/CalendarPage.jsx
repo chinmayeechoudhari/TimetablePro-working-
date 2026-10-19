@@ -367,7 +367,6 @@ export default function CalendarPage() {
     setError(''); setNotice('')
     try {
       await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
-      const remaining = terms.filter(t => String(t.term_id) !== String(selectedTerm.term_id))
       const preferred = await loadTerms('')
       if (!preferred) setShowTermForm(true)
       setNotice(preferred
