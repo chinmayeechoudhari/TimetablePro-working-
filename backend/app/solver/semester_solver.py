@@ -115,7 +115,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     while day <= end:
         _eligible, closed = _event_state(day, events, working_days)
         if closed and day.strftime("%A") in working_days:
-            closure_affected_weeks.add(_week_starts(day, day)[0])
+            closure_affected_weeks.add(next(_week_starts(day, day)))
         day += timedelta(days=1)
 
     makeup_penalties = []
