@@ -223,8 +223,9 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
             db.query(TeachingAssignment).filter(
                 TeachingAssignment.definition_id.in_(definition_ids)
             ).delete(synchronize_session=False)
-            for definition in definitions:
-                db.delete(definition)
+            db.query(SubjectDefinition).filter(
+                SubjectDefinition.term_id == term_id
+            ).delete(synchronize_session=False)
 
         term_subjects = db.query(Subject).filter(Subject.term_id == term_id).all()
         subject_ids = [row.subject_id for row in term_subjects]
