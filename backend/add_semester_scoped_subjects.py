@@ -10,12 +10,12 @@ assignment rows are preserved.
 """
 from collections import defaultdict
 
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import engine
 from app.models.calendar import AcademicTerm  # register the academic_term table before FK model use
-from app.models.models import AcademicGroup, Class, Division, Subject, SubjectDefinition, TeachingAssignment, Timetable
+from app.models.models import AcademicGroup, Class, Division, Subject, SubjectDefinition, TeachingAssignment, TeacherSubject, Timetable
 
 
 def _ensure_column(connection, table_name: str, column_name: str) -> None:
@@ -31,6 +31,70 @@ def _ensure_column(connection, table_name: str, column_name: str) -> None:
 
 
 
+
+def _deduplicate_term_subject_data(session: Session, has_sessions: bool) -> None:
+    """Collapse duplicate subject rows left by legacy duplicate department groups."""
+    from app.models.semester import ScheduledSession
+
+    def normalized(value) -> str:
+        return str(value or "").strip().casefold()
+
+    # First merge class-level subject rows. Academic structure merging has
+    # already redirected duplicate division classes to their canonical class.
+    subjects = session.query(Subject).order_by(Subject.subject_id.asc()).all()
+    canonical_subjects = {}
+    for subject in subjects:
+        key = (
+            subject.term_id,
+            subject.class_id,
+            normalized(subject.subject_name),
+            normalized(subject.subject_type),
+        )
+        canonical = canonical_subjects.get(key)
+        if canonical is None:
+            canonical_subjects[key] = subject
+            continue
+
+        # Every downstream reference must use the canonical subject ID before
+        # the duplicate subject can be deleted.
+        links = session.query(TeacherSubject).filter(
+            TeacherSubject.subject_id == subject.subject_id
+        ).all()
+        for link in links:
+            existing_link = session.query(TeacherSubject).filter(
+                TeacherSubject.teacher_id == link.teacher_id,
+                TeacherSubject.subject_id == canonical.subject_id,
+            ).first()
+            if existing_link:
+                session.delete(link)
+            else:
+                link.subject_id = canonical.subject_id
+
+        session.query(TeachingAssignment).filter(
+            TeachingAssignment.subject_id == subject.subject_id
+        ).update({TeachingAssignment.subject_id: canonical.subject_id}, synchronize_session=False)
+        session.query(Timetable).filter(
+            Timetable.subject_id == subject.subject_id
+        ).update({Timetable.subject_id: canonical.subject_id}, synchronize_session=False)
+        if has_sessions:
+            session.query(ScheduledSession).filter(
+                ScheduledSession.subject_id == subject.subject_id
+            ).update({ScheduledSession.subject_id: canonical.subject_id}, synchronize_session=False)
+        session.flush()
+        session.delete(subject)
+        session.flush()
+
+    # Weekly timetable rows have no unique key, so remove exact duplicates
+    # caused by remapping two old classes/subjects to one global class/subject.
+    weekly_rows = session.query(Timetable).order_by(Timetable.timetable_id.asc()).all()
+    seen_weekly_rows = set()
+    for row in weekly_rows:
+        key = (row.class_id, row.subject_id, row.teacher_id, row.slot_id, row.room_id)
+        if key in seen_weekly_rows:
+            session.delete(row)
+        else:
+            seen_weekly_rows.add(key)
+    session.flush()
 
 def _globalize_academic_structure() -> int:
     """Merge duplicate department/year groups while preserving all references."""
@@ -85,9 +149,30 @@ def _globalize_academic_structure() -> int:
                             Timetable.class_id == old_class_id
                         ).update({Timetable.class_id: new_class_id}, synchronize_session=False)
                         if has_sessions:
-                            session.query(ScheduledSession).filter(
+                            old_sessions = session.query(ScheduledSession).filter(
                                 ScheduledSession.class_id == old_class_id
-                            ).update({ScheduledSession.class_id: new_class_id}, synchronize_session=False)
+                            ).order_by(ScheduledSession.session_id.asc()).all()
+                            for old_session in old_sessions:
+                                occupied = session.query(ScheduledSession).filter(
+                                    ScheduledSession.version_id == old_session.version_id,
+                                    ScheduledSession.session_date == old_session.session_date,
+                                    ScheduledSession.class_id == new_class_id,
+                                    ScheduledSession.period_number == old_session.period_number,
+                                    ScheduledSession.session_id != old_session.session_id,
+                                ).first()
+                                if occupied:
+                                    # Prefer the session already attached to the canonical class.
+                                    session.query(ScheduledSession).filter(
+                                        ScheduledSession.original_session_id == old_session.session_id
+                                    ).update(
+                                        {ScheduledSession.original_session_id: occupied.session_id},
+                                        synchronize_session=False,
+                                    )
+                                    session.delete(old_session)
+                                    session.flush()
+                                else:
+                                    old_session.class_id = new_class_id
+                                    session.flush()
 
                     session.query(TeachingAssignment).filter(
                         TeachingAssignment.division_id == old_division_id
@@ -112,14 +197,45 @@ def _globalize_academic_structure() -> int:
                         if old_class:
                             session.delete(old_class)
 
-                # Move all term-specific subjects to the canonical global group.
-                session.query(SubjectDefinition).filter(
+                # Move semester subject definitions into the global group. When
+                # both groups already defined the same subject for the same term,
+                # merge the definition and preserve distinct teacher/division links.
+                duplicate_definitions = session.query(SubjectDefinition).filter(
                     SubjectDefinition.group_id == duplicate.group_id
-                ).update({SubjectDefinition.group_id: canonical.group_id}, synchronize_session=False)
-                session.flush()
+                ).order_by(SubjectDefinition.definition_id.asc()).all()
+                for old_definition in duplicate_definitions:
+                    matching_definition = session.query(SubjectDefinition).filter(
+                        SubjectDefinition.group_id == canonical.group_id,
+                        SubjectDefinition.term_id == old_definition.term_id,
+                        func.lower(func.trim(SubjectDefinition.subject_name)) == str(old_definition.subject_name or "").strip().lower(),
+                        func.lower(func.trim(SubjectDefinition.subject_type)) == str(old_definition.subject_type or "").strip().lower(),
+                    ).order_by(SubjectDefinition.definition_id.asc()).first()
+                    if matching_definition is None:
+                        old_definition.group_id = canonical.group_id
+                        session.flush()
+                        continue
+
+                    old_assignments = session.query(TeachingAssignment).filter(
+                        TeachingAssignment.definition_id == old_definition.definition_id
+                    ).all()
+                    for old_assignment in old_assignments:
+                        existing_assignment = session.query(TeachingAssignment).filter(
+                            TeachingAssignment.teacher_id == old_assignment.teacher_id,
+                            TeachingAssignment.definition_id == matching_definition.definition_id,
+                            TeachingAssignment.division_id == old_assignment.division_id,
+                        ).first()
+                        if existing_assignment:
+                            session.delete(old_assignment)
+                        else:
+                            old_assignment.definition_id = matching_definition.definition_id
+                    session.flush()
+                    session.delete(old_definition)
+                    session.flush()
+
                 session.delete(duplicate)
                 merged_groups += 1
 
+        _deduplicate_term_subject_data(session, has_sessions)
         session.commit()
         return merged_groups
 
