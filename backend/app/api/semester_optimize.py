@@ -209,6 +209,72 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "locked_conflicts": result.get("locked_conflicts", []),
         })
 
+    # Report sessions displaced by approved closures against the previous draft/published version.
+    # The new draft remains a full validated CP-SAT schedule; this report helps admins
+    # audit which original dated sessions were moved and which could not be matched.
+    closure_events = [event for event in events if event.is_closure]
+    affected_sessions = []
+    if latest and closure_events:
+        for old_session in latest.sessions:
+            matching_closure = next((event for event in closure_events
+                if event.start_date <= old_session.session_date <= event.end_date), None)
+            if matching_closure:
+                affected_sessions.append((old_session, matching_closure))
+
+    reschedule_report = {
+        "affected_sessions": len(affected_sessions),
+        "replacements_found": 0,
+        "unresolved_sessions": [],
+        "replacements": [],
+    }
+    if affected_sessions:
+        # Reserve unchanged same-class/subject dates first so they are not
+        # incorrectly counted as makeup sessions for a closure-affected occurrence.
+        unchanged_dates = {}
+        for old_session in latest.sessions:
+            key = (old_session.class_id, old_session.subject_id)
+            unchanged_dates.setdefault(key, set()).add(old_session.session_date)
+        candidates_by_subject = {}
+        for item in result["sessions"]:
+            key = (item["class_id"], item["subject_id"])
+            candidates_by_subject.setdefault(key, []).append(item)
+        used_replacements = set()
+        for old_session, event in sorted(affected_sessions, key=lambda pair: pair[0].session_date):
+            key = (old_session.class_id, old_session.subject_id)
+            candidates = candidates_by_subject.get(key, [])
+            valid = [item for item in candidates
+                if item["session_date"] != old_session.session_date
+                and not any(closure.start_date <= item["session_date"] <= closure.end_date for closure in closure_events)
+                and (item["session_date"], item["period_number"], item["class_id"], item["subject_id"]) not in used_replacements]
+            valid.sort(key=lambda item: (
+                0 if item["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2] else 1,
+                item["session_date"], item["period_number"],
+            ))
+            if not valid:
+                reschedule_report["unresolved_sessions"].append({
+                    "original_session_id": old_session.session_id,
+                    "date": old_session.session_date.isoformat(),
+                    "class_id": old_session.class_id,
+                    "subject_id": old_session.subject_id,
+                    "period_number": old_session.period_number,
+                    "closure_event": event.title,
+                    "reason": "No replacement occurrence for this class and subject could be identified in the generated draft.",
+                })
+                continue
+            replacement = valid[0]
+            used_replacements.add((replacement["session_date"], replacement["period_number"], replacement["class_id"], replacement["subject_id"]))
+            reschedule_report["replacements"].append({
+                "original_session_id": old_session.session_id,
+                "original_date": old_session.session_date.isoformat(),
+                "replacement_date": replacement["session_date"].isoformat(),
+                "replacement_period": replacement["period_number"],
+                "class_id": old_session.class_id,
+                "subject_id": old_session.subject_id,
+                "same_week": replacement["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2],
+                "closure_event": event.title,
+            })
+        reschedule_report["replacements_found"] = len(reschedule_report["replacements"])
+
     next_number = (latest.version_number + 1) if latest else 1
     version = TimetableVersion(
         term_id=term_id,
@@ -237,6 +303,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         "term_id": term_id,
         "draft_only": True,
         "session_count": len(result["sessions"]),
+        "calendar_reschedule_report": reschedule_report,
         "sessions": [{
             "session_id": s.session_id,
             "date": s.session_date.isoformat(),
