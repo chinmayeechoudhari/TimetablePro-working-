@@ -87,7 +87,8 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({
     title: '', event_type: 'holiday', start_date: '', end_date: '',
-    is_closure: true, approval_status: 'pending', source: 'manual', notes: ''
+    is_closure: true, approval_status: 'pending', source: 'manual', notes: '',
+    preferred_replacement_date: '', preferred_replacement_period: ''
   })
   const [events, setEvents] = useState([])
   const [semesterVersions, setSemesterVersions] = useState([])
@@ -338,6 +339,8 @@ export default function CalendarPage() {
         title: event.title, event_type: event.event_type, start_date: event.start_date,
         end_date: event.end_date, is_closure: event.is_closure,
         is_working_day_override: event.is_working_day_override,
+        preferred_replacement_date: event.preferred_replacement_date || null,
+        preferred_replacement_period: event.preferred_replacement_period || null,
         source: event.source, approval_status: 'approved', notes: event.notes,
       })
       await loadEvents(selectedTerm.term_id)
@@ -350,10 +353,10 @@ export default function CalendarPage() {
     if (!selectedTerm) return
     setError(''); setNotice(''); setSavingEvent(true)
     try {
-      const payload = { ...eventForm, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
+      const payload = { ...eventForm, preferred_replacement_date: eventForm.preferred_replacement_date || null, preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
       await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
       await loadEvents(selectedTerm.term_id)
-      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '' })
+      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
       setShowEventForm(false)
       setNotice('Calendar event saved for review. After approving a closure, regenerate the timetable to apply calendar changes.')
     } catch (err) {
@@ -1842,6 +1845,12 @@ export default function CalendarPage() {
                     onChange={e => setEventField('end_date', e.target.value)}
                     required
                   />
+                </FieldInput>
+                <FieldInput label="Preferred replacement date (optional)">
+                  <input style={inputCls} type="date" min={selectedTerm.start_date} max={selectedTerm.end_date} value={eventForm.preferred_replacement_date || ''} onChange={e => setEventField('preferred_replacement_date', e.target.value)} />
+                </FieldInput>
+                <FieldInput label="Preferred replacement period (optional)">
+                  <input style={inputCls} type="number" min="1" max="20" value={eventForm.preferred_replacement_period || ''} onChange={e => setEventField('preferred_replacement_period', e.target.value)} placeholder="e.g. 3" />
                 </FieldInput>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <FieldInput label="Notes (optional)">
