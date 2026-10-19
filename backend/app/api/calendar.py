@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import AcademicGroup, Constraint, Division, Subject, SubjectDefinition, TeacherSubject, Timetable, TeachingAssignment
+from app.models.models import Constraint, Subject, SubjectDefinition, TeacherSubject, Timetable, TeachingAssignment
 from app.models.semester import TimetableVersion
 
 router = APIRouter(prefix="/calendar", tags=["academic-calendar"])
@@ -208,53 +208,30 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
             if isinstance(scope, dict) and str(scope.get("term_id")) == str(term_id):
                 db.delete(rule)
 
-        # The current data model attaches subjects to academic groups, not terms.
-        # Clear those subject definitions/assignments for this academic year but
-        # keep the groups and divisions so department/class counts survive.
-        groups = db.query(AcademicGroup).all()
-        scoped_group_ids = [
-            group.group_id for group in groups
-            if normalize_year(group.academic_year) == academic_year
-        ]
-        if scoped_group_ids:
-            definitions = db.query(SubjectDefinition).filter(
-                SubjectDefinition.group_id.in_(scoped_group_ids)
-            ).all()
-            definition_ids = [definition.definition_id for definition in definitions]
-            if definition_ids:
-                db.query(TeachingAssignment).filter(
-                    TeachingAssignment.definition_id.in_(definition_ids)
-                ).delete(synchronize_session=False)
-                for definition in definitions:
-                    db.delete(definition)
-
-            # Legacy timetable rows for these retained classes must not leave
-            # the previous semester's subjects visible in the weekly timetable.
-            division_rows = db.query(Division).filter(
-                Division.group_id.in_(scoped_group_ids)
-            ).all()
-            class_ids = [division.class_id for division in division_rows]
-            if class_ids:
-                legacy_subject_ids = [
-                    row.subject_id for row in db.query(Subject.subject_id).filter(
-                        Subject.class_id.in_(class_ids)
-                    ).all()
-                ]
-                db.query(Timetable).filter(Timetable.class_id.in_(class_ids)).delete(
-                    synchronize_session=False
-                )
-                if legacy_subject_ids:
-                    db.query(TeacherSubject).filter(
-                        TeacherSubject.subject_id.in_(legacy_subject_ids)
-                    ).delete(synchronize_session=False)
-                    db.query(Subject).filter(
-                        Subject.subject_id.in_(legacy_subject_ids)
-                    ).delete(synchronize_session=False)
+        # The legacy schema does not attach subjects directly to a term.
+        # In the single-active-semester workflow, clear all subject definitions,
+        # teacher assignments, and legacy timetable rows while retaining the
+        # classes/divisions that those records reference.
+        db.query(TeachingAssignment).delete(synchronize_session=False)
+        for definition in db.query(SubjectDefinition).all():
+            db.delete(definition)
+        db.query(Timetable).delete(synchronize_session=False)
+        legacy_subject_ids = [row.subject_id for row in db.query(Subject.subject_id).all()]
+        if legacy_subject_ids:
+            db.query(TeacherSubject).filter(
+                TeacherSubject.subject_id.in_(legacy_subject_ids)
+            ).delete(synchronize_session=False)
+            db.query(Subject).filter(
+                Subject.subject_id.in_(legacy_subject_ids)
+            ).delete(synchronize_session=False)
 
         db.delete(term)
         db.flush()
         # Promote the next remaining term so the admin can remove old terms
         # one at a time without exposing a semester toggle in timetable view.
+        db.query(AcademicTerm).filter(AcademicTerm.status == "active").update(
+            {AcademicTerm.status: "archived"}, synchronize_session=False
+        )
         next_term = db.query(AcademicTerm).order_by(
             AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()
         ).first()
