@@ -270,6 +270,37 @@ export default function TimetableGrid() {
     }
   }
 
+  async function handleDiscardDraft() {
+    if (!semesterVersion?.version_id) return
+    const confirmed = window.confirm(`Discard Draft Version ${semesterVersion.version_number}? The previously published schedule will remain active.`)
+    if (!confirmed) return
+    setPublishing(true)
+    try {
+      await axios.delete(`${BASE}/semester/versions/${semesterVersion.version_id}`)
+      // Reload versions to switch back to the published version
+      const versionsRes = await axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
+      const versions = versionsRes.data || []
+      const chosen = versions[0] || null
+      if (chosen) {
+        setSemesterVersion(chosen)
+        setTimetable((chosen.sessions || []).map(session => ({
+          ...session,
+          session_date: session.date || session.session_date,
+        })))
+      } else {
+        setSemesterVersion(null)
+        setTimetable(legacyTimetable)
+      }
+      setPublishNotice(`Draft v${semesterVersion.version_number} was discarded.`)
+      setTimeout(() => setPublishNotice(null), 4000)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      alert(`Could not discard draft: ${detail || err?.message}`)
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   async function fetchAll() {
     try {
       const [ttRes, tRes, sRes, rRes, cRes, slRes] = await Promise.all([
@@ -516,6 +547,26 @@ export default function TimetableGrid() {
                           {rooms[entry.room_id] || `R${entry.room_id}`}
                         </div>
                       )}
+                      {(entry.original_session_id || entry.outcome_note || entry.is_makeup) && (
+                        <div
+                          style={{
+                            fontSize: 9.5,
+                            fontWeight: 750,
+                            color: '#92400e',
+                            background: '#fef3c7',
+                            border: '1px solid #fde68a',
+                            borderRadius: 4,
+                            padding: '1px 5px',
+                            marginTop: 3,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={entry.outcome_note || 'Rescheduled makeup lecture'}
+                        >
+                          ⚡ Makeup
+                        </div>
+                      )}
                     </div>
                   ) : closureEvents.length ? (
                     <div className="tt-empty-cell" style={{ background: '#fff1f2', color: '#9f1239', fontSize: 11, fontWeight: 650, padding: 6, borderRadius: 6 }}>{closureEvents[0].title}</div>
@@ -747,25 +798,48 @@ export default function TimetableGrid() {
                 </span>
 
                 {semesterVersion.status === 'draft' && (
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={publishing}
-                    onClick={handlePublishVersion}
-                    style={{
-                      padding: '4px 12px',
-                      fontSize: 11.5,
-                      fontWeight: 750,
-                      minHeight: 28,
-                      borderRadius: 6,
-                      background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                      borderColor: '#15803d',
-                      boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
-                      cursor: publishing ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {publishing ? 'Publishing…' : `Accept & Publish v${semesterVersion.version_number}`}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={publishing}
+                      onClick={handlePublishVersion}
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: 11.5,
+                        fontWeight: 750,
+                        minHeight: 28,
+                        borderRadius: 6,
+                        background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                        borderColor: '#15803d',
+                        boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                        cursor: publishing ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {publishing ? 'Publishing…' : `Accept & Publish v${semesterVersion.version_number}`}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={publishing}
+                      onClick={handleDiscardDraft}
+                      style={{
+                        padding: '4px 11px',
+                        fontSize: 11.5,
+                        fontWeight: 650,
+                        minHeight: 28,
+                        borderRadius: 6,
+                        color: '#b91c1c',
+                        borderColor: '#fca5a5',
+                        background: '#fef2f2',
+                        cursor: publishing ? 'not-allowed' : 'pointer',
+                      }}
+                      title="Discard this draft and revert to the published timetable"
+                    >
+                      Discard Draft
+                    </button>
+                  </>
                 )}
 
                 {publishNotice && (

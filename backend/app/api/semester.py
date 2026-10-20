@@ -415,6 +415,22 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
     return _serialize_version(version)
 
 
+@router.delete("/versions/{version_id}")
+def delete_version(version_id: int, db: Session = Depends(get_db)):
+    """Discard an unapproved draft version and delete its scheduled sessions."""
+    version = _version(db, version_id)
+    if version.status != "draft":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only draft versions can be discarded. Version {version.version_number} is {version.status}."
+        )
+    term_id = version.term_id
+    db.query(ScheduledSession).filter(ScheduledSession.version_id == version_id).delete(synchronize_session=False)
+    db.delete(version)
+    db.commit()
+    return {"message": f"Draft version {version.version_number} has been discarded.", "term_id": term_id}
+
+
 @router.patch("/sessions/{session_id}/lock")
 def set_session_lock(session_id: int, payload: LockUpdate, db: Session = Depends(get_db)):
     item = _session(db, session_id)
