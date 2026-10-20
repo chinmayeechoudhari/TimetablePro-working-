@@ -179,14 +179,16 @@ def remove_department(department: str, db: Session = Depends(get_db)):
             detail=f"{name} cannot be removed yet because it has {assignment_count} teaching assignment(s). Remove those assignments first.",
         )
 
-    # Delete only the academic-structure records. Existing Class rows remain,
-    # so old class/subject/timetable data is not destroyed by this action.
+    # Delete academic-structure records and their corresponding class records.
     for group in groups:
         for division in list(group.divisions):
+            cls = division.class_
             db.delete(division)
+            if cls:
+                db.delete(cls)
         db.delete(group)
     db.commit()
-    return {"message": f"{name} was removed from academic structure. Existing class records were preserved."}
+    return {"message": f"{name} and its classes were removed from academic structure."}
 
 
 @router.post("/adopt-class")

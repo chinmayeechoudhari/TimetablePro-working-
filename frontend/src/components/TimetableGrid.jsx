@@ -303,13 +303,14 @@ export default function TimetableGrid() {
 
   async function fetchAll() {
     try {
-      const [ttRes, tRes, sRes, rRes, cRes, slRes] = await Promise.all([
+      const [ttRes, tRes, sRes, rRes, cRes, slRes, structRes] = await Promise.all([
         axios.get(`${BASE}/timetable`),
         axios.get(`${BASE}/teachers`),
         axios.get(`${BASE}/subjects`),
         axios.get(`${BASE}/rooms`),
         axios.get(`${BASE}/classes`),
         axios.get(`${BASE}/timeslots`),
+        axios.get(`${BASE}/academic-structure`).catch(() => ({ data: { groups: [] } })),
       ])
       const teacherMap = {}; tRes.data.forEach(t => { teacherMap[t.teacher_id] = t.teacher_name })
       const subjectMap = {}; sRes.data.forEach(s => { subjectMap[s.subject_id] = s.subject_name })
@@ -318,13 +319,24 @@ export default function TimetableGrid() {
       const classMap = {}; cRes.data.forEach(c => { classMap[c.class_id] = c.class_name })
       const colors = {}; sRes.data.forEach((s, i) => { colors[s.subject_id] = COLORS[i % COLORS.length] })
 
+      // Filter classes to only those belonging to active Academic Structure departments
+      const rawClasses = cRes.data || []
+      const groups = structRes.data?.groups || []
+      let validClasses = rawClasses
+      if (groups.length > 0) {
+        const activeClassIds = new Set(groups.flatMap(g => (g.divisions || []).map(d => d.class_id).filter(Boolean)))
+        if (activeClassIds.size > 0) {
+          validClasses = rawClasses.filter(c => activeClassIds.has(c.class_id))
+        }
+      }
+
       setLegacyTimetable(ttRes.data); setTimetable(ttRes.data); setTeachers(teacherMap); setSubjects(subjectMap)
       setRooms(roomMap); setClasses(classMap); setSubjectColors(colors)
-      setAllClasses(cRes.data); setAllTeachers(tRes.data); setAllRooms(rRes.data)
+      setAllClasses(validClasses); setAllTeachers(tRes.data); setAllRooms(rRes.data)
       setSlots(slRes.data)
 
-      if (cRes.data.length > 0) {
-        const first = cRes.data[0]
+      if (validClasses.length > 0) {
+        const first = validClasses[0]
         const parsed = parseClassName(first.class_name)
         setSelDept(parsed.dept)
         setSelYear(parsed.year)
