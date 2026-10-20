@@ -52,27 +52,40 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     locked = [x for x in data.get("locked_sessions", []) if x.get("is_locked")]
     subject_by_id = {s["subject_id"]: s for s in subjects}
 
+    slots_by_day = defaultdict(list)
+    for slot in slots:
+        slots_by_day[slot["day"]].append(slot)
+
+    teachers_by_subject = defaultdict(list)
+    for teacher in teachers:
+        for subject in subjects:
+            if (teacher["teacher_id"], subject["subject_id"]) in teacher_subjects:
+                teachers_by_subject[subject["subject_id"]].append(teacher)
+
+    rooms_by_type = defaultdict(list)
+    for room in rooms:
+        r_type = "lab" if str(room.get("room_type", "")).lower() == "lab" else "theory"
+        rooms_by_type[r_type].append(room)
+
     # Candidate key = (date, slot_id, class_id, subject_id, teacher_id, room_id).
     candidates = {}
     day = start
     while day <= end:
         eligible, _ = _event_state(day, events, working_days)
         if eligible:
-            for slot in slots:
-                if slot["day"] != day.strftime("%A"):
-                    continue
-                for subject in subjects:
-                    for teacher in teachers:
-                        if (teacher["teacher_id"], subject["subject_id"]) not in teacher_subjects:
+            weekday = day.strftime("%A")
+            day_slots = slots_by_day.get(weekday, [])
+            for subject in subjects:
+                subj_type = "lab" if str(subject.get("subject_type", "")).lower() == "lab" else "theory"
+                eligible_rooms = rooms_by_type.get(subj_type, [])
+                eligible_teachers = teachers_by_subject.get(subject["subject_id"], [])
+                for slot in day_slots:
+                    sl_id = slot["slot_id"]
+                    for teacher in eligible_teachers:
+                        if (teacher["teacher_id"], sl_id) in unavailable:
                             continue
-                        if (teacher["teacher_id"], slot["slot_id"]) in unavailable:
-                            continue
-                        for room in rooms:
-                            is_lab_subject = str(subject.get("subject_type", "")).lower() == "lab"
-                            is_lab_room = str(room.get("room_type", "")).lower() == "lab"
-                            if is_lab_subject != is_lab_room:
-                                continue
-                            key = (day, slot["slot_id"], subject["class_id"],
+                        for room in eligible_rooms:
+                            key = (day, sl_id, subject["class_id"],
                                    subject["subject_id"], teacher["teacher_id"], room["room_id"])
                             candidates[key] = None
         day += timedelta(days=1)
@@ -83,6 +96,14 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     model = cp_model.CpModel()
     assign = {key: model.NewBoolVar("a_" + "_".join(map(str, key)))
               for key in candidates}
+
+    # Pre-index assign variables by (class_id, subject_id) and (class_id, subject_id, date)
+    assign_by_subject = defaultdict(list)
+    assign_by_subj_date = defaultdict(list)
+    for key, var in assign.items():
+        session_date, slot_id, class_id, subject_id, teacher_id, room_id = key
+        assign_by_subject[(class_id, subject_id)].append((session_date, var))
+        assign_by_subj_date[(class_id, subject_id, session_date)].append(var)
 
     # At most one session per class, teacher, or room at each dated period.
     # Group by period_number, not slot_id: duplicate slot records for the same
@@ -110,13 +131,29 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if pair[0] is not None and pair[1] is not None:
             makeup_counts[pair] += 1
 
-    closure_affected_weeks = set()
+    closure_affected_weeks: set[date] = set()
     day = start
     while day <= end:
         _eligible, closed = _event_state(day, events, working_days)
         if closed and day.strftime("%A") in working_days:
             closure_affected_weeks.add(next(_week_starts(day, day)))
         day += timedelta(days=1)
+
+    # Pre-compute per-week eligible teaching-day counts within the term.
+    # A week with approved closures may have fewer eligible days than usual.
+    # Capping the effective weekly target at this count ensures the required
+    # semester total is always physically achievable.
+    week_eligible_days: dict = {}
+    for week in weeks:
+        count = 0
+        for offset in range(7):
+            d = week + timedelta(days=offset)
+            if d < start or d > end:
+                continue
+            is_eligible, _ = _event_state(d, events, working_days)
+            if is_eligible:
+                count += 1
+        week_eligible_days[week] = count
 
     makeup_penalties = []
     unresolved_makeups = []
@@ -127,31 +164,37 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
         if target <= 0:
             continue
         weekly_candidates = {}
+        subj_assigns = assign_by_subject.get((subject["class_id"], subject["subject_id"]), [])
+
+        # Effective weekly target: capped at the number of eligible days in
+        # that week so the required semester total is always achievable.
+        week_effective_target: dict = {
+            week: min(target, week_eligible_days[week])
+            for week in weeks
+        }
+
         for week in weeks:
             week_end = week + timedelta(days=6)
-            matching = [
-                var for (d, sl, c, s, t, r), var in assign.items()
-                if s == subject["subject_id"] and c == subject["class_id"]
-                and week <= d <= week_end
-            ]
+            matching = [var for d, var in subj_assigns if week <= d <= week_end]
             weekly_candidates[week] = matching
             semester_vars.extend(matching)
 
-        # Capacity expands in the closure week and subsequent weeks. If a prior
-        # version exists, use the number of specifically displaced sessions;
-        # otherwise estimate the possible displaced load from closed weeks.
         displaced_count = makeup_counts[(subject["class_id"], subject["subject_id"])]
-        estimated_closure_load = target * len(closure_affected_weeks)
+        estimated_closure_load = sum(
+            target - week_effective_target[w] for w in closure_affected_weeks
+        )
         allowed_shortfall = min(
-            target * len(weeks),
+            sum(week_effective_target.values()),
             displaced_count if displaced_count > 0 else estimated_closure_load,
         )
         for week, matching in weekly_candidates.items():
-            earlier_or_current_closures = sum(
-                1 for closure_week in closure_affected_weeks if closure_week <= week
+            eff_target = week_effective_target[week]
+            extra_capacity = max(
+                displaced_count,
+                sum(target - week_effective_target[w]
+                    for w in closure_affected_weeks if w <= week),
             )
-            estimated_displaced = target * earlier_or_current_closures
-            weekly_capacity = target + max(displaced_count, estimated_displaced)
+            weekly_capacity = eff_target + extra_capacity
             if matching:
                 weekly_total = sum(matching)
                 model.Add(weekly_total <= weekly_capacity)
@@ -159,20 +202,24 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                     0, weekly_capacity,
                     f"weekly_deviation_c{subject['class_id']}_s{subject['subject_id']}_{week}"
                 )
-                model.AddAbsEquality(deviation, weekly_total - target)
+                # Two one-sided constraints instead of AddAbsEquality.
+                model.Add(deviation >= weekly_total - eff_target)
+                model.Add(deviation >= eff_target - weekly_total)
                 makeup_penalties.append(deviation)
 
-        required_semester_total = target * len(weeks)
-        if allowed_shortfall > 0:
-            unresolved = model.NewIntVar(
-                0, allowed_shortfall,
-                f"unresolved_makeup_c{subject['class_id']}_s{subject['subject_id']}"
-            )
-            model.Add(sum(semester_vars) + unresolved == required_semester_total)
-            unresolved_makeups.append((subject, unresolved))
-            unresolved_penalties.append(unresolved)
-        else:
-            model.Add(sum(semester_vars) == required_semester_total)
+        # Required semester total = sum of per-week effective targets.
+        # This is always achievable regardless of how many holidays reduce capacity.
+        required_semester_total = sum(week_effective_target.values())
+        # Always use a soft shortfall variable. The 1,000,000 penalty per
+        # missing session drives the solver to schedule as many as it can,
+        # while never making the whole model infeasible due to slot competition.
+        unresolved = model.NewIntVar(
+            0, required_semester_total,
+            f"unresolved_makeup_c{subject['class_id']}_s{subject['subject_id']}"
+        )
+        model.Add(sum(semester_vars) + unresolved == required_semester_total)
+        unresolved_makeups.append((subject, unresolved))
+        unresolved_penalties.append(unresolved)
 
     # Keep locked assignments fixed. A lock that cannot be represented is a
     # reported infeasibility rather than silently moved or dropped.
@@ -280,23 +327,22 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     for week in _week_starts(start, end):
         for subject in subjects:
             day_vars = []
-            for weekday in sorted(working_days):
-                day_vars_for_subject = [
-                    var for (d, sl, c, s, t, r), var in assign.items()
-                    if s == subject["subject_id"] and c == subject["class_id"]
-                    and d >= week and d < week + timedelta(days=7)
-                    and d.strftime("%A") == weekday
-                ]
-                if not day_vars_for_subject:
-                    continue
-                used = model.NewBoolVar(f"used_s{subject['subject_id']}_{week}_{weekday}")
-                model.Add(sum(day_vars_for_subject) >= 1).OnlyEnforceIf(used)
-                model.Add(sum(day_vars_for_subject) == 0).OnlyEnforceIf(used.Not())
-                day_vars.append(used)
-            target = max(0, int(subject.get("periods_per_week", 0) or 0))
-            if day_vars and target:
-                penalty = model.NewIntVar(0, min(target, len(day_vars)), f"spread_s{subject['subject_id']}_{week}")
-                model.Add(penalty >= min(target, len(day_vars)) - sum(day_vars))
+            c_id = subject["class_id"]
+            s_id = subject["subject_id"]
+            subj_target = max(0, int(subject.get("periods_per_week", 0) or 0))
+            for offset in range(7):
+                curr_d = week + timedelta(days=offset)
+                if curr_d.strftime("%A") in working_days:
+                    day_vars_for_subject = assign_by_subj_date.get((c_id, s_id, curr_d), [])
+                    if not day_vars_for_subject:
+                        continue
+                    used = model.NewBoolVar(f"used_s{s_id}_{week}_{curr_d.strftime('%A')}")
+                    model.Add(sum(day_vars_for_subject) >= 1).OnlyEnforceIf(used)
+                    model.Add(sum(day_vars_for_subject) == 0).OnlyEnforceIf(used.Not())
+                    day_vars.append(used)
+            if day_vars and subj_target:
+                penalty = model.NewIntVar(0, min(subj_target, len(day_vars)), f"spread_s{s_id}_{week}")
+                model.Add(penalty >= min(subj_target, len(day_vars)) - sum(day_vars))
                 penalties.append(penalty)
     penalties.extend(dynamic_penalties)
     if penalties:
@@ -305,6 +351,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.1, float(max_time_seconds))
     status = solver.Solve(model)
+    print("DEBUG: CP-SAT STATUS:", solver.StatusName(status), "WallTime:", solver.WallTime(), solver.ResponseStats())
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return {
             "status": "infeasible" if status == cp_model.INFEASIBLE else "no_solution",

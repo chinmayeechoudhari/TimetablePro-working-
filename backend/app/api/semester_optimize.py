@@ -154,13 +154,39 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     latest = db.query(TimetableVersion).filter(
         TimetableVersion.term_id == term_id,
     ).order_by(TimetableVersion.version_number.desc()).first()
+
+    closure_events = [event for event in events if event.is_closure]
+    closure_ranges = [(event.start_date, event.end_date) for event in closure_events]
+
+    def _has_closure_sessions(v):
+        if not v or not closure_ranges:
+            return False
+        return any(
+            any(s_date <= s.session_date <= e_date for s_date, e_date in closure_ranges)
+            for s in v.sessions if s.session_status == "scheduled"
+        )
+
+    published_version = db.query(TimetableVersion).filter(
+        TimetableVersion.term_id == term_id,
+        TimetableVersion.status == "published",
+    ).order_by(TimetableVersion.version_number.desc()).first()
+
+    if published_version and _has_closure_sessions(published_version):
+        baseline_version = published_version
+    elif published_version:
+        baseline_version = published_version
+    else:
+        all_versions = db.query(TimetableVersion).filter(
+            TimetableVersion.term_id == term_id,
+        ).order_by(TimetableVersion.version_number.desc()).all()
+        baseline_version = next((v for v in all_versions if _has_closure_sessions(v)), all_versions[0] if all_versions else None)
+
     # Session locking is intentionally outside this workflow phase. Closure
     # rescheduling is solved from the current term data without carrying locks.
 
     makeup_preferences = []
-    closure_events = [event for event in events if event.is_closure]
-    if latest and closure_events:
-        for old_session in latest.sessions:
+    if baseline_version and closure_events:
+        for old_session in baseline_version.sessions:
             if old_session.session_status != "scheduled":
                 continue
             closure = next((
@@ -181,7 +207,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     # session rows to derive preferences from. Still pass any manually selected
     # replacement date/period into the same CP-SAT objective for each subject
     # that belongs to the selected term. These remain soft preferences.
-    if not latest:
+    if not baseline_version:
         for closure in closure_events:
             if closure.preferred_replacement_date is None and closure.preferred_replacement_period is None:
                 continue
@@ -246,8 +272,8 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     # audit which original dated sessions were moved and which could not be matched.
     closure_events = [event for event in events if event.is_closure]
     affected_sessions = []
-    if latest and closure_events:
-        for old_session in latest.sessions:
+    if baseline_version and closure_events:
+        for old_session in baseline_version.sessions:
             if old_session.session_status != "scheduled":
                 continue
             matching_closure = next((event for event in closure_events
@@ -272,7 +298,7 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
         # in the previous version. This avoids labelling an ordinary recurring
         # class as a makeup session.
         unaffected_old_occurrences = set()
-        for old_session in latest.sessions:
+        for old_session in baseline_version.sessions:
             if old_session.session_status == "scheduled" and not is_closed_day(old_session.session_date):
                 unaffected_old_occurrences.add((
                     old_session.class_id,
@@ -429,7 +455,45 @@ def list_semester_versions(term_id: int, db: Session = Depends(get_db)):
     if term is None:
         raise HTTPException(status_code=404, detail='Academic term not found.')
     versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
-    return [{'version_id': v.version_id, 'term_id': term_id, 'version_number': v.version_number, 'status': v.status, 'published_at': v.published_at.isoformat() if v.published_at else None, 'session_count': len(v.sessions), 'sessions': [{'session_id': s.session_id, 'date': s.session_date.isoformat(), 'weekday': s.weekday, 'period_number': s.period_number, 'slot_id': s.slot_id, 'class_id': s.class_id, 'subject_id': s.subject_id, 'teacher_id': s.teacher_id, 'room_id': s.room_id, 'session_status': s.session_status, 'is_locked': s.is_locked, 'lock_reason': s.lock_reason} for s in sorted(v.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))]} for v in versions]
+
+    def _serialize_s(s):
+        return {
+            'session_id': s.session_id,
+            'date': s.session_date.isoformat(),
+            'session_date': s.session_date.isoformat(),  # alias for frontend compatibility
+            'weekday': s.weekday,
+            'period_number': s.period_number,
+            'slot_id': s.slot_id,
+            'class_id': s.class_id,
+            'subject_id': s.subject_id,
+            'teacher_id': s.teacher_id,
+            'room_id': s.room_id,
+            'session_status': s.session_status,
+            'is_locked': s.is_locked,
+            'lock_reason': s.lock_reason,
+            # Provenance fields – required for ⚡ Makeup badge in TimetableGrid
+            'original_session_id': s.original_session_id,
+            'source_event_id': s.source_event_id,
+            'outcome_note': s.outcome_note,
+            'closure_conflict': s.closure_conflict,
+            'replacement_approved': s.replacement_approved,
+        }
+
+    return [
+        {
+            'version_id': v.version_id,
+            'term_id': term_id,
+            'version_number': v.version_number,
+            'status': v.status,
+            'published_at': v.published_at.isoformat() if v.published_at else None,
+            'session_count': len(v.sessions),
+            'sessions': [
+                _serialize_s(s)
+                for s in sorted(v.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))
+            ],
+        }
+        for v in versions
+    ]
 
 @router.patch('/sessions/{session_id}')
 def update_semester_session(session_id: int, payload: SessionUpdate, db: Session = Depends(get_db)):
