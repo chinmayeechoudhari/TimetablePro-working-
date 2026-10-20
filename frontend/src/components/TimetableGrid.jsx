@@ -170,6 +170,8 @@ export default function TimetableGrid() {
   const [activeTerm, setActiveTerm] = useState(null)
   const [today] = useState(() => new Date())
   const [selectedWeekIdx, setSelectedWeekIdx] = useState(0)
+  const [publishing, setPublishing] = useState(false)
+  const [publishNotice, setPublishNotice] = useState(null)
 
   // Hierarchical drill-down state for class view
   const [selDept, setSelDept] = useState(null)
@@ -250,7 +252,23 @@ export default function TimetableGrid() {
     return () => { alive = false }
   }, [activeTerm?.term_id, legacyTimetable])
 
-
+  async function handlePublishVersion() {
+    if (!semesterVersion?.version_id) return
+    setPublishing(true)
+    setPublishNotice(null)
+    try {
+      const res = await axios.post(`${BASE}/semester/versions/${semesterVersion.version_id}/publish`)
+      setSemesterVersion(res.data)
+      setPublishNotice(`Version ${res.data.version_number} is now officially published!`)
+      setTimeout(() => setPublishNotice(null), 5000)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : (detail?.message || err?.message || 'Could not publish draft.')
+      alert(`Publishing failed: ${msg}`)
+    } finally {
+      setPublishing(false)
+    }
+  }
 
   async function fetchAll() {
     try {
@@ -713,18 +731,49 @@ export default function TimetableGrid() {
             )}
 
             {semesterVersion && (
-              <span
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 750,
-                  padding: '3px 9px',
-                  borderRadius: 6,
-                  background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7',
-                  color: semesterVersion.status === 'published' ? '#166534' : '#92400e',
-                }}
-              >
-                Version {semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 750,
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7',
+                    color: semesterVersion.status === 'published' ? '#166534' : '#92400e',
+                    border: semesterVersion.status === 'published' ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                  }}
+                >
+                  Version {semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
+                </span>
+
+                {semesterVersion.status === 'draft' && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={publishing}
+                    onClick={handlePublishVersion}
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: 11.5,
+                      fontWeight: 750,
+                      minHeight: 28,
+                      borderRadius: 6,
+                      background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                      borderColor: '#15803d',
+                      boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                      cursor: publishing ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {publishing ? 'Publishing…' : `Accept & Publish v${semesterVersion.version_number}`}
+                  </button>
+                )}
+
+                {publishNotice && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#166534', background: '#dcfce7', padding: '3px 8px', borderRadius: 5 }}>
+                    ✓ {publishNotice}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </section>
