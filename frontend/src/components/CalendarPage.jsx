@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import UpcomingEventsModal from './UpcomingEventsModal'
 import { API_BASE } from '../lib/config'
@@ -12,11 +11,9 @@ const DEFAULT_TERM = {
   end_date: '2026-12-30',
   holiday_region: 'Maharashtra, India',
   timezone: 'Asia/Kolkata',
-  working_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  reschedule_policy: 'suggest',
+  reschedule_policy: 'automatic',
   status: 'active',
 }
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const EVENT_TYPES = [
   { value: 'holiday', label: 'Public / college holiday' },
   { value: 'vacation', label: 'Vacation / break' },
@@ -83,20 +80,23 @@ const inputCls = {
 }
 
 export default function CalendarPage() {
-  const navigate = useNavigate()
   const [terms, setTerms] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({
     title: '', event_type: 'holiday', start_date: '', end_date: '',
-    is_closure: true, approval_status: 'approved', source: 'manual', notes: ''
+    is_closure: true, approval_status: 'pending', source: 'manual', notes: '',
+    preferred_replacement_date: '', preferred_replacement_period: ''
   })
   const [events, setEvents] = useState([])
+  const [rescheduleReport, setRescheduleReport] = useState(null)
+
   const [calendarMonth, setCalendarMonth] = useState('2026-10')
   const [viewMode, setViewMode] = useState('month') // 'month' | 'week' | 'agenda'
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
+  const [isOptimizing, setIsOptimizing] = useState(false)
   const [importingHolidays, setImportingHolidays] = useState(false)
   const [calendarFile, setCalendarFile] = useState(null)
   const [showTermForm, setShowTermForm] = useState(false)
@@ -106,6 +106,9 @@ export default function CalendarPage() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [timetableSlots, setTimetableSlots] = useState([])
+  const [latestDraftSessions, setLatestDraftSessions] = useState([])
+  const [replacementChoice, setReplacementChoice] = useState('target')
   const fileInputRef = useRef(null)
 
   const selectedTerm = useMemo(() => terms.find(term => String(term.term_id) === String(selectedId)), [terms, selectedId])
@@ -238,13 +241,57 @@ export default function CalendarPage() {
     return () => { alive = false }
   }, [selectedId])
 
+  useEffect(() => {
+    let alive = true
+    axios.get(`${API}/timeslots`)
+      .then(r => { if (alive) setTimetableSlots(r.data || []) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedId) { setLatestDraftSessions([]); return }
+    let alive = true
+    axios.get(`${API}/semester/terms/${selectedId}/versions`)
+      .then(r => {
+        if (!alive) return
+        const list = r.data || []
+        const latest = list[0]
+        setLatestDraftSessions(latest?.sessions || [])
+      })
+      .catch(() => { if (alive) setLatestDraftSessions([]) })
+    return () => { alive = false }
+  }, [selectedId])
+
+  const availablePeriods = useMemo(() => {
+    const set = new Set()
+    timetableSlots.forEach(s => {
+      if (s.period_number) set.add(Number(s.period_number))
+    })
+    return Array.from(set).sort((a, b) => a - b)
+  }, [timetableSlots])
+
+  const slotEvaluation = useMemo(() => {
+    const d = eventForm.preferred_replacement_date
+    const p = eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null
+    if (!d || !p) return null
+    const conflicts = latestDraftSessions.filter(s => (s.date === d || s.session_date === d) && Number(s.period_number) === p)
+    return {
+      date: d,
+      period: p,
+      isVacant: conflicts.length === 0,
+      conflictCount: conflicts.length,
+    }
+  }, [eventForm.preferred_replacement_date, eventForm.preferred_replacement_period, latestDraftSessions])
+
   async function createTerm(event) {
     event.preventDefault()
     setError(''); setNotice(''); setSavingTerm(true)
     try {
+      const termPayload = { ...termForm, reschedule_policy: 'automatic' }
       const response = editingTerm && selectedTerm
-        ? await axios.patch(`${API}/calendar/terms/${selectedTerm.term_id}`, termForm)
-        : await axios.post(`${API}/calendar/terms`, termForm)
+        ? await axios.patch(`${API}/calendar/terms/${selectedTerm.term_id}`, termPayload)
+        : await axios.post(`${API}/calendar/terms`, termPayload)
       const saved = response.data
       await loadTerms(saved.term_id)
       setShowTermForm(false)
@@ -273,7 +320,7 @@ export default function CalendarPage() {
     try {
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/region`)
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message || `Loaded ${response.data.imported} regional holiday suggestions.`)
+      setNotice((response.data.message || `Loaded ${response.data.imported} regional holiday suggestions.`) + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : ''))
     } catch (err) {
       setError(err.response?.data?.detail || 'Regional holiday import failed.')
     } finally { setImportingHolidays(false) }
@@ -288,24 +335,57 @@ export default function CalendarPage() {
       form.append('file', calendarFile)
       const response = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/holidays/upload`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       await loadEvents(selectedTerm.term_id)
-      setNotice(response.data.message + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : ''))
+      setNotice(response.data.message + (response.data.overlaps?.length ? ` Review ${response.data.overlaps.length} overlapping date pair(s) before approving entries.` : '') + (response.data.problems?.length ? ` Issues: ${response.data.problems.join(' ')}` : '') + ' Approve each valid entry. Approved closures will start date-aware rescheduling automatically.')
       setCalendarFile(null)
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not import the calendar file.')
     } finally { setImportingHolidays(false) }
   }
 
+  async function optimizeAfterCalendarApproval(eventTitle = 'Academic Calendar') {
+    if (!selectedTerm) return
+    setRescheduleReport(null)
+    setIsOptimizing(true)
+    try {
+      const response = await axios.post(`${API}/semester/terms/${selectedTerm.term_id}/optimize`, {}, { timeout: 180000 })
+      const report = response.data.calendar_reschedule_report
+      const reportText = report
+        ? ` ${report.affected_sessions} affected session(s), ${report.replacements_found} replacement(s) identified, ${report.unresolved_sessions?.length || 0} unresolved.`
+        : ''
+      setNotice(`Optimized "${eventTitle}". Date-aware CP-SAT created draft v${response.data.version_number} with ${response.data.session_count} dated sessions.${reportText} Review the latest draft in Weekly Timetable before publishing.`)
+      if (report) setRescheduleReport(report)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      const diagnostic = typeof detail === 'string'
+        ? detail
+        : [detail?.message, detail?.diagnostic, detail?.reason ? `Reason: ${detail.reason}` : ''].filter(Boolean).join(' ')
+      setError(`Failed to reschedule semester sessions: ${diagnostic || 'Check semester subjects, faculty assignments, rooms, time slots and constraints.'}`)
+    } finally {
+      setIsOptimizing(false)
+    }
+  }
+
   async function approveImportedEvent(event) {
     try {
-      await axios.patch(`${API}/calendar/events/${event.event_id}`, {
+      const savedEvent = await axios.patch(`${API}/calendar/events/${event.event_id}`, {
         title: event.title, event_type: event.event_type, start_date: event.start_date,
         end_date: event.end_date, is_closure: event.is_closure,
         is_working_day_override: event.is_working_day_override,
+        preferred_replacement_date: event.preferred_replacement_date || null,
+        preferred_replacement_period: event.preferred_replacement_period || null,
         source: event.source, approval_status: 'approved', notes: event.notes,
       })
       await loadEvents(selectedTerm.term_id)
+      if (savedEvent.data.approval_status !== 'approved') {
+        setNotice(`"${event.title}" remains pending because overlapping calendar entries need review first.`)
+        return
+      }
       setNotice(`Approved "${event.title}".`)
-    } catch (err) { setError(err.response?.data?.detail || 'Could not approve this event.') }
+      if (savedEvent.data.is_closure) await optimizeAfterCalendarApproval(event.title)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : detail?.message || 'Could not approve this event. Resolve any overlapping calendar entries and try again.')
+    }
   }
 
   async function saveEvent(event) {
@@ -313,15 +393,35 @@ export default function CalendarPage() {
     if (!selectedTerm) return
     setError(''); setNotice(''); setSavingEvent(true)
     try {
-      const payload = { ...eventForm, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
-      await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
+      const payload = { ...eventForm, preferred_replacement_date: eventForm.preferred_replacement_date || null, preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
+      const createdEvent = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
       await loadEvents(selectedTerm.term_id)
-      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'approved', source: 'manual', notes: '' })
+      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
       setShowEventForm(false)
-      setNotice('Calendar event saved.')
+      setNotice(createdEvent.data.approval_status === 'pending' ? 'Calendar event saved for review. Approve a closure to start date-aware rescheduling.' : 'Calendar event saved.')
+      if (createdEvent.data.approval_status === 'approved' && createdEvent.data.is_closure) {
+        await optimizeAfterCalendarApproval(createdEvent.data.title || payload.title)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not save this calendar event.')
     } finally { setSavingEvent(false) }
+  }
+
+  async function deleteSelectedTerm() {
+    if (!selectedTerm) return
+    if (!window.confirm('Permanently remove ' + selectedTerm.term_name + ' (' + selectedTerm.academic_year + ')? This removes only this semester’s calendar events, saved timetable versions, subjects, teaching assignments and semester-scoped constraints. Global departments, classes/divisions, faculty, rooms, time slots, global constraints and other semesters will remain. This cannot be undone.')) return
+    setError(''); setNotice('')
+    try {
+      await axios.delete(API + '/calendar/terms/' + selectedTerm.term_id)
+      const preferred = await loadTerms('')
+      if (!preferred) setShowTermForm(true)
+      setNotice(preferred
+        ? 'Semester removed. The next remaining semester is now active.'
+        : 'Semester removed. Create a new semester to continue.')
+    } catch (e) {
+      const d = e.response?.data?.detail
+      setError(typeof d === 'string' ? d : d?.message || 'This semester could not be deleted. Preserve semesters that already have timetable history.')
+    }
   }
 
   async function removeImportedEvents() {
@@ -348,17 +448,12 @@ export default function CalendarPage() {
     } catch (err) { setError(err.response?.data?.detail || 'Could not delete this event.') }
   }
 
-  function toggleWorkingDay(day) {
-    setTermField('working_days', termForm.working_days.includes(day)
-      ? termForm.working_days.filter(item => item !== day)
-      : [...termForm.working_days, day])
-  }
 
   function handleFileDrop(e) {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer?.files?.[0]
-    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.csv'))) {
+    if (file && ['.xlsx', '.csv', '.pdf'].some(ext => file.name.toLowerCase().endsWith(ext))) {
       setCalendarFile(file)
     }
   }
@@ -1109,40 +1204,83 @@ export default function CalendarPage() {
         <div className="cal-header-row">
           <div>
             <h1 className="cal-title">Academic Calendar</h1>
-            <p className="cal-subtitle">Configure your semester, load the college-provided activity calendar, and add any extra holidays or events.</p>
+            <p className="cal-subtitle">Manage semester dates, import institutional calendars, and review holidays. Approved closures trigger date-aware rescheduling automatically.</p>
           </div>
           <div className="cal-header-actions">
+            <button
+              type="button"
+              className="cal-btn-generate"
+              onClick={() => optimizeAfterCalendarApproval('Academic Calendar')}
+              disabled={isOptimizing || !selectedTerm}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
+              title="Run date-aware CP-SAT solver to schedule makeups for all approved holidays"
+            >
+              {isOptimizing ? (
+                <>
+                  <span style={{ width: 14, height: 14, border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                  Rescheduling...
+                </>
+              ) : (
+                <>
+                  <span>⚡</span> Optimize &amp; Reschedule
+                </>
+              )}
+            </button>
             <button type="button" className="cal-btn-add" onClick={() => setShowEventForm(true)}>
               <PlusIcon /> Add event
-            </button>
-            <button type="button" className="cal-btn-generate" onClick={() => navigate('/generate')}>
-              <SparklesIcon /> Generate timetable
             </button>
           </div>
         </div>
 
+        {rescheduleReport?.unresolved_sessions?.length > 0 && (
+          <div role="alert" style={{margin:'12px 0 16px',padding:14,border:'1px solid #fbbf24',background:'#fffbeb',color:'#78350f',borderRadius:10}}>
+            <div style={{fontWeight:800,fontSize:13,marginBottom:8}}>Unresolved makeup sessions</div>
+            <div style={{fontSize:12,lineHeight:1.55,marginBottom:8}}>
+              The solver preserved hard constraints but could not place every makeup session inside this semester. Review these items and adjust availability, rooms, assignments or preferences before optimizing again.
+            </div>
+            <div style={{display:'grid',gap:6}}>
+              {rescheduleReport.unresolved_sessions.map((item,index) => (
+                <div key={`${item.original_session_id ?? 'new'}-${item.class_id}-${item.subject_id}-${index}`} style={{padding:'7px 9px',background:'rgba(255,255,255,.65)',borderRadius:7}}>
+                  <strong>{item.date ? `Original date ${item.date}` : 'Makeup session'} · Class {item.class_id} · Subject {item.subject_id}</strong>
+                  {item.period_number ? ` · Period ${item.period_number}` : ''}
+                  <div>{item.reason}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* ─── Filter & View Switcher Row ─── */}
         <div className="cal-filter-row">
           <div className="cal-pills-group">
-            {/* Pill 1: Academic Year & Term */}
-            <div className="cal-pill">
+            {/* Pill 1: Academic Year & Term – interactive selector */}
+            <div className="cal-pill" style={{ padding: '0 10px', gap: 6 }}>
               <CapIcon />
-              {terms.length ? (
+              {terms.length > 0 ? (
                 <select
                   value={selectedId}
                   onChange={e => setSelectedId(e.target.value)}
-                  aria-label="Select term"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '2px 0',
+                    fontFamily: 'inherit',
+                  }}
                 >
-                  {terms.map(t => (
-                    <option key={t.term_id} value={t.term_id}>
-                      {t.academic_year} · {t.term_name}
+                  {terms.map(term => (
+                    <option key={term.term_id} value={String(term.term_id)}
+                      style={{ background: '#1e293b', color: '#f1f5f9' }}>
+                      {term.academic_year} · {term.term_name}{term.status === 'archived' ? ' (archived)' : term.status === 'draft' ? ' (draft)' : ''}
                     </option>
                   ))}
                 </select>
               ) : (
-                <span>2026 – 27 · Semester 1</span>
+                <span>No semester — create one</span>
               )}
-              <ChevronDown />
             </div>
 
             {/* Pill 2: Term Date Range */}
@@ -1273,14 +1411,14 @@ export default function CalendarPage() {
                 <div className="cal-dropzone-text">
                   {calendarFile ? calendarFile.name : 'Drag and drop your file here'}
                 </div>
-                <div className="cal-dropzone-sub">Excel (.xlsx) or CSV (.csv)</div>
+                <div className="cal-dropzone-sub">PDF, Excel (.xlsx) or CSV (.csv)</div>
               </div>
             </div>
 
             <input
               type="file"
               ref={fileInputRef}
-              accept=".xlsx,.csv"
+              accept=".pdf,.xlsx,.csv"
               style={{ display: 'none' }}
               onChange={e => setCalendarFile(e.target.files?.[0] || null)}
             />
@@ -1342,6 +1480,15 @@ export default function CalendarPage() {
             onClick={removeImportedEvents}
           >
             <TrashIcon /> Remove imported entries
+          </button>
+          <button
+            type="button"
+            className="cal-action-pill danger"
+            disabled={!selectedTerm}
+            onClick={deleteSelectedTerm}
+            title="Permanently remove this semester and its semester-specific data; shared structure and global faculty are preserved"
+          >
+            <TrashIcon /> Delete semester
           </button>
         </div>
 
@@ -1746,8 +1893,8 @@ export default function CalendarPage() {
                     value={eventForm.approval_status}
                     onChange={e => setEventField('approval_status', e.target.value)}
                   >
-                    <option value="approved">Approved</option>
                     <option value="pending">Pending review</option>
+                    <option value="approved">Approved</option>
                   </select>
                 </FieldInput>
                 <FieldInput label="Start date">
@@ -1777,6 +1924,79 @@ export default function CalendarPage() {
                     required
                   />
                 </FieldInput>
+                <FieldInput label="Preferred replacement date (optional)">
+                  <input style={inputCls} type="date" min={selectedTerm.start_date} max={selectedTerm.end_date} value={eventForm.preferred_replacement_date || ''} onChange={e => setEventField('preferred_replacement_date', e.target.value)} />
+                </FieldInput>
+                <FieldInput label="Preferred replacement period (optional)">
+                  {availablePeriods.length > 0 ? (
+                    <select
+                      style={inputCls}
+                      value={eventForm.preferred_replacement_period || ''}
+                      onChange={e => setEventField('preferred_replacement_period', e.target.value)}
+                    >
+                      <option value="">Any period (Solver decides)</option>
+                      {availablePeriods.map(p => (
+                        <option key={p} value={p}>Period {p}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input style={inputCls} type="number" min="1" max="20" value={eventForm.preferred_replacement_period || ''} onChange={e => setEventField('preferred_replacement_period', e.target.value)} placeholder="e.g. 3" />
+                  )}
+                </FieldInput>
+
+                {slotEvaluation && slotEvaluation.isVacant && (
+                  <div style={{ gridColumn: '1 / -1', padding: '11px 14px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #86efac', marginTop: 2 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>✓</span> Slot is vacant on {slotEvaluation.date}, Period {slotEvaluation.period}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#15803d', marginTop: 3 }}>
+                      No classes are currently scheduled in this slot. How would you like to handle this rescheduled class?
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#166534', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="slot_action_prompt"
+                          checked={replacementChoice === 'target'}
+                          onChange={() => setReplacementChoice('target')}
+                          style={{ accentColor: '#16a34a' }}
+                        />
+                        Schedule in this slot
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#166534', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="slot_action_prompt"
+                          checked={replacementChoice === 'auto'}
+                          onChange={() => {
+                            setReplacementChoice('auto')
+                            setEventField('preferred_replacement_date', '')
+                            setEventField('preferred_replacement_period', '')
+                          }}
+                          style={{ accentColor: '#16a34a' }}
+                        />
+                        Let solver find & optimize
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {slotEvaluation && !slotEvaluation.isVacant && (
+                  <div style={{ gridColumn: '1 / -1', padding: '11px 14px', borderRadius: 8, background: '#fefce8', border: '1px solid #fde047', marginTop: 2 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#854d0e', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>⚠️</span> Slot currently has {slotEvaluation.conflictCount} scheduled session(s)
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#713f12', marginTop: 3 }}>
+                      The solver will treat this slot as a soft preference, or choose another vacant slot if teacher or room constraints prevent using it.
+                    </div>
+                  </div>
+                )}
+
+                {!slotEvaluation && (
+                  <div style={{ gridColumn: '1 / -1', marginTop: -6, fontSize: 11.5, lineHeight: 1.45, color: '#64748b' }}>
+                    Preferred date and period are optional. If left blank or if you choose &ldquo;Let solver find &amp; optimize&rdquo;, the CP-SAT solver automatically searches for eligible vacant slots in the same week and throughout the semester.
+                  </div>
+                )}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <FieldInput label="Notes (optional)">
                     <input
@@ -1863,13 +2083,9 @@ export default function CalendarPage() {
                     <option value="America/New_York">America/New_York</option>
                   </select>
                 </FieldInput>
-                <FieldInput label="Rescheduling policy">
-                  <select style={inputCls} value={termForm.reschedule_policy} onChange={e => setTermField('reschedule_policy', e.target.value)}>
-                    <option value="cancel">Mark cancelled; no replacement</option>
-                    <option value="suggest">Suggest replacements for approval</option>
-                    <option value="automatic">Automatic rescheduling</option>
-                  </select>
-                </FieldInput>
+                <div style={{gridColumn:'1 / -1',fontSize:11.5,color:'#64748b',lineHeight:1.45}}>
+                  Approved closure dates are rescheduled automatically by the date-aware CP-SAT solver. Preferred replacement dates and periods are soft preferences; hard scheduling constraints always take priority.
+                </div>
                 <FieldInput label="Term status">
                   <select style={inputCls} value={termForm.status} onChange={e => setTermField('status', e.target.value)}>
                     <option value="draft">Draft</option>
@@ -1879,31 +2095,6 @@ export default function CalendarPage() {
                 </FieldInput>
               </div>
 
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 750, letterSpacing: '.04em', marginBottom: 8, color: 'var(--text-muted, #64748b)' }}>Weekly working days</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {WEEKDAYS.map(day => (
-                    <label
-                      key={day}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        border: '1px solid #dbe2ea', borderRadius: 8, padding: '6px 10px',
-                        fontSize: 12, cursor: 'pointer',
-                        background: termForm.working_days.includes(day) ? '#eff6ff' : '#fff',
-                        borderColor: termForm.working_days.includes(day) ? '#93c5fd' : '#dbe2ea'
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={termForm.working_days.includes(day)}
-                        onChange={() => toggleWorkingDay(day)}
-                        style={{ accentColor: '#2563eb' }}
-                      />
-                      <span>{day.slice(0, 3)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
                 <button

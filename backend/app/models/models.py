@@ -46,10 +46,15 @@ class Division(Base):
 
 
 class SubjectDefinition(Base):
-    """One subject definition shared by all divisions in an academic group."""
+    """A subject for one academic term, shared by divisions in a global group.
+
+    term_id is nullable for legacy records until the semester-scoping migration
+    is run; new subject definitions must always be attached to a term.
+    """
     __tablename__ = 'subject_definition'
     definition_id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey('academic_group.group_id'), nullable=False)
+    term_id = Column(Integer, ForeignKey('academic_term.term_id', ondelete='CASCADE'), nullable=True)
     subject_name = Column(String, nullable=False)
     subject_type = Column(String, nullable=False, default='theory')
     periods_per_week = Column(Integer, nullable=False)
@@ -69,6 +74,9 @@ class Class(Base):
 class Subject(Base):
     __tablename__ = 'subject'
     subject_id       = Column(Integer, primary_key=True, index=True)
+    # A class can take different subjects/loads in different semesters.
+    # Nullable only to keep older weekly-template rows readable.
+    term_id          = Column(Integer, ForeignKey('academic_term.term_id', ondelete='CASCADE'), nullable=True)
     subject_name     = Column(String, nullable=False)
     periods_per_week = Column(Integer, nullable=False)
     subject_type     = Column(String, default='theory')

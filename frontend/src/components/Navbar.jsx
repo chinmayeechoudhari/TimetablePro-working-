@@ -70,12 +70,6 @@ const Icons = {
       <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
     </>
   ),
-  semester: icon(
-    <>
-      <rect x="3" y="4" width="18" height="17" rx="2" />
-      <path d="M8 2v4M16 2v4M3 10h18M8 14h3M8 17h7" />
-    </>
-  ),
   calendar: icon(
     <>
       <rect x="3" y="5" width="18" height="16" rx="2" />
@@ -110,7 +104,6 @@ const groups = [
     items: [
       { to: '/generate', label: 'Generate', icon: Icons.generate },
       { to: '/timetable', label: 'Weekly Timetable', icon: Icons.timetable },
-      { to: '/semester', label: 'Semester Timetable', icon: Icons.semester },
     ],
   },
 ]

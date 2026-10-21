@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 
@@ -102,6 +102,9 @@ export default function GenerateTimetable() {
   const [validation, setValidation]     = useState(null)   // preflight result
   const [validating, setValidating]     = useState(false)  // loading state
   const [diagnosis, setDiagnosis]       = useState(null)   // post-failure diagnosis
+  const [draftVersion, setDraftVersion] = useState(null)   // newly created semester draft
+  const [draftError, setDraftError]     = useState(null)   // draft creation error
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false)
   const intervalRef                     = useRef(null)
   const timerRef                        = useRef(null)
   const navigate                        = useNavigate()
@@ -129,6 +132,7 @@ export default function GenerateTimetable() {
   async function startGenerate() {
     setError(null); setResult(null); setStatus(null)
     setElapsed(0); setDiagnosis(null)
+    setDraftVersion(null); setDraftError(null)
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
     if (timerRef.current)    { clearInterval(timerRef.current);    timerRef.current = null }
     setIsGenerating(true)
@@ -154,6 +158,41 @@ export default function GenerateTimetable() {
     }
   }
 
+  async function createSemesterDraft() {
+    setIsCreatingDraft(true)
+    setDraftVersion(null)
+    setDraftError(null)
+    try {
+      // Fetch the active term so we know which term_id to use
+      const termsRes = await axios.get(`${BASE}/calendar/terms`)
+      const activeTerm = (termsRes.data || []).find(t => t.status === 'active') || (termsRes.data || [])[0]
+      if (!activeTerm) {
+        setDraftError('No active semester found — create one in Academic Calendar first.')
+        return
+      }
+
+      // Check if there are approved closure events (holidays)
+      const eventsRes = await axios.get(`${BASE}/calendar/events`, { params: { term_id: activeTerm.term_id } }).catch(() => ({ data: [] }))
+      const hasClosures = (eventsRes.data || []).some(e => e.is_closure && e.approval_status === 'approved')
+
+      let draftRes
+      if (hasClosures) {
+        // Run full date-aware CP-SAT makeup optimizer to reschedule displaced holiday sessions
+        draftRes = await axios.post(`${BASE}/semester/terms/${activeTerm.term_id}/optimize`, null, { timeout: 180000 })
+      } else {
+        draftRes = await axios.post(`${BASE}/semester/terms/${activeTerm.term_id}/versions/draft`, null, {
+          params: { notes: 'Auto-created after solver re-run' }
+        })
+      }
+      setDraftVersion(draftRes.data)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      setDraftError(typeof detail === 'string' ? detail : (err?.message || 'Could not create semester draft.'))
+    } finally {
+      setIsCreatingDraft(false)
+    }
+  }
+
   async function pollStatus(id) {
     try {
       const res = await axios.get(`${BASE}/generate/status/${id}`)
@@ -171,6 +210,10 @@ export default function GenerateTimetable() {
         clearInterval(intervalRef.current); intervalRef.current = null
         clearInterval(timerRef.current);    timerRef.current = null
         setIsGenerating(false)
+        // Automatically expand the new weekly template into a semester draft
+        if (s === 'done' && r?.status === 'success') {
+          createSemesterDraft()
+        }
       }
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || 'Failed to fetch status')
@@ -414,6 +457,45 @@ export default function GenerateTimetable() {
                     ? `${result.entries_saved} slots assigned`
                     : 'Solver completed'} in {elapsed}s
                 </span>
+              </div>
+            </div>
+          )}
+
+          {/* Semester draft status after successful generation */}
+          {solverOk && isCreatingDraft && (
+            <div className="result-panel" style={{ background: 'rgba(99,102,241,0.08)', border: '1.5px solid #6366f1', marginTop: 10 }}>
+              <div className="result-icon" style={{ color: '#6366f1' }}>
+                <span style={{ width: 22, height: 22, border: '3px solid #6366f1', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+              </div>
+              <div className="result-text">
+                <strong style={{ color: '#6366f1' }}>Creating semester draft…</strong>
+                <span>Expanding weekly template across all dated sessions</span>
+              </div>
+            </div>
+          )}
+
+          {draftVersion && (
+            <div className="result-panel" style={{ background: 'rgba(16,185,129,0.08)', border: '1.5px solid #10b981', marginTop: 10 }}>
+              <div className="result-icon" style={{ color: '#10b981' }}>
+                <Icon name="checkCircle" size={22} />
+              </div>
+              <div className="result-text">
+                <strong style={{ color: '#065f46' }}>Semester Draft v{draftVersion.version_number} created</strong>
+                <span style={{ color: '#047857' }}>
+                  {draftVersion.session_count ?? draftVersion.sessions?.length ?? ''} dated sessions saved
+                  {draftVersion.calendar_reschedule_report?.replacements_found ? ` (${draftVersion.calendar_reschedule_report.replacements_found} makeup session(s) scheduled for holidays)` : ''}
+                  &nbsp;·&nbsp; Go to <strong>Weekly Timetable</strong> to review &amp; publish
+                </span>
+              </div>
+            </div>
+          )}
+
+          {draftError && (
+            <div className="result-panel result-fail" style={{ marginTop: 10 }}>
+              <div className="result-icon"><Icon name="alertTriangle" size={22} /></div>
+              <div className="result-text">
+                <strong>Semester draft not created</strong>
+                <span>{draftError}</span>
               </div>
             </div>
           )}

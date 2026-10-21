@@ -14,6 +14,7 @@ from app.constraints.service import ConstraintService
 from app.constraints.validator import ConstraintValidationError, validate_constraint
 from app.core.config import get_db
 from app.models.models import Constraint, Teacher, Subject, Class
+from app.models.calendar import AcademicTerm
 
 
 router = APIRouter(prefix="/constraints", tags=["constraints"])
@@ -39,19 +40,32 @@ class UpdateConstraintRequest(BaseModel):
     weight: int
 
 
-def _serialize(row: Constraint, display_number: int | None = None) -> dict:
+def _stored_payload(row: Constraint) -> tuple[dict, int | None]:
+    """Read legacy global payloads and semester-scoped JSON envelopes."""
     try:
-        payload = json.loads(row.parameters_json or "{}")
-    except json.JSONDecodeError:
-        payload = {}
-    if row.constraint_type == "soft":
-        weight = payload.get("weight")
-        if weight not in (1, 2, 3):
-            payload["weight"] = 3
-    result = {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name, "constraint_type": row.constraint_type, "constraint": payload}
+        stored = json.loads(row.parameters_json or "{}")
+    except (json.JSONDecodeError, TypeError):
+        stored = {}
+    if isinstance(stored, dict) and isinstance(stored.get("constraint"), dict) and isinstance(stored.get("scope"), dict):
+        return stored["constraint"], stored["scope"].get("term_id")
+    return stored, None
+
+
+def _serialize(row: Constraint, display_number: int | None = None) -> dict:
+    payload, term_id = _stored_payload(row)
+    if row.constraint_type == "soft" and payload.get("weight") not in (1, 2, 3):
+        payload["weight"] = 3
+    result = {"constraint_id": row.constraint_id, "constraint_name": row.constraint_name,
+              "constraint_type": row.constraint_type, "constraint": payload,
+              "term_id": term_id, "scope": "semester" if term_id is not None else "global"}
     if display_number is not None:
         result["display_number"] = display_number
     return result
+
+
+def _validate_term_scope(db: Session, term_id: int | None) -> None:
+    if term_id is not None and db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first() is None:
+        raise HTTPException(status_code=404, detail="Academic term not found.")
 
 
 def _walk_conditions(condition: Any):
@@ -211,7 +225,8 @@ def get_suggestions(db: Session = Depends(get_db)):
 
 
 @router.post("/preview")
-def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)):
+def preview_constraint(request: ConstraintRequest, term_id: int | None = None, db: Session = Depends(get_db)):
+    _validate_term_scope(db, term_id)
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Constraint text cannot be empty")
@@ -234,9 +249,11 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
     warnings = []
     payload = constraint.model_dump(mode="json")
     parameters_json = json.dumps(payload, sort_keys=True)
-    duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
-    if duplicate is not None:
-        warnings.append("Note: An identical constraint is already active in your system.")
+    for row in db.query(Constraint).all():
+        existing_payload, existing_term_id = _stored_payload(row)
+        if existing_payload == payload and existing_term_id == term_id:
+            warnings.append("Note: An identical constraint is already active in this scope.")
+            break
 
     return {
         "status": "valid",
@@ -246,15 +263,18 @@ def preview_constraint(request: ConstraintRequest, db: Session = Depends(get_db)
 
 
 @router.get("")
-def list_constraints(db: Session = Depends(get_db)):
+def list_constraints(term_id: int | None = None, db: Session = Depends(get_db)):
+    _validate_term_scope(db, term_id)
     rows = db.query(Constraint).order_by(Constraint.constraint_id.asc()).all()
+    rows = [row for row in rows if _stored_payload(row)[1] is None or _stored_payload(row)[1] == term_id]
     result = [_serialize(row, display_number=i + 1) for i, row in enumerate(rows)]
     result.reverse()  # newest first for display
     return result
 
 
 @router.post("")
-def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_db)):
+def create_constraint(request: SaveConstraintRequest, term_id: int | None = None, db: Session = Depends(get_db)):
+    _validate_term_scope(db, term_id)
     constraint = request.constraint
     if constraint.constraint_type == "soft" and constraint.weight not in (1, 2, 3):
         constraint = constraint.model_copy(update={"weight": 3})
@@ -263,10 +283,12 @@ def create_constraint(request: SaveConstraintRequest, db: Session = Depends(get_
     except (EntityResolutionError, ConstraintValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     payload = constraint.model_dump(mode="json")
-    parameters_json = json.dumps(payload, sort_keys=True)
-    duplicate = db.query(Constraint).filter(Constraint.parameters_json == parameters_json).first()
-    if duplicate is not None:
-        raise HTTPException(status_code=409, detail="This constraint is already active.")
+    stored_payload = payload if term_id is None else {"scope": {"term_id": term_id}, "constraint": payload}
+    parameters_json = json.dumps(stored_payload, sort_keys=True)
+    for existing in db.query(Constraint).all():
+        existing_payload, existing_term_id = _stored_payload(existing)
+        if existing_payload == payload and existing_term_id == term_id:
+            raise HTTPException(status_code=409, detail="This constraint is already active in this scope.")
     row = Constraint(constraint_name=constraint.explanation, constraint_type=constraint.constraint_type, parameters_json=parameters_json)
     db.add(row)
     db.commit()
@@ -285,12 +307,10 @@ def update_constraint_priority(constraint_id: int, request: UpdateConstraintRequ
         raise HTTPException(status_code=400, detail="Cannot change priority of hard constraints")
     if request.weight not in (1, 2, 3):
         raise HTTPException(status_code=400, detail="Priority weight must be 1 (Low), 2 (Medium), or 3 (High)")
-    try:
-        payload = json.loads(row.parameters_json or "{}")
-    except json.JSONDecodeError:
-        payload = {}
+    payload, term_id = _stored_payload(row)
     payload["weight"] = request.weight
-    row.parameters_json = json.dumps(payload, sort_keys=True)
+    stored = payload if term_id is None else {"scope": {"term_id": term_id}, "constraint": payload}
+    row.parameters_json = json.dumps(stored, sort_keys=True)
     db.commit()
     db.refresh(row)
     return _serialize(row)

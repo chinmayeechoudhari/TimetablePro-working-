@@ -1,4 +1,5 @@
 from typing import List
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -6,9 +7,20 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_db
+from app.models.calendar import AcademicTerm
 from app.models.models import AcademicGroup, Class, Division
 
 router = APIRouter(prefix="/academic-structure", tags=["academic-structure"])
+
+
+def _normalize_academic_year(value: str) -> str:
+    """Store equivalent AY labels in one stable YYYY-YY format."""
+    text = re.sub(r"\s+", "", str(value or "").strip()).replace("–", "-").replace("—", "-").replace("−", "-")
+    match = re.fullmatch(r"(\d{4})[-/](\d{2}|\d{4})", text)
+    if match:
+        start, end = match.groups()
+        return f"{start}-{end[-2:]}"
+    return text
 
 
 class YearConfig(BaseModel):
@@ -17,7 +29,8 @@ class YearConfig(BaseModel):
 
 
 class AcademicStructureCreate(BaseModel):
-    academic_year: str
+    # Retained as legacy metadata only; structure identity is global, not per AY.
+    academic_year: str | None = None
     department: str
     years: List[YearConfig]
 
@@ -68,24 +81,42 @@ def list_structure(db: Session = Depends(get_db)):
 
 @router.post("", status_code=201)
 def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get_db)):
-    academic_year = payload.academic_year.strip()
     department = payload.department.strip()
-    if not academic_year or not department:
-        raise HTTPException(status_code=400, detail="Academic year and department are required.")
+    if not department:
+        raise HTTPException(status_code=400, detail="Department is required.")
 
     years = {item.year_of_study: item.division_count for item in payload.years}
     if not years:
         raise HTTPException(status_code=400, detail="Add at least one year with divisions.")
 
+    # The first created department/year grouping is the global record reused
+    # by subsequent semesters. Academic year is informational only.
+    active_term = db.query(AcademicTerm).filter(AcademicTerm.status == "active").order_by(AcademicTerm.start_date.desc()).first()
+    academic_year = _normalize_academic_year(payload.academic_year or (active_term.academic_year if active_term else "Global"))
     created = []
     for year, count in sorted(years.items()):
         existing = db.query(AcademicGroup).filter(
-            func.lower(func.trim(AcademicGroup.academic_year)) == academic_year.lower(),
             func.lower(func.trim(AcademicGroup.department)) == department.lower(),
             AcademicGroup.year_of_study == year,
-        ).first()
+        ).order_by(AcademicGroup.group_id.asc()).first()
         if existing:
-            raise HTTPException(status_code=409, detail=f"{department} {year_label(year)} already exists for {academic_year}.")
+            existing_divisions = sorted(existing.divisions, key=lambda item: item.division_name)
+            if count < len(existing_divisions):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"{department} {year_label(year)} already has {len(existing_divisions)} global division(s). "
+                        "Divisions are shared across semesters and are not removed by creating another term."
+                    ),
+                )
+            for index in range(len(existing_divisions), count):
+                division_name = chr(ord("A") + index)
+                class_obj = Class(class_name=f"{department} {year_label(year)} - {division_name}")
+                db.add(class_obj)
+                db.flush()
+                db.add(Division(group_id=existing.group_id, class_id=class_obj.class_id, division_name=division_name))
+            created.append(existing)
+            continue
 
         group = AcademicGroup(academic_year=academic_year, department=department, year_of_study=year)
         db.add(group)
@@ -100,7 +131,7 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
 
     db.commit()
     return {
-        "message": "Academic structure created.",
+        "message": "Global academic structure saved. Existing department/year groups were reused, so classes and divisions were not duplicated across semesters.",
         "groups": [
             {"group_id": g.group_id, "department": g.department, "year_of_study": g.year_of_study,
              "divisions": [d.division_name for d in sorted(g.divisions, key=lambda x: x.division_name)]}
@@ -123,7 +154,6 @@ def rename_department(payload: DepartmentRename, db: Session = Depends(get_db)):
     for group in groups:
         duplicate = db.query(AcademicGroup).filter(
             AcademicGroup.group_id != group.group_id,
-            func.lower(func.trim(AcademicGroup.academic_year)) == group.academic_year.lower(),
             func.lower(func.trim(AcademicGroup.department)) == new.lower(),
             AcademicGroup.year_of_study == group.year_of_study,
         ).first()
@@ -149,19 +179,21 @@ def remove_department(department: str, db: Session = Depends(get_db)):
             detail=f"{name} cannot be removed yet because it has {assignment_count} teaching assignment(s). Remove those assignments first.",
         )
 
-    # Delete only the academic-structure records. Existing Class rows remain,
-    # so old class/subject/timetable data is not destroyed by this action.
+    # Delete academic-structure records and their corresponding class records.
     for group in groups:
         for division in list(group.divisions):
+            cls = division.class_
             db.delete(division)
+            if cls:
+                db.delete(cls)
         db.delete(group)
     db.commit()
-    return {"message": f"{name} was removed from academic structure. Existing class records were preserved."}
+    return {"message": f"{name} and its classes were removed from academic structure."}
 
 
 @router.post("/adopt-class")
 def adopt_existing_class(payload: AdoptClassRequest, db: Session = Depends(get_db)):
-    academic_year = payload.academic_year.strip()
+    academic_year = _normalize_academic_year(payload.academic_year)
     department = payload.department.strip()
     division_name = payload.division_name.strip().upper()
     if not academic_year or not department:
@@ -176,10 +208,9 @@ def adopt_existing_class(payload: AdoptClassRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=409, detail="This class is already linked to an academic division.")
 
     group = db.query(AcademicGroup).filter(
-        func.lower(func.trim(AcademicGroup.academic_year)) == academic_year.lower(),
         func.lower(func.trim(AcademicGroup.department)) == department.lower(),
         AcademicGroup.year_of_study == payload.year_of_study,
-    ).first()
+    ).order_by(AcademicGroup.group_id.asc()).first()
     if group is None:
         raise HTTPException(status_code=404, detail=f"Create {department} {year_label(payload.year_of_study)} first, then link the class.")
 
