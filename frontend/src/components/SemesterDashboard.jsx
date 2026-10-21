@@ -98,7 +98,7 @@ export default function SemesterDashboard() {
     if (!termId) return
     setBusy(true); setError(''); setNotice(''); setOptimizationResult(null)
     try {
-      const response = await axios.post(API + '/semester/terms/' + termId + '/optimize')
+      const response = await axios.post(API + '/semester/terms/' + termId + '/optimize', null, { timeout: 180000 })
       const result = response.data
       setOptimizationResult({
         status: result.status,

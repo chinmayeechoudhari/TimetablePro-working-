@@ -96,6 +96,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [savingTerm, setSavingTerm] = useState(false)
   const [savingEvent, setSavingEvent] = useState(false)
+  const [isOptimizing, setIsOptimizing] = useState(false)
   const [importingHolidays, setImportingHolidays] = useState(false)
   const [calendarFile, setCalendarFile] = useState(null)
   const [showTermForm, setShowTermForm] = useState(false)
@@ -341,22 +342,26 @@ export default function CalendarPage() {
     } finally { setImportingHolidays(false) }
   }
 
-  async function optimizeAfterCalendarApproval(eventTitle) {
+  async function optimizeAfterCalendarApproval(eventTitle = 'Academic Calendar') {
     if (!selectedTerm) return
     setRescheduleReport(null)
+    setIsOptimizing(true)
     try {
-      const response = await axios.post(`${API}/semester/terms/${selectedTerm.term_id}/optimize`)
+      const response = await axios.post(`${API}/semester/terms/${selectedTerm.term_id}/optimize`, {}, { timeout: 180000 })
       const report = response.data.calendar_reschedule_report
       const reportText = report
         ? ` ${report.affected_sessions} affected session(s), ${report.replacements_found} replacement(s) identified, ${report.unresolved_sessions?.length || 0} unresolved.`
         : ''
-      setNotice(`Approved "${eventTitle}". Date-aware CP-SAT created draft v${response.data.version_number} with ${response.data.session_count} dated sessions.${reportText} Review the latest draft in Weekly Timetable before publishing.`)
+      setNotice(`Optimized "${eventTitle}". Date-aware CP-SAT created draft v${response.data.version_number} with ${response.data.session_count} dated sessions.${reportText} Review the latest draft in Weekly Timetable before publishing.`)
+      if (report) setRescheduleReport(report)
     } catch (err) {
       const detail = err.response?.data?.detail
       const diagnostic = typeof detail === 'string'
         ? detail
         : [detail?.message, detail?.diagnostic, detail?.reason ? `Reason: ${detail.reason}` : ''].filter(Boolean).join(' ')
-      setError(`"${eventTitle}" was approved, but automatic rescheduling could not create a semester draft: ${diagnostic || 'Check semester subjects, faculty assignments, rooms, time slots and constraints.'}`)
+      setError(`Failed to reschedule semester sessions: ${diagnostic || 'Check semester subjects, faculty assignments, rooms, time slots and constraints.'}`)
+    } finally {
+      setIsOptimizing(false)
     }
   }
 
@@ -1202,10 +1207,28 @@ export default function CalendarPage() {
             <p className="cal-subtitle">Manage semester dates, import institutional calendars, and review holidays. Approved closures trigger date-aware rescheduling automatically.</p>
           </div>
           <div className="cal-header-actions">
+            <button
+              type="button"
+              className="cal-btn-generate"
+              onClick={() => optimizeAfterCalendarApproval('Academic Calendar')}
+              disabled={isOptimizing || !selectedTerm}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
+              title="Run date-aware CP-SAT solver to schedule makeups for all approved holidays"
+            >
+              {isOptimizing ? (
+                <>
+                  <span style={{ width: 14, height: 14, border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                  Rescheduling...
+                </>
+              ) : (
+                <>
+                  <span>⚡</span> Optimize &amp; Reschedule
+                </>
+              )}
+            </button>
             <button type="button" className="cal-btn-add" onClick={() => setShowEventForm(true)}>
               <PlusIcon /> Add event
             </button>
-
           </div>
         </div>
 

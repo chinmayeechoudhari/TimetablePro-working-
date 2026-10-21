@@ -202,22 +202,21 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                     0, weekly_capacity,
                     f"weekly_deviation_c{subject['class_id']}_s{subject['subject_id']}_{week}"
                 )
-                # Two one-sided constraints instead of AddAbsEquality.
-                model.Add(deviation >= weekly_total - eff_target)
+                # Encourage scheduling makeups by penalizing when weekly meetings fall below effective target
                 model.Add(deviation >= eff_target - weekly_total)
                 makeup_penalties.append(deviation)
 
-        # Required semester total = sum of per-week effective targets.
-        # This is always achievable regardless of how many holidays reduce capacity.
-        required_semester_total = sum(week_effective_target.values())
+        # Required semester total including makeup classes for displaced holiday sessions
+        makeups_needed = displaced_count if displaced_count > 0 else estimated_closure_load
+        target_with_makeups = sum(week_effective_target.values()) + makeups_needed
         # Always use a soft shortfall variable. The 1,000,000 penalty per
         # missing session drives the solver to schedule as many as it can,
         # while never making the whole model infeasible due to slot competition.
         unresolved = model.NewIntVar(
-            0, required_semester_total,
+            0, target_with_makeups,
             f"unresolved_makeup_c{subject['class_id']}_s{subject['subject_id']}"
         )
-        model.Add(sum(semester_vars) + unresolved == required_semester_total)
+        model.Add(sum(semester_vars) + unresolved == target_with_makeups)
         unresolved_makeups.append((subject, unresolved))
         unresolved_penalties.append(unresolved)
 
@@ -271,13 +270,10 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 if key[0] == preferred_date
                 and (preferred_period is None or slot_by_id[key[1]]["period_number"] == preferred_period)
             ]
-            preferred_met = model.NewBoolVar(f"makeup_preferred_met_{index}")
             if preferred_matches:
-                model.Add(sum(preferred_matches) >= 1).OnlyEnforceIf(preferred_met)
-                model.Add(sum(preferred_matches) == 0).OnlyEnforceIf(preferred_met.Not())
-            else:
-                model.Add(preferred_met == 0)
-            preference_penalties.append((preferred_met.Not(), 1000))
+                preferred_met = model.NewBoolVar(f"makeup_preferred_met_{index}")
+                model.Add(sum(preferred_matches) >= preferred_met)
+                preference_penalties.append((preferred_met.Not(), 1000))
         elif preferred_period is not None:
             # A period can be selected independently of a date. Treat it as a
             # soft preference across eligible replacement dates, never as a
@@ -286,21 +282,17 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                 var for key, var in relevant
                 if slot_by_id[key[1]]["period_number"] == preferred_period
             ]
-            period_met = model.NewBoolVar(f"makeup_period_met_{index}")
             if period_matches:
-                model.Add(sum(period_matches) >= 1).OnlyEnforceIf(period_met)
-                model.Add(sum(period_matches) == 0).OnlyEnforceIf(period_met.Not())
-            else:
-                model.Add(period_met == 0)
-            preference_penalties.append((period_met.Not(), 500))
+                period_met = model.NewBoolVar(f"makeup_period_met_{index}")
+                model.Add(sum(period_matches) >= period_met)
+                preference_penalties.append((period_met.Not(), 500))
         same_week_matches = [
             var for key, var in relevant
             if key[0].isocalendar()[:2] == original_date.isocalendar()[:2]
         ]
         if same_week_matches:
             same_week_met = model.NewBoolVar(f"makeup_same_week_met_{index}")
-            model.Add(sum(same_week_matches) >= 1).OnlyEnforceIf(same_week_met)
-            model.Add(sum(same_week_matches) == 0).OnlyEnforceIf(same_week_met.Not())
+            model.Add(sum(same_week_matches) >= same_week_met)
             preference_penalties.append((same_week_met.Not(), 100))
     preference_weighted_penalties = [penalty * weight for penalty, weight in preference_penalties]
 
@@ -337,8 +329,7 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
                     if not day_vars_for_subject:
                         continue
                     used = model.NewBoolVar(f"used_s{s_id}_{week}_{curr_d.strftime('%A')}")
-                    model.Add(sum(day_vars_for_subject) >= 1).OnlyEnforceIf(used)
-                    model.Add(sum(day_vars_for_subject) == 0).OnlyEnforceIf(used.Not())
+                    model.Add(sum(day_vars_for_subject) >= used)
                     day_vars.append(used)
             if day_vars and subj_target:
                 penalty = model.NewIntVar(0, min(subj_target, len(day_vars)), f"spread_s{s_id}_{week}")
@@ -350,12 +341,26 @@ def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max(0.1, float(max_time_seconds))
+    # Use all available CPU cores for faster solving on large semester models
+    solver.parameters.num_workers = 8
     status = solver.Solve(model)
-    print("DEBUG: CP-SAT STATUS:", solver.StatusName(status), "WallTime:", solver.WallTime(), solver.ResponseStats())
+    status_name = solver.StatusName(status)
+    print(f"DEBUG: CP-SAT STATUS: {status_name}, WallTime: {solver.WallTime():.2f}s")
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        if status_name == "UNKNOWN":
+            detail_reason = (
+                f"Solver timed out after {solver.WallTime():.0f}s without finding a feasible solution. "
+                "Try increasing the time limit or reducing the number of classes/subjects/constraints."
+            )
+        else:
+            detail_reason = (
+                f"Solver returned '{status_name}'. "
+                "Hard constraints (locked sessions, hard day/period bans, or calendar restrictions) "
+                "prevent a valid schedule from being built. Review and relax hard constraints."
+            )
         return {
             "status": "infeasible" if status == cp_model.INFEASIBLE else "no_solution",
-            "reason": "Weekly targets, resource availability, calendar dates, or locked assignments conflict.",
+            "reason": detail_reason,
             "sessions": [],
         }
 

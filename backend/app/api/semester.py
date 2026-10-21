@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
@@ -201,6 +201,7 @@ def _serialize_session(item):
         "session_id": item.session_id,
         "version_id": item.version_id,
         "date": item.session_date.isoformat(),
+        "session_date": item.session_date.isoformat(),
         "weekday": item.weekday,
         "period_number": item.period_number,
         "slot_id": item.slot_id,
@@ -238,7 +239,7 @@ def _serialize_version(item, include_sessions=False):
 @router.get("/terms/{term_id}/versions")
 def list_versions(term_id: int, db: Session = Depends(get_db)):
     _term(db, term_id)
-    rows = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
+    rows = db.query(TimetableVersion).options(selectinload(TimetableVersion.sessions)).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
     return [_serialize_version(row, include_sessions=True) for row in rows]
 
 

@@ -170,9 +170,20 @@ export default function GenerateTimetable() {
         setDraftError('No active semester found — create one in Academic Calendar first.')
         return
       }
-      const draftRes = await axios.post(`${BASE}/semester/terms/${activeTerm.term_id}/versions/draft`, null, {
-        params: { notes: 'Auto-created after solver re-run' }
-      })
+
+      // Check if there are approved closure events (holidays)
+      const eventsRes = await axios.get(`${BASE}/calendar/events`, { params: { term_id: activeTerm.term_id } }).catch(() => ({ data: [] }))
+      const hasClosures = (eventsRes.data || []).some(e => e.is_closure && e.approval_status === 'approved')
+
+      let draftRes
+      if (hasClosures) {
+        // Run full date-aware CP-SAT makeup optimizer to reschedule displaced holiday sessions
+        draftRes = await axios.post(`${BASE}/semester/terms/${activeTerm.term_id}/optimize`, null, { timeout: 180000 })
+      } else {
+        draftRes = await axios.post(`${BASE}/semester/terms/${activeTerm.term_id}/versions/draft`, null, {
+          params: { notes: 'Auto-created after solver re-run' }
+        })
+      }
       setDraftVersion(draftRes.data)
     } catch (err) {
       const detail = err?.response?.data?.detail
@@ -472,6 +483,7 @@ export default function GenerateTimetable() {
                 <strong style={{ color: '#065f46' }}>Semester Draft v{draftVersion.version_number} created</strong>
                 <span style={{ color: '#047857' }}>
                   {draftVersion.session_count ?? draftVersion.sessions?.length ?? ''} dated sessions saved
+                  {draftVersion.calendar_reschedule_report?.replacements_found ? ` (${draftVersion.calendar_reschedule_report.replacements_found} makeup session(s) scheduled for holidays)` : ''}
                   &nbsp;·&nbsp; Go to <strong>Weekly Timetable</strong> to review &amp; publish
                 </span>
               </div>

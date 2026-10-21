@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import SubjectTypeBadge from './SubjectTypeBadge'
 
@@ -196,36 +196,23 @@ export default function TimetableGrid() {
     }
   }, [semesterWeeks, today])
 
-  useEffect(() => { fetchAll() }, [])
-
+  const initialFetchDone = useRef(false)
   useEffect(() => {
-    let alive = true
-    axios.get(`${BASE}/calendar/terms`).then(response => {
-      if (!alive) return
-      const rows = response.data || []
-      setTerms(rows)
-      setActiveTerm(rows.find(item => item.status === 'active') || null)
-    }).catch(() => { if (alive) { setTerms([]); setActiveTerm(null); setCalendarEvents([]) } })
-    return () => { alive = false }
+    fetchAll().then(() => { initialFetchDone.current = true })
   }, [])
 
   useEffect(() => {
+    if (!initialFetchDone.current) return
     let alive = true
     if (!activeTerm?.term_id) {
       setCalendarEvents([])
       setSemesterVersion(null)
-      setTimetable(legacyTimetable)
       return () => { alive = false }
     }
     axios.get(`${BASE}/calendar/terms/${activeTerm.term_id}/events`)
       .then(response => { if (alive) setCalendarEvents((response.data || []).filter(item => item.approval_status === 'approved')) })
       .catch(() => { if (alive) setCalendarEvents([]) })
 
-    // The semester CP-SAT version is the source of truth for the weekly view.
-    // Use the newest saved version, including a draft created after approving
-    // a closure, so the admin can review the same canonical schedule before
-    // publishing it. Fall back to the legacy weekly template only when no
-    // semester version exists for this term.
     axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
       .then(response => {
         if (!alive) return
@@ -303,7 +290,7 @@ export default function TimetableGrid() {
 
   async function fetchAll() {
     try {
-      const [ttRes, tRes, sRes, rRes, cRes, slRes, structRes] = await Promise.all([
+      const [ttRes, tRes, sRes, rRes, cRes, slRes, structRes, termsRes] = await Promise.all([
         axios.get(`${BASE}/timetable`),
         axios.get(`${BASE}/teachers`),
         axios.get(`${BASE}/subjects`),
@@ -311,6 +298,7 @@ export default function TimetableGrid() {
         axios.get(`${BASE}/classes`),
         axios.get(`${BASE}/timeslots`),
         axios.get(`${BASE}/academic-structure`).catch(() => ({ data: { groups: [] } })),
+        axios.get(`${BASE}/calendar/terms`).catch(() => ({ data: [] })),
       ])
       const teacherMap = {}; tRes.data.forEach(t => { teacherMap[t.teacher_id] = t.teacher_name })
       const subjectMap = {}; sRes.data.forEach(s => { subjectMap[s.subject_id] = s.subject_name })
@@ -330,7 +318,41 @@ export default function TimetableGrid() {
         }
       }
 
-      setLegacyTimetable(ttRes.data); setTimetable(ttRes.data); setTeachers(teacherMap); setSubjects(subjectMap)
+      const termsList = termsRes.data || []
+      setTerms(termsList)
+      const currentActiveTerm = termsList.find(item => item.status === 'active') || null
+      setActiveTerm(currentActiveTerm)
+
+      let activeVersion = null
+      let activeSessions = ttRes.data
+      let approvedEvents = []
+
+      if (currentActiveTerm?.term_id) {
+        try {
+          const [eventsRes, versRes] = await Promise.all([
+            axios.get(`${BASE}/calendar/terms/${currentActiveTerm.term_id}/events`).catch(() => ({ data: [] })),
+            axios.get(`${BASE}/semester/terms/${currentActiveTerm.term_id}/versions`).catch(() => ({ data: [] })),
+          ])
+          approvedEvents = (eventsRes.data || []).filter(item => item.approval_status === 'approved')
+          const versList = versRes.data || []
+          if (versList.length > 0) {
+            activeVersion = versList[0]
+            activeSessions = (activeVersion.sessions || []).map(session => ({
+              ...session,
+              session_date: session.date || session.session_date,
+            }))
+          }
+        } catch (e) {
+          console.error("Error loading semester versions in fetchAll:", e)
+        }
+      }
+
+      setLegacyTimetable(ttRes.data)
+      setTimetable(activeSessions)
+      setSemesterVersion(activeVersion)
+      setCalendarEvents(approvedEvents)
+
+      setTeachers(teacherMap); setSubjects(subjectMap)
       setRooms(roomMap); setClasses(classMap); setSubjectColors(colors)
       setAllClasses(validClasses); setAllTeachers(tRes.data); setAllRooms(rRes.data)
       setSlots(slRes.data)

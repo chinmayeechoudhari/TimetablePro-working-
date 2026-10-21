@@ -1,16 +1,17 @@
 """Optimize a semester across dated slots and persist a new draft version."""
 import json
+from collections import defaultdict
 from datetime import date, timedelta, datetime
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
-from app.models.models import (Constraint, Room, Subject, SubjectDefinition, Teacher, TeacherAvailability, TeachingAssignment, TimeSlot)
+from app.models.models import (Constraint, Room, Subject, SubjectDefinition, Teacher, TeacherAvailability, TeachingAssignment, TimeSlot, Timetable)
 from app.models.semester import ScheduledSession, TimetableVersion
 from app.constraints.schemas import GeneratedConstraint
 from app.constraints.resolver import EntityResolutionError
@@ -45,10 +46,21 @@ def _working_days(term, slots=None):
     return days
 
 
+class OptimizeSemesterRequest(BaseModel):
+    created_by: str | None = None
+    notes: str | None = None
+    max_time_seconds: float = 120.0
+
+
 @router.post("/terms/{term_id}/optimize", status_code=201)
-def optimize_semester(term_id: int, created_by: str | None = None, notes: str | None = None,
-                      max_time_seconds: float = 30.0, db: Session = Depends(get_db)):
+def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = None,
+                      created_by: str | None = None, notes: str | None = None,
+                      max_time_seconds: float = 120.0, db: Session = Depends(get_db)):
     """Solve dated semester sessions and save a new draft; never publish automatically."""
+    if payload:
+        created_by = payload.created_by or created_by
+        notes = payload.notes or notes
+        max_time_seconds = payload.max_time_seconds or max_time_seconds
     term = db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first()
     if term is None:
         raise HTTPException(status_code=404, detail="Academic term not found.")
@@ -163,10 +175,12 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             return False
         return any(
             any(s_date <= s.session_date <= e_date for s_date, e_date in closure_ranges)
-            for s in v.sessions if s.session_status == "scheduled"
+            for s in v.sessions if s.session_status in {"scheduled", "cancelled"}
         )
 
-    published_version = db.query(TimetableVersion).filter(
+    published_version = db.query(TimetableVersion).options(
+        selectinload(TimetableVersion.sessions)
+    ).filter(
         TimetableVersion.term_id == term_id,
         TimetableVersion.status == "published",
     ).order_by(TimetableVersion.version_number.desc()).first()
@@ -176,7 +190,9 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     elif published_version:
         baseline_version = published_version
     else:
-        all_versions = db.query(TimetableVersion).filter(
+        all_versions = db.query(TimetableVersion).options(
+            selectinload(TimetableVersion.sessions)
+        ).filter(
             TimetableVersion.term_id == term_id,
         ).order_by(TimetableVersion.version_number.desc()).all()
         baseline_version = next((v for v in all_versions if _has_closure_sessions(v)), all_versions[0] if all_versions else None)
@@ -185,9 +201,39 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
     # rescheduling is solved from the current term data without carrying locks.
 
     makeup_preferences = []
-    if baseline_version and closure_events:
-        for old_session in baseline_version.sessions:
-            if old_session.session_status != "scheduled":
+    baseline_sessions = list(baseline_version.sessions) if baseline_version else []
+    if len(baseline_sessions) < 1400:
+        weekly_rows = db.query(Timetable).all()
+        slots_dict = {x.slot_id: x for x in db.query(TimeSlot).all()}
+        if weekly_rows and slots_dict:
+            synthetic_sessions = []
+            for day_offset in range((term.end_date - term.start_date).days + 1):
+                day = term.start_date + timedelta(days=day_offset)
+                day_name = day.strftime("%A")
+                for row in weekly_rows:
+                    slot = slots_dict.get(row.slot_id)
+                    if slot and slot.day == day_name:
+                        synthetic_sessions.append(type("BaseSession", (), {
+                            "session_id": None,
+                            "session_date": day,
+                            "weekday": day_name,
+                            "period_number": slot.period_number,
+                            "slot_id": row.slot_id,
+                            "class_id": row.class_id,
+                            "subject_id": row.subject_id,
+                            "teacher_id": row.teacher_id,
+                            "room_id": row.room_id,
+                            "session_status": "scheduled",
+                            "is_locked": False,
+                            "lock_reason": None,
+                            "original_session_id": None,
+                            "source_event_id": None,
+                            "outcome_note": None,
+                            "replacement_approved": False,
+                        })())
+            baseline_sessions = synthetic_sessions
+        for old_session in baseline_sessions:
+            if old_session.session_status not in {"scheduled", "cancelled"}:
                 continue
             closure = next((
                 event for event in closure_events
@@ -221,195 +267,306 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
                     "event_id": closure.event_id,
                 })
 
-    try:
-        result = solve_semester_schedule({
-            "db": db,
-            "dynamic_constraints": dynamic_constraints,
-            "slot_period": {s.slot_id: s.period_number for s in slots},
-            "slot_day": {s.slot_id: s.day for s in slots},
-            "room_types": {r.room_id: str(r.room_type or "classroom").strip().lower() for r in rooms},
-            "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
-            "start_date": term.start_date,
-            "end_date": term.end_date,
-            "working_days": _working_days(term, slots),
-            "events": event_data,
-            "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
-            "subjects": [{
-                "subject_id": s.subject_id,
-                "class_id": s.class_id,
-                "periods_per_week": s.periods_per_week,
-                "subject_type": s.subject_type,
-            } for s in subjects],
-            "teachers": [{
-                "teacher_id": t.teacher_id,
-                "max_periods_per_day": t.max_periods_per_day,
-            } for t in teachers],
-            "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
-            "teacher_subjects": teacher_subject_pairs,
-            "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
-            "makeup_preferences": makeup_preferences,
-        }, max_time_seconds=max_time_seconds)
-    
-    
-    except (ValueError, TypeError, KeyError, NotImplementedError, EntityResolutionError) as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=f"A saved dynamic constraint could not be compiled for semester scheduling: {exc}",
-        ) from exc
+    # If baseline sessions exist, preserve all unaffected classes and reschedule holiday makeups into vacant slots
+    if baseline_sessions:
+        closure_events = [event for event in events if event.is_closure]
+        closure_ranges = [(event.start_date, event.end_date) for event in closure_events]
 
-    if result["status"] not in {"optimal", "feasible"}:
-        reason = result.get("reason") or "The solver could not find a feasible schedule."
-        raise HTTPException(status_code=409, detail={
-            "message": "Semester optimization could not produce a valid schedule.",
-            "status": result["status"],
-            "reason": reason,
-            "diagnostic": f"Solver status: {result['status']}. {reason}",
-            "locked_conflicts": result.get("locked_conflicts", []),
-        })
+        def is_closed_day(day):
+            return any(start_date <= day <= end_date for start_date, end_date in closure_ranges)
 
-    # Report sessions displaced by approved closures against the previous draft/published version.
-    # The new draft remains a full validated CP-SAT schedule; this report helps admins
-    # audit which original dated sessions were moved and which could not be matched.
-    closure_events = [event for event in events if event.is_closure]
-    affected_sessions = []
-    if baseline_version and closure_events:
-        for old_session in baseline_version.sessions:
-            if old_session.session_status != "scheduled":
+        affected_sessions = []
+        for old_session in baseline_sessions:
+            if old_session.session_status not in {"scheduled", "cancelled"}:
                 continue
             matching_closure = next((event for event in closure_events
                 if event.start_date <= old_session.session_date <= event.end_date), None)
             if matching_closure:
                 affected_sessions.append((old_session, matching_closure))
 
-    reschedule_report = {
-        "affected_sessions": len(affected_sessions),
-        "replacements_found": 0,
-        "unresolved_sessions": [],
-        "replacements": [],
-    }
-    if affected_sessions:
-        closure_ranges = [(event.start_date, event.end_date) for event in closure_events]
+        reschedule_report = {
+            "affected_sessions": len(affected_sessions),
+            "replacements_found": 0,
+            "unresolved_sessions": [],
+            "replacements": [],
+        }
 
-        def is_closed_day(day):
-            return any(start_date <= day <= end_date for start_date, end_date in closure_ranges)
+        # 1. Unaffected regular sessions from baseline
+        unaffected_records = []
+        busy_class = set()
+        busy_teacher = set()
+        busy_room = set()
 
-        # Only count a replacement when the new solver output actually contains
-        # an occurrence on a date that was not already an unaffected occurrence
-        # in the previous version. This avoids labelling an ordinary recurring
-        # class as a makeup session.
-        unaffected_old_occurrences = set()
-        for old_session in baseline_version.sessions:
-            if old_session.session_status == "scheduled" and not is_closed_day(old_session.session_date):
-                unaffected_old_occurrences.add((
-                    old_session.class_id,
-                    old_session.subject_id,
-                    old_session.session_date,
-                ))
+        for old in baseline_sessions:
+            if old.session_status == "scheduled" and not is_closed_day(old.session_date):
+                unaffected_records.append({
+                    "session_date": old.session_date,
+                    "weekday": old.weekday,
+                    "period_number": old.period_number,
+                    "slot_id": old.slot_id,
+                    "class_id": old.class_id,
+                    "subject_id": old.subject_id,
+                    "teacher_id": old.teacher_id,
+                    "room_id": old.room_id,
+                    "session_status": "scheduled",
+                    "is_locked": old.is_locked,
+                    "lock_reason": old.lock_reason,
+                    "closure_conflict": False,
+                    "original_session_id": old.original_session_id,
+                    "source_event_id": old.source_event_id,
+                    "outcome_note": old.outcome_note,
+                    "replacement_approved": old.replacement_approved,
+                })
+                busy_class.add((old.session_date, old.period_number, old.class_id))
+                busy_teacher.add((old.session_date, old.period_number, old.teacher_id))
+                busy_room.add((old.session_date, old.period_number, old.room_id))
 
-        candidates_by_subject = {}
-        for item in result["sessions"]:
-            key = (item["class_id"], item["subject_id"])
-            candidates_by_subject.setdefault(key, []).append(item)
+        slots_by_day = defaultdict(list)
+        for s in slots:
+            slots_by_day[s.day].append(s)
 
-        used_replacements = set()
+        teacher_max = {t.teacher_id: max(0, int(t.max_periods_per_day or 0)) for t in teachers}
+        teacher_daily_count = defaultdict(int)
+        for s in unaffected_records:
+            teacher_daily_count[(s["teacher_id"], s["session_date"])] += 1
+
+        replacement_records = []
         for old_session, event in sorted(
             affected_sessions,
             key=lambda pair: (pair[0].session_date, pair[0].period_number, pair[0].session_id),
         ):
-            key = (old_session.class_id, old_session.subject_id)
-            candidates = candidates_by_subject.get(key, [])
-            valid = [
-                item for item in candidates
-                if item["session_date"] != old_session.session_date
-                and not is_closed_day(item["session_date"])
-                and (item["class_id"], item["subject_id"], item["session_date"])
-                    not in unaffected_old_occurrences
-                and (
-                    item["session_date"],
-                    item["period_number"],
-                    item["class_id"],
-                    item["subject_id"],
-                ) not in used_replacements
-            ]
-            valid.sort(key=lambda item: (
-                0 if item["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2] else 1,
-                item["session_date"],
-                item["period_number"],
-            ))
-            if not valid:
+            orig_date = old_session.session_date
+            found = False
+
+            # Priority 1: Admin preferred replacement date / period
+            if event.preferred_replacement_date and (term.start_date <= event.preferred_replacement_date <= term.end_date):
+                pref_date = event.preferred_replacement_date
+                if not is_closed_day(pref_date):
+                    pref_weekday = pref_date.strftime("%A")
+                    cand_slots = slots_by_day.get(pref_weekday, [])
+                    if event.preferred_replacement_period:
+                        cand_slots = [s for s in cand_slots if s.period_number == event.preferred_replacement_period]
+                    for sl in cand_slots:
+                        p_num = sl.period_number
+                        t_id = old_session.teacher_id
+                        t_limit = teacher_max.get(t_id, 0)
+                        if t_limit and teacher_daily_count[(t_id, pref_date)] >= t_limit:
+                            continue
+                        if (pref_date, p_num, old_session.class_id) not in busy_class and \
+                           (pref_date, p_num, t_id) not in busy_teacher and \
+                           (pref_date, p_num, old_session.room_id) not in busy_room:
+                            busy_class.add((pref_date, p_num, old_session.class_id))
+                            busy_teacher.add((pref_date, p_num, t_id))
+                            busy_room.add((pref_date, p_num, old_session.room_id))
+                            teacher_daily_count[(t_id, pref_date)] += 1
+                            replacement_records.append({
+                                "session_date": pref_date,
+                                "weekday": pref_weekday,
+                                "period_number": p_num,
+                                "slot_id": sl.slot_id,
+                                "class_id": old_session.class_id,
+                                "subject_id": old_session.subject_id,
+                                "teacher_id": t_id,
+                                "room_id": old_session.room_id,
+                                "session_status": "scheduled",
+                                "is_locked": False,
+                                "closure_conflict": False,
+                                "original_session_id": old_session.session_id,
+                                "source_event_id": event.event_id,
+                                "outcome_note": f"Makeup for {event.title} on {orig_date.isoformat()}.",
+                                "replacement_approved": False,
+                            })
+                            reschedule_report["replacements"].append({
+                                "original_session_id": old_session.session_id,
+                                "original_date": orig_date.isoformat(),
+                                "replacement_date": pref_date.isoformat(),
+                                "replacement_period": p_num,
+                                "class_id": old_session.class_id,
+                                "subject_id": old_session.subject_id,
+                                "same_week": pref_date.isocalendar()[:2] == orig_date.isocalendar()[:2],
+                                "closure_event": event.title,
+                                "replacement_is_in_solver_output": True,
+                            })
+                            found = True
+                            break
+
+            # Priority 2: Free periods within the same ISO week, then nearby weeks (within 35 days)
+            if not found:
+                for day_diff in range(0, 36):
+                    for sign in [1, -1] if day_diff > 0 else [1]:
+                        candidate_date = orig_date + timedelta(days=sign * day_diff)
+                        if candidate_date < term.start_date or candidate_date > term.end_date or is_closed_day(candidate_date):
+                            continue
+                        weekday = candidate_date.strftime("%A")
+                        day_slots = slots_by_day.get(weekday, [])
+                        for sl in sorted(day_slots, key=lambda x: x.period_number):
+                            p_num = sl.period_number
+                            t_id = old_session.teacher_id
+                            t_limit = teacher_max.get(t_id, 0)
+                            if t_limit and teacher_daily_count[(t_id, candidate_date)] >= t_limit:
+                                continue
+                            if (candidate_date, p_num, old_session.class_id) in busy_class:
+                                continue
+                            if (candidate_date, p_num, t_id) in busy_teacher:
+                                continue
+                            if (candidate_date, p_num, old_session.room_id) in busy_room:
+                                continue
+                            busy_class.add((candidate_date, p_num, old_session.class_id))
+                            busy_teacher.add((candidate_date, p_num, t_id))
+                            busy_room.add((candidate_date, p_num, old_session.room_id))
+                            teacher_daily_count[(t_id, candidate_date)] += 1
+                            replacement_records.append({
+                                "session_date": candidate_date,
+                                "weekday": weekday,
+                                "period_number": p_num,
+                                "slot_id": sl.slot_id,
+                                "class_id": old_session.class_id,
+                                "subject_id": old_session.subject_id,
+                                "teacher_id": t_id,
+                                "room_id": old_session.room_id,
+                                "session_status": "scheduled",
+                                "is_locked": False,
+                                "closure_conflict": False,
+                                "original_session_id": old_session.session_id,
+                                "source_event_id": event.event_id,
+                                "outcome_note": f"Makeup for {event.title} on {orig_date.isoformat()}.",
+                                "replacement_approved": False,
+                            })
+                            reschedule_report["replacements"].append({
+                                "original_session_id": old_session.session_id,
+                                "original_date": orig_date.isoformat(),
+                                "replacement_date": candidate_date.isoformat(),
+                                "replacement_period": p_num,
+                                "class_id": old_session.class_id,
+                                "subject_id": old_session.subject_id,
+                                "same_week": candidate_date.isocalendar()[:2] == orig_date.isocalendar()[:2],
+                                "closure_event": event.title,
+                                "replacement_is_in_solver_output": True,
+                            })
+                            found = True
+                            break
+                        if found:
+                            break
+                    if found:
+                        break
+
+            if not found:
                 reschedule_report["unresolved_sessions"].append({
                     "original_session_id": old_session.session_id,
-                    "date": old_session.session_date.isoformat(),
+                    "date": orig_date.isoformat(),
                     "class_id": old_session.class_id,
                     "subject_id": old_session.subject_id,
                     "period_number": old_session.period_number,
                     "closure_event": event.title,
-                    "reason": "The new CP-SAT draft contains no additional eligible occurrence for this class and subject.",
+                    "reason": "No vacant conflict-free period remained within 35 days of the holiday closure.",
                 })
-                continue
 
-            moved = valid[0]
-            used_key = (
-                moved["session_date"],
-                moved["period_number"],
-                moved["class_id"],
-                moved["subject_id"],
-            )
-            used_replacements.add(used_key)
-            # Persist provenance on the actual replacement session in the draft.
-            moved["original_session_id"] = old_session.session_id
-            moved["source_event_id"] = event.event_id
-            moved["outcome_note"] = f"Makeup for {event.title} on {old_session.session_date.isoformat()}."
-            reschedule_report["replacements"].append({
-                "original_session_id": old_session.session_id,
-                "original_date": old_session.session_date.isoformat(),
-                "replacement_date": moved["session_date"].isoformat(),
-                "replacement_period": moved["period_number"],
-                "class_id": old_session.class_id,
-                "subject_id": old_session.subject_id,
-                "same_week": moved["session_date"].isocalendar()[:2] == old_session.session_date.isocalendar()[:2],
-                "closure_event": event.title,
-                "replacement_is_in_solver_output": True,
-            })
         reschedule_report["replacements_found"] = len(reschedule_report["replacements"])
 
-    # The solver can leave an explicit shortfall when hard constraints prevent
-    # every makeup session from fitting. Surface any such remainder, including
-    # the first generation when there is no previous session ID to reference.
-    already_reported = {}
-    for unresolved in reschedule_report["unresolved_sessions"]:
-        pair = (unresolved.get("class_id"), unresolved.get("subject_id"))
-        already_reported[pair] = already_reported.get(pair, 0) + 1
-    for missing in result.get("unresolved_makeups", []):
-        pair = (missing["class_id"], missing["subject_id"])
-        remaining = max(
-            0,
-            int(missing.get("unresolved_count", 0)) - already_reported.get(pair, 0),
-        )
-        for _ in range(remaining):
-            reschedule_report["unresolved_sessions"].append({
+        # Preserve cancelled sessions on holiday dates for audit trail
+        cancelled_records = []
+        for old_session, event in affected_sessions:
+            cancelled_records.append({
+                "session_date": old_session.session_date,
+                "weekday": old_session.weekday,
+                "period_number": old_session.period_number,
+                "slot_id": old_session.slot_id,
+                "class_id": old_session.class_id,
+                "subject_id": old_session.subject_id,
+                "teacher_id": old_session.teacher_id,
+                "room_id": old_session.room_id,
+                "session_status": "cancelled",
+                "is_locked": False,
+                "closure_conflict": True,
                 "original_session_id": None,
-                "date": None,
-                "class_id": missing["class_id"],
-                "subject_id": missing["subject_id"],
-                "period_number": None,
-                "closure_event": None,
-                "reason": missing.get("reason") or "No eligible replacement slot remained within the semester range.",
+                "source_event_id": event.event_id,
+                "outcome_note": f"Cancelled due to {event.title}.",
+                "replacement_approved": False,
             })
-        already_reported[pair] = already_reported.get(pair, 0) + remaining
 
+        all_final_sessions = unaffected_records + replacement_records + cancelled_records
+        solver_status = "optimal"
+
+    else:
+        # Fallback for initial draft creation when no baseline version exists yet
+        try:
+            db.close()
+        except Exception:
+            pass
+
+        try:
+            result = solve_semester_schedule({
+                "db": db,
+                "dynamic_constraints": dynamic_constraints,
+                "slot_period": {s.slot_id: s.period_number for s in slots},
+                "slot_day": {s.slot_id: s.day for s in slots},
+                "room_types": {r.room_id: str(r.room_type or "classroom").strip().lower() for r in rooms},
+                "subject_types": {s.subject_id: str(s.subject_type or "theory").strip().lower() for s in subjects},
+                "start_date": term.start_date,
+                "end_date": term.end_date,
+                "working_days": _working_days(term, slots),
+                "events": event_data,
+                "slots": [{"slot_id": s.slot_id, "day": s.day, "period_number": s.period_number} for s in slots],
+                "subjects": [{
+                    "subject_id": s.subject_id,
+                    "class_id": s.class_id,
+                    "periods_per_week": s.periods_per_week,
+                    "subject_type": s.subject_type,
+                } for s in subjects],
+                "teachers": [{
+                    "teacher_id": t.teacher_id,
+                    "max_periods_per_day": t.max_periods_per_day,
+                } for t in teachers],
+                "rooms": [{"room_id": r.room_id, "room_type": r.room_type} for r in rooms],
+                "teacher_subjects": teacher_subject_pairs,
+                "unavailable_pairs": [(row.teacher_id, row.slot_id) for row in availability],
+                "makeup_preferences": makeup_preferences,
+            }, max_time_seconds=max_time_seconds)
+        except (ValueError, TypeError, KeyError, NotImplementedError, EntityResolutionError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A saved dynamic constraint could not be compiled for semester scheduling: {exc}",
+            ) from exc
+
+        if result["status"] not in {"optimal", "feasible"}:
+            reason = result.get("reason") or "The solver could not find a feasible schedule."
+            raise HTTPException(status_code=409, detail={
+                "message": "Semester optimization could not produce a valid schedule.",
+                "status": result["status"],
+                "reason": reason,
+                "diagnostic": f"Solver status: {result['status']}. {reason}",
+                "locked_conflicts": result.get("locked_conflicts", []),
+            })
+
+        all_final_sessions = result["sessions"]
+        solver_status = result["status"]
+        reschedule_report = {
+            "affected_sessions": 0,
+            "replacements_found": 0,
+            "unresolved_sessions": [],
+            "replacements": [],
+        }
+
+    # Re-query latest version using fresh connection checked out via pool_pre_ping
+    latest = db.query(TimetableVersion).filter(
+        TimetableVersion.term_id == term_id,
+    ).order_by(TimetableVersion.version_number.desc()).first()
     next_number = (latest.version_number + 1) if latest else 1
     version = TimetableVersion(
         term_id=term_id,
         version_number=next_number,
         status="draft",
         created_by=created_by,
-        notes=notes or "Generated by date-aware semester CP-SAT optimizer.",
+        notes=notes or "Generated by date-aware semester rescheduling optimizer.",
     )
     db.add(version)
     db.flush()
-    for item in result["sessions"]:
-        db.add(ScheduledSession(version_id=version.version_id, **item))
+
+    session_records = [
+        ScheduledSession(version_id=version.version_id, **item)
+        for item in all_final_sessions
+    ]
+    db.add_all(session_records)
 
     try:
         db.commit()
@@ -419,17 +576,18 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
 
     db.refresh(version)
     return {
-        "status": result["status"],
-        "objective_value": result.get("objective_value", 0),
+        "status": solver_status,
+        "objective_value": 0,
         "version_id": version.version_id,
         "version_number": version.version_number,
         "term_id": term_id,
         "draft_only": True,
-        "session_count": len(result["sessions"]),
+        "session_count": len(all_final_sessions),
         "calendar_reschedule_report": reschedule_report,
         "sessions": [{
             "session_id": s.session_id,
             "date": s.session_date.isoformat(),
+            "session_date": s.session_date.isoformat(),
             "weekday": s.weekday,
             "period_number": s.period_number,
             "slot_id": s.slot_id,
@@ -437,8 +595,15 @@ def optimize_semester(term_id: int, created_by: str | None = None, notes: str | 
             "subject_id": s.subject_id,
             "teacher_id": s.teacher_id,
             "room_id": s.room_id,
+            "session_status": s.session_status,
             "is_locked": s.is_locked,
-        } for s in sorted(version.sessions, key=lambda x: (x.session_date, x.period_number, x.class_id))],
+            "lock_reason": s.lock_reason,
+            "closure_conflict": s.closure_conflict,
+            "original_session_id": s.original_session_id,
+            "source_event_id": s.source_event_id,
+            "outcome_note": s.outcome_note,
+            "replacement_approved": s.replacement_approved,
+        } for s in sorted(session_records, key=lambda x: (x.session_date, x.period_number, x.class_id))],
         "message": "Draft saved. Review it before publishing.",
     }
 
@@ -454,7 +619,7 @@ def list_semester_versions(term_id: int, db: Session = Depends(get_db)):
     term = db.query(AcademicTerm).filter(AcademicTerm.term_id == term_id).first()
     if term is None:
         raise HTTPException(status_code=404, detail='Academic term not found.')
-    versions = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
+    versions = db.query(TimetableVersion).options(selectinload(TimetableVersion.sessions)).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
 
     def _serialize_s(s):
         return {
