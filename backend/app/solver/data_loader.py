@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from app.models.calendar import AcademicTerm
 from app.models.models import (
     Class, Subject, Teacher, Room, TimeSlot,
     TeacherSubject, TeacherAvailability
@@ -7,7 +8,15 @@ from app.models.models import (
 def load_solver_data(db: Session) -> dict:
     """Load all scheduling data from DB into solver-friendly format."""
     classes = db.query(Class).all()
-    subjects = db.query(Subject).all()
+    active_term = db.query(AcademicTerm).filter(
+        AcademicTerm.status == "active"
+    ).order_by(AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()).first()
+    if active_term:
+        # Never fall back to unscoped/older subject rows when a semester exists:
+        # an empty term must stay empty until its own subjects are configured.
+        subjects = db.query(Subject).filter(Subject.term_id == active_term.term_id).all()
+    else:
+        subjects = db.query(Subject).filter(Subject.term_id.is_(None)).all()
     teachers = db.query(Teacher).all()
     rooms = db.query(Room).all()
     slots = db.query(TimeSlot).all()
@@ -15,6 +24,7 @@ def load_solver_data(db: Session) -> dict:
     avail = db.query(TeacherAvailability).filter(TeacherAvailability.is_available == False).all()
     return {
         "db": db,
+        "subject_ids": [s.subject_id for s in subjects],
         "class_ids": [c.class_id for c in classes],
         "subject_map": {s.subject_id: s.class_id for s in subjects},
         "subject_periods": {s.subject_id: s.periods_per_week for s in subjects},

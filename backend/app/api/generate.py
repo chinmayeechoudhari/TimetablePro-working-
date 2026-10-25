@@ -12,7 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import get_db, SessionLocal
-from app.models.models import Constraint, Timetable
+from app.models.calendar import AcademicTerm
+from app.models.models import Constraint, Subject, Timetable
 from app.solver.solver import build_and_solve
 from app.solver.validator import run_preflight_checks
 from app.constraints.schemas import GeneratedConstraint
@@ -157,8 +158,30 @@ async def validate_generate(db: Session = Depends(get_db)):
 
 @router.get("/timetable")
 async def get_timetable(db: Session = Depends(get_db)):
-    """Return the latest timetable saved by the solver."""
-    rows = db.query(Timetable).order_by(Timetable.timetable_id.asc()).all()
+    """Return legacy weekly rows for the active semester only.
+
+    The date-aware semester version remains authoritative when one exists;
+    this endpoint is only the compatibility fallback for the weekly template.
+    """
+    active_term = db.query(AcademicTerm).filter(
+        AcademicTerm.status == "active"
+    ).order_by(AcademicTerm.start_date.desc(), AcademicTerm.term_id.desc()).first()
+    if active_term:
+        rows = (
+            db.query(Timetable)
+            .join(Subject, Timetable.subject_id == Subject.subject_id)
+            .filter(Subject.term_id == active_term.term_id)
+            .order_by(Timetable.timetable_id.asc())
+            .all()
+        )
+    else:
+        rows = (
+            db.query(Timetable)
+            .join(Subject, Timetable.subject_id == Subject.subject_id)
+            .filter(Subject.term_id.is_(None))
+            .order_by(Timetable.timetable_id.asc())
+            .all()
+        )
     return [
         {
             "timetable_id": row.timetable_id,

@@ -22,6 +22,7 @@ from app.api.database import router as database_router
 from app.api.calendar import router as calendar_router
 from app.api.semester import router as semester_router
 from app.api.semester_workflow import router as semester_workflow_router
+from app.api.semester_optimize import router as semester_optimize_router
 
 from app.core.config import Base, engine
 from app.models import models
@@ -68,10 +69,14 @@ app.add_middleware(
 # ── Global Exception Handler ────────────────────────────────
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    import traceback
+    tb = traceback.format_exc()
+    logger.error("Unhandled error on %s %s: %s\n%s", request.method, request.url.path, exc, tb)
+    with open("debug_error.log", "w", encoding="utf-8") as f:
+        f.write(f"Unhandled error on {request.method} {request.url.path}: {exc}\n{tb}\n")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error. Please try again or contact support."},
+        content={"detail": f"{type(exc).__name__}: {str(exc)}", "traceback": tb},
     )
 
 
@@ -97,6 +102,7 @@ app.include_router(database_router)
 app.include_router(calendar_router)
 app.include_router(semester_router)
 app.include_router(semester_workflow_router)
+app.include_router(semester_optimize_router)
 
-logger.info("TimetablePro API started — %d router(s) mounted", 17)
+logger.info("TimetablePro API started — %d router(s) mounted", 18)
 

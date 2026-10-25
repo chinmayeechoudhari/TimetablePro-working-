@@ -7,7 +7,7 @@ from app.models.models import Timetable
 logger = logging.getLogger("timetable.solver")
 
 
-def parse_and_save_solution(solver, assign, db: Session):
+def parse_and_save_solution(solver, assign, db: Session, scope_subject_ids=None):
     """Read solved BoolVars and write Timetable rows to DB."""
 
     new_entries = []
@@ -36,7 +36,12 @@ def parse_and_save_solution(solver, assign, db: Session):
 
     # Overwrite old timetable inside a transaction
     try:
-        db.query(Timetable).delete()
+        if scope_subject_ids is not None:
+            scoped_ids = list(scope_subject_ids)
+            if scoped_ids:
+                db.query(Timetable).filter(Timetable.subject_id.in_(scoped_ids)).delete(synchronize_session=False)
+        else:
+            db.query(Timetable).delete()
         db.bulk_save_objects(new_entries)
         db.commit()
     except Exception:

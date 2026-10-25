@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import axios from 'axios'
 import SubjectTypeBadge from './SubjectTypeBadge'
 
@@ -92,6 +92,16 @@ function Icon({ name, size = 20, stroke = 1.9 }) {
         <path d="m21 16-5 5" />
       </>
     ),
+    calendar: (
+      <>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </>
+    ),
+    chevronLeft: <polyline points="15 18 9 12 15 6" />,
+    chevronRight: <polyline points="9 18 15 12 9 6" />,
   }
 
   return <svg {...common}>{paths[name]}</svg>
@@ -111,8 +121,37 @@ function yearLabel(n) {
   return `${n}${sfx[n] || 'th'} Year`
 }
 
+function getSemesterWeeks(startDateStr, endDateStr) {
+  if (!startDateStr || !endDateStr) return []
+  const start = new Date(startDateStr + 'T12:00:00')
+  const end = new Date(endDateStr + 'T12:00:00')
+  const curr = new Date(start)
+  const dayOfWeek = (curr.getDay() + 6) % 7 // Monday = 0
+  curr.setDate(curr.getDate() - dayOfWeek)
+
+  const weeks = []
+  let weekIndex = 1
+  while (curr <= end) {
+    const monday = new Date(curr)
+    const sunday = new Date(curr)
+    sunday.setDate(sunday.getDate() + 6)
+    weeks.push({
+      index: weekIndex,
+      monday,
+      sunday,
+      label: `Week ${weekIndex} (${monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})`,
+      mondayKey: `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`,
+    })
+    curr.setDate(curr.getDate() + 7)
+    weekIndex++
+  }
+  return weeks
+}
+
 export default function TimetableGrid() {
   const [timetable, setTimetable] = useState([])
+  const [legacyTimetable, setLegacyTimetable] = useState([])
+  const [semesterVersion, setSemesterVersion] = useState(null)
   const [teachers, setTeachers] = useState({})
   const [subjects, setSubjects] = useState({})
   const [rooms, setRooms] = useState({})
@@ -130,44 +169,136 @@ export default function TimetableGrid() {
   const [terms, setTerms] = useState([])
   const [activeTerm, setActiveTerm] = useState(null)
   const [today] = useState(() => new Date())
+  const [selectedWeekIdx, setSelectedWeekIdx] = useState(0)
+  const [publishing, setPublishing] = useState(false)
+  const [publishNotice, setPublishNotice] = useState(null)
 
   // Hierarchical drill-down state for class view
   const [selDept, setSelDept] = useState(null)
   const [selYear, setSelYear] = useState(null)
 
-  useEffect(() => { fetchAll() }, [])
+  const semesterWeeks = useMemo(() => {
+    return getSemesterWeeks(activeTerm?.start_date, activeTerm?.end_date)
+  }, [activeTerm?.start_date, activeTerm?.end_date])
 
   useEffect(() => {
-    let alive = true
-    axios.get(`${BASE}/calendar/terms`).then(response => {
-      if (!alive) return
-      const rows = response.data || []
-      setTerms(rows)
-      setActiveTerm(rows.find(item => item.status === 'active') || rows[0] || null)
-    }).catch(() => { if (alive) { setTerms([]); setActiveTerm(null); setCalendarEvents([]) } })
-    return () => { alive = false }
+    if (!semesterWeeks.length) {
+      setSelectedWeekIdx(0)
+      return
+    }
+    const todayMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+    const todayMondayKey = `${todayMonday.getFullYear()}-${String(todayMonday.getMonth() + 1).padStart(2, '0')}-${String(todayMonday.getDate()).padStart(2, '0')}`
+    const matchingIdx = semesterWeeks.findIndex(w => w.mondayKey === todayMondayKey)
+    if (matchingIdx >= 0) {
+      setSelectedWeekIdx(matchingIdx)
+    } else {
+      setSelectedWeekIdx(0)
+    }
+  }, [semesterWeeks, today])
+
+  const initialFetchDone = useRef(false)
+  useEffect(() => {
+    fetchAll().then(() => { initialFetchDone.current = true })
   }, [])
 
   useEffect(() => {
+    if (!initialFetchDone.current) return
     let alive = true
-    if (!activeTerm?.term_id) { setCalendarEvents([]); return () => { alive = false } }
+    if (!activeTerm?.term_id) {
+      setCalendarEvents([])
+      setSemesterVersion(null)
+      return () => { alive = false }
+    }
     axios.get(`${BASE}/calendar/terms/${activeTerm.term_id}/events`)
       .then(response => { if (alive) setCalendarEvents((response.data || []).filter(item => item.approval_status === 'approved')) })
       .catch(() => { if (alive) setCalendarEvents([]) })
+
+    axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
+      .then(response => {
+        if (!alive) return
+        const versions = response.data || []
+        const chosen = versions[0] || null
+        if (chosen) {
+          setSemesterVersion(chosen)
+          setTimetable((chosen.sessions || []).map(session => ({
+            ...session,
+            session_date: session.date || session.session_date,
+          })))
+        } else {
+          setSemesterVersion(null)
+          setTimetable(legacyTimetable)
+        }
+      })
+      .catch(err => {
+        console.error('Unable to load semester timetable version:', err)
+        if (alive) {
+          setSemesterVersion(null)
+          setTimetable(legacyTimetable)
+        }
+      })
     return () => { alive = false }
-  }, [activeTerm?.term_id])
+  }, [activeTerm?.term_id, legacyTimetable])
 
+  async function handlePublishVersion() {
+    if (!semesterVersion?.version_id) return
+    setPublishing(true)
+    setPublishNotice(null)
+    try {
+      const res = await axios.post(`${BASE}/semester/versions/${semesterVersion.version_id}/publish`)
+      setSemesterVersion(res.data)
+      setPublishNotice(`Version ${res.data.version_number} is now officially published!`)
+      setTimeout(() => setPublishNotice(null), 5000)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : (detail?.message || err?.message || 'Could not publish draft.')
+      alert(`Publishing failed: ${msg}`)
+    } finally {
+      setPublishing(false)
+    }
+  }
 
+  async function handleDiscardDraft() {
+    if (!semesterVersion?.version_id) return
+    const confirmed = window.confirm(`Discard Draft Version ${semesterVersion.version_number}? The previously published schedule will remain active.`)
+    if (!confirmed) return
+    setPublishing(true)
+    try {
+      await axios.delete(`${BASE}/semester/versions/${semesterVersion.version_id}`)
+      // Reload versions to switch back to the published version
+      const versionsRes = await axios.get(`${BASE}/semester/terms/${activeTerm.term_id}/versions`)
+      const versions = versionsRes.data || []
+      const chosen = versions[0] || null
+      if (chosen) {
+        setSemesterVersion(chosen)
+        setTimetable((chosen.sessions || []).map(session => ({
+          ...session,
+          session_date: session.date || session.session_date,
+        })))
+      } else {
+        setSemesterVersion(null)
+        setTimetable(legacyTimetable)
+      }
+      setPublishNotice(`Draft v${semesterVersion.version_number} was discarded.`)
+      setTimeout(() => setPublishNotice(null), 4000)
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      alert(`Could not discard draft: ${detail || err?.message}`)
+    } finally {
+      setPublishing(false)
+    }
+  }
 
   async function fetchAll() {
     try {
-      const [ttRes, tRes, sRes, rRes, cRes, slRes] = await Promise.all([
+      const [ttRes, tRes, sRes, rRes, cRes, slRes, structRes, termsRes] = await Promise.all([
         axios.get(`${BASE}/timetable`),
         axios.get(`${BASE}/teachers`),
         axios.get(`${BASE}/subjects`),
         axios.get(`${BASE}/rooms`),
         axios.get(`${BASE}/classes`),
         axios.get(`${BASE}/timeslots`),
+        axios.get(`${BASE}/academic-structure`).catch(() => ({ data: { groups: [] } })),
+        axios.get(`${BASE}/calendar/terms`).catch(() => ({ data: [] })),
       ])
       const teacherMap = {}; tRes.data.forEach(t => { teacherMap[t.teacher_id] = t.teacher_name })
       const subjectMap = {}; sRes.data.forEach(s => { subjectMap[s.subject_id] = s.subject_name })
@@ -176,13 +307,58 @@ export default function TimetableGrid() {
       const classMap = {}; cRes.data.forEach(c => { classMap[c.class_id] = c.class_name })
       const colors = {}; sRes.data.forEach((s, i) => { colors[s.subject_id] = COLORS[i % COLORS.length] })
 
-      setTimetable(ttRes.data); setTeachers(teacherMap); setSubjects(subjectMap)
+      // Filter classes to only those belonging to active Academic Structure departments
+      const rawClasses = cRes.data || []
+      const groups = structRes.data?.groups || []
+      let validClasses = rawClasses
+      if (groups.length > 0) {
+        const activeClassIds = new Set(groups.flatMap(g => (g.divisions || []).map(d => d.class_id).filter(Boolean)))
+        if (activeClassIds.size > 0) {
+          validClasses = rawClasses.filter(c => activeClassIds.has(c.class_id))
+        }
+      }
+
+      const termsList = termsRes.data || []
+      setTerms(termsList)
+      const currentActiveTerm = termsList.find(item => item.status === 'active') || null
+      setActiveTerm(currentActiveTerm)
+
+      let activeVersion = null
+      let activeSessions = ttRes.data
+      let approvedEvents = []
+
+      if (currentActiveTerm?.term_id) {
+        try {
+          const [eventsRes, versRes] = await Promise.all([
+            axios.get(`${BASE}/calendar/terms/${currentActiveTerm.term_id}/events`).catch(() => ({ data: [] })),
+            axios.get(`${BASE}/semester/terms/${currentActiveTerm.term_id}/versions`).catch(() => ({ data: [] })),
+          ])
+          approvedEvents = (eventsRes.data || []).filter(item => item.approval_status === 'approved')
+          const versList = versRes.data || []
+          if (versList.length > 0) {
+            activeVersion = versList[0]
+            activeSessions = (activeVersion.sessions || []).map(session => ({
+              ...session,
+              session_date: session.date || session.session_date,
+            }))
+          }
+        } catch (e) {
+          console.error("Error loading semester versions in fetchAll:", e)
+        }
+      }
+
+      setLegacyTimetable(ttRes.data)
+      setTimetable(activeSessions)
+      setSemesterVersion(activeVersion)
+      setCalendarEvents(approvedEvents)
+
+      setTeachers(teacherMap); setSubjects(subjectMap)
       setRooms(roomMap); setClasses(classMap); setSubjectColors(colors)
-      setAllClasses(cRes.data); setAllTeachers(tRes.data); setAllRooms(rRes.data)
+      setAllClasses(validClasses); setAllTeachers(tRes.data); setAllRooms(rRes.data)
       setSlots(slRes.data)
 
-      if (cRes.data.length > 0) {
-        const first = cRes.data[0]
+      if (validClasses.length > 0) {
+        const first = validClasses[0]
         const parsed = parseClassName(first.class_name)
         setSelDept(parsed.dept)
         setSelYear(parsed.year)
@@ -229,7 +405,13 @@ export default function TimetableGrid() {
   const getCell = (fKey, fVal, day, period) => {
     const slotId = getSlotId(day, period)
     if (!slotId) return null
-    return timetable.find(t => t[fKey] === fVal && t.slot_id === slotId) || null
+    const targetDate = dateKey(dateForWeekday(day))
+    return timetable.find(t =>
+      t[fKey] === fVal &&
+      (semesterVersion
+        ? (t.session_date === targetDate && t.period_number === period)
+        : t.slot_id === slotId)
+    ) || null
   }
 
   const switchView = (v) => {
@@ -260,7 +442,17 @@ export default function TimetableGrid() {
 
   const filterKey = view === 'class' ? 'class_id' : view === 'teacher' ? 'teacher_id' : 'room_id'
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  const mondayThisWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+  const currentWeek = semesterWeeks[selectedWeekIdx] || null
+  const mondayThisWeek = currentWeek
+    ? currentWeek.monday
+    : new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+
+  const todayWeekIdx = useMemo(() => {
+    const todayMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7), 12)
+    const todayMondayKey = `${todayMonday.getFullYear()}-${String(todayMonday.getMonth() + 1).padStart(2, '0')}-${String(todayMonday.getDate()).padStart(2, '0')}`
+    return semesterWeeks.findIndex(w => w.mondayKey === todayMondayKey)
+  }, [semesterWeeks, today])
+
   const dateForWeekday = (weekday) => {
     const date = new Date(mondayThisWeek)
     date.setDate(date.getDate() + DAYS.indexOf(weekday))
@@ -389,6 +581,26 @@ export default function TimetableGrid() {
                           {rooms[entry.room_id] || `R${entry.room_id}`}
                         </div>
                       )}
+                      {(entry.original_session_id || entry.outcome_note || entry.is_makeup) && (
+                        <div
+                          style={{
+                            fontSize: 9.5,
+                            fontWeight: 750,
+                            color: '#92400e',
+                            background: '#fef3c7',
+                            border: '1px solid #fde68a',
+                            borderRadius: 4,
+                            padding: '1px 5px',
+                            marginTop: 3,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={entry.outcome_note || 'Rescheduled makeup lecture'}
+                        >
+                          ⚡ Makeup
+                        </div>
+                      )}
                     </div>
                   ) : closureEvents.length ? (
                     <div className="tt-empty-cell" style={{ background: '#fff1f2', color: '#9f1239', fontSize: 11, fontWeight: 650, padding: 6, borderRadius: 6 }}>{closureEvents[0].title}</div>
@@ -461,17 +673,15 @@ export default function TimetableGrid() {
             </div>
             <div style={{ marginTop: 3, fontSize: 11, color: '#64748b' }}>
               Showing dates for the current week{activeTerm ? ` · ${activeTerm.academic_year} ${activeTerm.term_name}` : ''}. Approved closures suppress class cards; approved working-day overrides take precedence.
+              {semesterVersion && <span style={{ display: 'inline-block', marginLeft: 6, padding: '2px 7px', borderRadius: 999, background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7', color: semesterVersion.status === 'published' ? '#166534' : '#92400e', fontWeight: 800 }}>Semester v{semesterVersion.version_number} · {semesterVersion.status}</span>}
             </div>
           </div>
         </div>
 
         <div className="hero-actions no-print">
-          {terms.length > 0 && <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#475569' }}>
-            Calendar term
-            <select value={activeTerm?.term_id ?? ''} onChange={event => setActiveTerm(terms.find(term => String(term.term_id) === event.target.value) || null)} style={{ padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: 8, background: 'white', maxWidth: 220 }}>
-              {terms.map(term => <option key={term.term_id} value={term.term_id}>{term.academic_year} · {term.term_name}</option>)}
-            </select>
-          </label>}
+          {activeTerm && <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#475569', padding: '9px 10px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+            Active semester: <strong>{activeTerm.academic_year} · {activeTerm.term_name}</strong>
+          </div>}
           <button type="button" className="secondary-action" onClick={handleExport}>
             <Icon name="download" size={16} />
             Export current view
@@ -480,9 +690,9 @@ export default function TimetableGrid() {
             <Icon name="printer" size={16} />
             Export all views
           </button>
-          <button type="button" className="secondary-action" onClick={() => { window.location.href = '/semester' }}>
+          <button type="button" className="secondary-action" onClick={() => { window.location.href = '/calendar' }}>
             <Icon name="calendar" size={16} />
-            Open dated semester timetable
+            Open academic calendar
           </button>
         </div>
 
@@ -516,6 +726,166 @@ export default function TimetableGrid() {
         </div>
       </section>
 
+      {/* =========================================================
+          SEMESTER WEEK NAVIGATION TOOLBAR
+      ========================================================= */}
+      {semesterWeeks.length > 0 && (
+        <section
+          className="timetable-week-nav no-print"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: '12px 18px',
+            marginBottom: 20,
+            background: 'var(--card-bg, #ffffff)',
+            border: '1px solid var(--border, #e2e8f0)',
+            borderRadius: 12,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 750, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Semester Week
+            </span>
+
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={selectedWeekIdx <= 0}
+              onClick={() => setSelectedWeekIdx(i => Math.max(0, i - 1))}
+              style={{ padding: '6px 11px', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, opacity: selectedWeekIdx <= 0 ? 0.45 : 1, cursor: selectedWeekIdx <= 0 ? 'not-allowed' : 'pointer' }}
+            >
+              <Icon name="chevronLeft" size={14} />
+              Prev
+            </button>
+
+            <select
+              aria-label="Select semester week"
+              value={selectedWeekIdx}
+              onChange={e => setSelectedWeekIdx(Number(e.target.value))}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border, #cbd5e1)',
+                background: 'var(--surface, #ffffff)',
+                color: 'var(--text-main, #0f172a)',
+                fontSize: 13,
+                fontWeight: 650,
+                cursor: 'pointer',
+                minWidth: 240,
+              }}
+            >
+              {semesterWeeks.map((w, idx) => (
+                <option key={w.mondayKey} value={idx}>
+                  {w.label} {todayWeekIdx === idx ? ' • (Current Week)' : ''}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              className="secondary-action"
+              disabled={selectedWeekIdx >= semesterWeeks.length - 1}
+              onClick={() => setSelectedWeekIdx(i => Math.min(semesterWeeks.length - 1, i + 1))}
+              style={{ padding: '6px 11px', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, opacity: selectedWeekIdx >= semesterWeeks.length - 1 ? 0.45 : 1, cursor: selectedWeekIdx >= semesterWeeks.length - 1 ? 'not-allowed' : 'pointer' }}
+            >
+              Next
+              <Icon name="chevronRight" size={14} />
+            </button>
+
+            {todayWeekIdx >= 0 && selectedWeekIdx !== todayWeekIdx && (
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setSelectedWeekIdx(todayWeekIdx)}
+                style={{ padding: '6px 12px', fontSize: 12, color: '#2563eb', borderColor: '#bfdbfe', background: '#eff6ff' }}
+              >
+                Jump to Current Week
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {activeDays.some(day => dayCalendarState(dateForWeekday(day)).closures.length > 0) && (
+              <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: '#fee2e2', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>●</span> Holiday / Closure in this week
+              </span>
+            )}
+
+            {semesterVersion && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 750,
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    background: semesterVersion.status === 'published' ? '#dcfce7' : '#fef3c7',
+                    color: semesterVersion.status === 'published' ? '#166534' : '#92400e',
+                    border: semesterVersion.status === 'published' ? '1px solid #bbf7d0' : '1px solid #fde68a',
+                  }}
+                >
+                  Version {semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
+                </span>
+
+                {semesterVersion.status === 'draft' && (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={publishing}
+                      onClick={handlePublishVersion}
+                      style={{
+                        padding: '4px 12px',
+                        fontSize: 11.5,
+                        fontWeight: 750,
+                        minHeight: 28,
+                        borderRadius: 6,
+                        background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                        borderColor: '#15803d',
+                        boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                        cursor: publishing ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {publishing ? 'Publishing…' : `Accept & Publish v${semesterVersion.version_number}`}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={publishing}
+                      onClick={handleDiscardDraft}
+                      style={{
+                        padding: '4px 11px',
+                        fontSize: 11.5,
+                        fontWeight: 650,
+                        minHeight: 28,
+                        borderRadius: 6,
+                        color: '#b91c1c',
+                        borderColor: '#fca5a5',
+                        background: '#fef2f2',
+                        cursor: publishing ? 'not-allowed' : 'pointer',
+                      }}
+                      title="Discard this draft and revert to the published timetable"
+                    >
+                      Discard Draft
+                    </button>
+                  </>
+                )}
+
+                {publishNotice && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#166534', background: '#dcfce7', padding: '3px 8px', borderRadius: 5 }}>
+                    ✓ {publishNotice}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* =========================================================
           GRID CARD

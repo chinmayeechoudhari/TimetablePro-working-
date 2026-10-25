@@ -707,7 +707,7 @@ function AssignmentsDirectoryModal({ tree, departmentsList, teachers, onClose, o
    MAIN PAGE
 ========================================================================= */
 export default function FacultyAssignments() {
-  const [teachers, setTeachers] = useState([])
+  const [teachers, setTeachers] = useState([]), [terms, setTerms] = useState([]), [selectedTermId, setSelectedTermId] = useState('')
   const [groups, setGroups] = useState([])
   const [assignments, setAssignments] = useState([])
   const [message, setMessage] = useState('')
@@ -729,21 +729,39 @@ export default function FacultyAssignments() {
   const [assignmentEditError, setAssignmentEditError] = useState('')
   const [deleteAssignmentTarget, setDeleteAssignmentTarget] = useState(null)
 
-  async function load() {
+  async function load(termId = selectedTermId) {
     try {
-      const [t, g, a] = await Promise.all([
+      const [t, tr] = await Promise.all([
         axios.get(`${BASE}/teachers`),
-        axios.get(`${BASE}/teaching-assignments/groups`),
-        axios.get(`${BASE}/teaching-assignments`),
+        axios.get(`${BASE}/calendar/terms`),
       ])
+      const termList = Array.isArray(tr.data) ? tr.data : []
+      const resolvedTermId = String(termId || termList.find(term => term.status === 'active')?.term_id || termList[0]?.term_id || '')
       setTeachers(t.data)
+      setTerms(termList)
+      if (resolvedTermId !== selectedTermId) setSelectedTermId(resolvedTermId)
+      if (resolvedTermId) await loadTermAssignments(resolvedTermId)
+      else { setGroups([]); setAssignments([]) }
+    } catch (err) {
+      setError(!err.response ? 'Cannot connect to backend server. Make sure it is running.' : 'Could not load faculty, semester or assignments.')
+    }
+  }
+
+  async function loadTermAssignments(termId) {
+    try {
+      const params = { term_id: Number(termId) }
+      const [g, a] = await Promise.all([
+        axios.get(`${BASE}/teaching-assignments/groups`, { params }),
+        axios.get(`${BASE}/teaching-assignments`, { params }),
+      ])
       setGroups(g.data)
       setAssignments(a.data)
     } catch (err) {
-      setError(!err.response ? 'Cannot connect to backend server. Make sure it is running.' : 'Could not load faculty or assignments.')
+      setError(!err.response ? 'Cannot connect to backend server.' : 'Could not load assignments for the selected semester.')
     }
   }
   useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedTermId) loadTermAssignments(selectedTermId) }, [selectedTermId])
 
   const tree = useMemo(() => buildTeacherAssignmentTree(assignments), [assignments])
   const departmentsList = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
@@ -797,12 +815,14 @@ export default function FacultyAssignments() {
   /* ── Assignment CRUD ────────────────────────────────────────────── */
   async function submitWizard({ teacherId, groups: payloadGroups }) {
     setWizardError('')
+    if (!selectedTermId) { setWizardError('Create or select a semester before assigning faculty to subjects.'); return }
     let createdCount = 0
     let alreadyCount = 0
     try {
       for (const pg of payloadGroups) {
         const res = await axios.post(`${BASE}/teaching-assignments`, {
           teacher_id: Number(teacherId),
+          term_id: Number(selectedTermId),
           definition_ids: pg.definitionIds.map(Number),
           division_ids: pg.divisionIds.map(Number),
         })
@@ -886,6 +906,14 @@ export default function FacultyAssignments() {
 
       {message && <div className="global-notice success"><Icon name="check" size={16} />{message}<button onClick={() => setMessage('')}><Icon name="close" size={15} /></button></div>}
       {error && <div className="global-notice error"><Icon name="alert" size={16} />{error}<button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,flexWrap:'wrap',margin:'18px 0',padding:'14px 18px',border:'1px solid var(--border, #e2e8f0)',borderRadius:14,background:'var(--card, #fff)'}}>
+        <div><strong style={{display:'block',fontSize:14}}>Assignment semester</strong><span style={{fontSize:12,color:'var(--text-muted, #64748b)'}}>Faculty remains global; each semester has its own subject assignments.</span></div>
+        <select aria-label="Assignment semester" value={selectedTermId} onChange={e=>setSelectedTermId(e.target.value)} style={{minWidth:230,maxWidth:'100%',padding:'10px 12px',borderRadius:9,border:'1px solid var(--border, #cbd5e1)',background:'var(--surface, #fff)',color:'var(--text-main, #0f172a)',font:'inherit'}} disabled={!terms.length}>
+          {!terms.length&&<option value="">Create a semester first</option>}
+          {terms.map(t=><option key={t.term_id} value={String(t.term_id)}>{t.academic_year} · {t.term_name}</option>)}
+        </select>
+      </div>
 
       <div className="fac-blocks">
 

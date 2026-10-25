@@ -1,0 +1,417 @@
+{
+  "term": {
+    "academic_year": "2026-27",
+    "term_name": "Semester 1",
+    "start_date": "2026-07-01",
+    "end_date": "2026-12-30",
+    "working_days": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
+    "holiday_region": "Maharashtra, India",
+    "reschedule_policy": "automatic",
+    "status": "active"
+  },
+  "academic_groups": [
+    {
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "academic_year": "2026-27",
+      "divisions": [
+        "Div A",
+        "Div B"
+      ]
+    },
+    {
+      "department": "Information Technology",
+      "year_of_study": 2,
+      "academic_year": "2026-27",
+      "divisions": [
+        "Div A"
+      ]
+    },
+    {
+      "department": "AI & Data Science",
+      "year_of_study": 3,
+      "academic_year": "2026-27",
+      "divisions": [
+        "Div A"
+      ]
+    }
+  ],
+  "timeslots": [
+    {
+      "day": "Monday",
+      "period_number": 1
+    },
+    {
+      "day": "Monday",
+      "period_number": 2
+    },
+    {
+      "day": "Monday",
+      "period_number": 3
+    },
+    {
+      "day": "Monday",
+      "period_number": 4
+    },
+    {
+      "day": "Monday",
+      "period_number": 5
+    },
+    {
+      "day": "Monday",
+      "period_number": 6
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 1
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 2
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 3
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 4
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 5
+    },
+    {
+      "day": "Tuesday",
+      "period_number": 6
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 1
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 2
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 3
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 4
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 5
+    },
+    {
+      "day": "Wednesday",
+      "period_number": 6
+    },
+    {
+      "day": "Thursday",
+      "period_number": 1
+    },
+    {
+      "day": "Thursday",
+      "period_number": 2
+    },
+    {
+      "day": "Thursday",
+      "period_number": 3
+    },
+    {
+      "day": "Thursday",
+      "period_number": 4
+    },
+    {
+      "day": "Thursday",
+      "period_number": 5
+    },
+    {
+      "day": "Thursday",
+      "period_number": 6
+    },
+    {
+      "day": "Friday",
+      "period_number": 1
+    },
+    {
+      "day": "Friday",
+      "period_number": 2
+    },
+    {
+      "day": "Friday",
+      "period_number": 3
+    },
+    {
+      "day": "Friday",
+      "period_number": 4
+    },
+    {
+      "day": "Friday",
+      "period_number": 5
+    },
+    {
+      "day": "Friday",
+      "period_number": 6
+    }
+  ],
+  "rooms": [
+    {
+      "room_number": "LH-101",
+      "room_type": "classroom"
+    },
+    {
+      "room_number": "LH-102",
+      "room_type": "classroom"
+    },
+    {
+      "room_number": "LH-103",
+      "room_type": "classroom"
+    },
+    {
+      "room_number": "LH-104",
+      "room_type": "classroom"
+    },
+    {
+      "room_number": "Seminar-Hall-1",
+      "room_type": "classroom"
+    },
+    {
+      "room_number": "CS-Lab-1",
+      "room_type": "lab"
+    },
+    {
+      "room_number": "CS-Lab-2",
+      "room_type": "lab"
+    },
+    {
+      "room_number": "AI-DS-Lab",
+      "room_type": "lab"
+    }
+  ],
+  "teachers": [
+    {
+      "teacher_name": "Dr. Sarah Sharma",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Rahul Verma",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Dr. Amit Kulkarni",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Sneha Patil",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Dr. Rajesh Iyer",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Meera Nair",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Dr. Vikram Joshi",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Ananya Roy",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Dr. Suresh Reddy",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Pooja Deshmukh",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Dr. Nikhil Mehta",
+      "max_periods_per_day": 4
+    },
+    {
+      "teacher_name": "Prof. Kavita Rao",
+      "max_periods_per_day": 4
+    }
+  ],
+  "subjects": [
+    {
+      "subject_name": "Data Structures & Algorithms",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "assigned_teachers": {
+        "Div A": "Dr. Sarah Sharma",
+        "Div B": "Prof. Rahul Verma"
+      }
+    },
+    {
+      "subject_name": "Database Management Systems",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "assigned_teachers": {
+        "Div A": "Dr. Amit Kulkarni",
+        "Div B": "Prof. Sneha Patil"
+      }
+    },
+    {
+      "subject_name": "Operating Systems",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "assigned_teachers": {
+        "Div A": "Dr. Rajesh Iyer",
+        "Div B": "Prof. Meera Nair"
+      }
+    },
+    {
+      "subject_name": "Discrete Mathematics",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "assigned_teachers": {
+        "Div A": "Dr. Vikram Joshi",
+        "Div B": "Prof. Ananya Roy"
+      }
+    },
+    {
+      "subject_name": "Computer Networks",
+      "subject_type": "theory",
+      "periods_per_week": 2,
+      "department": "Computer Science",
+      "year_of_study": 2,
+      "assigned_teachers": {
+        "Div A": "Dr. Suresh Reddy",
+        "Div B": "Prof. Pooja Deshmukh"
+      }
+    },
+    {
+      "subject_name": "Web Technologies",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Information Technology",
+      "year_of_study": 2,
+      "assigned_teacher": "Prof. Sneha Patil"
+    },
+    {
+      "subject_name": "Software Engineering",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Information Technology",
+      "year_of_study": 2,
+      "assigned_teacher": "Dr. Nikhil Mehta"
+    },
+    {
+      "subject_name": "Database Systems",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Information Technology",
+      "year_of_study": 2,
+      "assigned_teacher": "Prof. Kavita Rao"
+    },
+    {
+      "subject_name": "Computer Architecture",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "Information Technology",
+      "year_of_study": 2,
+      "assigned_teacher": "Dr. Suresh Reddy"
+    },
+    {
+      "subject_name": "Machine Learning",
+      "subject_type": "theory",
+      "periods_per_week": 4,
+      "department": "AI & Data Science",
+      "year_of_study": 3,
+      "assigned_teacher": "Dr. Sarah Sharma"
+    },
+    {
+      "subject_name": "Deep Learning",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "AI & Data Science",
+      "year_of_study": 3,
+      "assigned_teacher": "Dr. Rajesh Iyer"
+    },
+    {
+      "subject_name": "Natural Language Processing",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "AI & Data Science",
+      "year_of_study": 3,
+      "assigned_teacher": "Prof. Ananya Roy"
+    },
+    {
+      "subject_name": "Big Data Analytics",
+      "subject_type": "theory",
+      "periods_per_week": 3,
+      "department": "AI & Data Science",
+      "year_of_study": 3,
+      "assigned_teacher": "Dr. Amit Kulkarni"
+    }
+  ],
+  "calendar_events": [
+    {
+      "title": "Independence Day",
+      "start_date": "2026-08-15",
+      "end_date": "2026-08-15",
+      "is_closure": true
+    },
+    {
+      "title": "Ganesh Chaturthi",
+      "start_date": "2026-09-07",
+      "end_date": "2026-09-07",
+      "is_closure": true
+    },
+    {
+      "title": "Gandhi Jayanti",
+      "start_date": "2026-10-02",
+      "end_date": "2026-10-02",
+      "is_closure": true
+    },
+    {
+      "title": "Dussehra / Vijaya Dashami",
+      "start_date": "2026-10-20",
+      "end_date": "2026-10-20",
+      "is_closure": true
+    },
+    {
+      "title": "Diwali Vacation",
+      "start_date": "2026-11-09",
+      "end_date": "2026-11-13",
+      "is_closure": true,
+      "notes": "Full week institutional holiday closure"
+    },
+    {
+      "title": "Gurunanak Jayanti",
+      "start_date": "2026-11-24",
+      "end_date": "2026-11-24",
+      "is_closure": true
+    },
+    {
+      "title": "Christmas",
+      "start_date": "2026-12-25",
+      "end_date": "2026-12-25",
+      "is_closure": true
+    }
+  ]
+}

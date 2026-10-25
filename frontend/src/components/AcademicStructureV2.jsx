@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
-import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/academicShortCodes'
+import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/AcademicShortCodes'
 import Icon from './AcademicIcon'
 
 import { API_BASE } from '../lib/config'
@@ -9,11 +9,6 @@ const BASE = API_BASE
 const YEARS = [1, 2, 3, 4]
 const yearLabel = y => ({ 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' }[y])
 const letterAt = i => String.fromCharCode(65 + i)
-function defaultAcademicYear() {
-  const now = new Date()
-  const start = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1
-  return `${start}-${String(start + 1).slice(-2)}`
-}
 function emptyYearConfig() { return { 1: 0, 2: 0, 3: 0, 4: 0 } }
 
 export default function AcademicStructureV2() {
@@ -27,8 +22,6 @@ export default function AcademicStructureV2() {
   const [modal, setModal] = useState(null)
   const [department, setDepartment] = useState('')
   const [shortCode, setShortCode] = useState('')
-  const [academicYear, setAcademicYear] = useState(defaultAcademicYear())
-  const [showAcademicYear, setShowAcademicYear] = useState(false)
   const [counts, setCounts] = useState(emptyYearConfig)
   const [existingYears, setExistingYears] = useState({})
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -62,7 +55,7 @@ export default function AcademicStructureV2() {
   const departments = useMemo(() => [...new Set(groups.map(g => g.department))].sort(), [groups])
   const departmentRows = useMemo(() => departments.map(name => {
     const rows = groups.filter(g => g.department === name)
-    return { name, groups: rows, divisions: rows.reduce((n, g) => n + g.divisions.length, 0), academicYear: rows[0]?.academic_year || defaultAcademicYear() }
+    return { name, groups: rows, divisions: rows.reduce((n, g) => n + g.divisions.length, 0) }
   }), [departments, groups])
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -78,15 +71,14 @@ export default function AcademicStructureV2() {
   function closeModal() {
     setModal(null); setError('')
     setDepartment(''); setShortCode(''); setCounts(emptyYearConfig())
-    setExistingYears({}); setShowAcademicYear(false); setAcademicYear(defaultAcademicYear())
+    setExistingYears({})
   }
   function openCreate() {
     setError(''); setMessage(''); setDepartment(''); setShortCode(''); setCounts(emptyYearConfig())
-    setExistingYears({}); setAcademicYear(defaultAcademicYear()); setShowAcademicYear(false); setModal('create')
+    setExistingYears({}); setModal('create')
   }
   function openEdit(row) {
     setError(''); setMessage(''); setDepartment(row.name); setShortCode(shortCodes[row.name] || '')
-    setAcademicYear(row.academicYear); setShowAcademicYear(false)
     const locked = {}; row.groups.forEach(g => { locked[g.year_of_study] = g })
     setExistingYears(locked); setCounts(emptyYearConfig()); setModal({ type: 'edit', name: row.name })
   }
@@ -127,7 +119,7 @@ export default function AcademicStructureV2() {
     if (!department.trim()) return setError('Enter the department name.')
     if (!yearConfigs.length) return setError('Enable at least one year and add its divisions.')
     try {
-      const res = await axios.post(`${BASE}/academic-structure`, { academic_year: academicYear.trim() || defaultAcademicYear(), department: department.trim(), years: yearConfigs })
+      const res = await axios.post(`${BASE}/academic-structure`, { department: department.trim(), years: yearConfigs })
       saveShortCode(department.trim(), shortCode.trim()); setShortCodes(loadShortCodes())
       setMessage(res.data.message || `${department.trim()} was created.`); closeModal(); await load()
     } catch (err) { setError(err.response?.data?.detail || 'Could not create the department.') }
@@ -139,7 +131,7 @@ export default function AcademicStructureV2() {
     const newYearConfigs = YEARS.filter(y => !existingYears[y] && counts[y] > 0).map(y => ({ year_of_study: y, division_count: Number(counts[y]) }))
     try {
       if (newName !== originalName) await axios.put(`${BASE}/academic-structure/department`, { old_department: originalName, new_department: newName })
-      if (newYearConfigs.length) await axios.post(`${BASE}/academic-structure`, { academic_year: academicYear.trim() || defaultAcademicYear(), department: newName, years: newYearConfigs })
+      if (newYearConfigs.length) await axios.post(`${BASE}/academic-structure`, { department: newName, years: newYearConfigs })
       saveShortCode(newName, shortCode.trim()); if (newName !== originalName) saveShortCode(originalName, '')
       setShortCodes(loadShortCodes()); setMessage(`${newName} was updated.`); closeModal(); await load()
     } catch (err) { setError(err.response?.data?.detail || 'Could not update the department.') }
@@ -164,7 +156,7 @@ export default function AcademicStructureV2() {
         <svg className="academic-hero-watermark" viewBox="0 0 620 220" fill="none" aria-hidden="true">
           <path d="M70 185V92l105-58 105 58v93" stroke="currentColor" strokeWidth="2" /><path d="M112 185v-58h54v58M203 185v-58h54v58" stroke="currentColor" strokeWidth="2" /><path d="M145 92h60M145 116h60" stroke="currentColor" strokeWidth="2" /><path d="M315 185V62l85-43 85 43v123" stroke="currentColor" strokeWidth="2" /><path d="M350 185v-55h38v55M407 185v-55h38v55" stroke="currentColor" strokeWidth="2" /><path d="M368 82h64M368 105h64" stroke="currentColor" strokeWidth="2" /><path d="M40 185h540" stroke="currentColor" strokeWidth="2" />
         </svg>
-        <div className="hero-left"><div className="hero-icon"><Icon name="building" size={30} stroke={1.7} /></div><div><div className="academic-eyebrow">ACADEMIC STRUCTURE</div><h1>Departments</h1><div className="hero-subtitle">Manage Departments &amp; Divisions</div><p>Each department can hold multiple years of study, and every year can have its own set of divisions.</p></div></div>
+        <div className="hero-left"><div className="hero-icon"><Icon name="building" size={30} stroke={1.7} /></div><div><div className="academic-eyebrow">ACADEMIC STRUCTURE</div><h1>Departments</h1><div className="hero-subtitle">Manage Departments &amp; Divisions</div><p>Set up departments, classes and divisions once. The same global structure is reused across every semester.</p></div></div>
         <button className="primary-button hero-add-button" onClick={openCreate}><Icon name="plus" size={18} /> Create New Department</button>
       </section>
 
@@ -177,7 +169,7 @@ export default function AcademicStructureV2() {
       {message && <div className="global-notice success"><Icon name="check" size={16} />{message}<button onClick={() => setMessage('')}><Icon name="close" size={15} /></button></div>}
       {error && !modal && !deleteTarget && !legacyTarget && !legacyBulkTarget && <div className="global-notice error">{error}<button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
 
-      <section className="dept-directory-card"><div className="dept-directory-head"><div><div className="section-kicker">DEPARTMENT DIRECTORY</div><div className="dept-directory-title-row"><div className="dept-directory-icon"><Icon name="building" size={22} /></div><div><h2>Departments</h2><p>{departmentRows.length} department{departmentRows.length === 1 ? '' : 's'} configured for {academicYear}</p></div></div></div><div className="dept-search"><Icon name="search" size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search departments..." />{search && <button onClick={() => setSearch('')} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><Icon name="close" size={14} /></button>}</div></div></section>
+      <section className="dept-directory-card"><div className="dept-directory-head"><div><div className="section-kicker">DEPARTMENT DIRECTORY</div><div className="dept-directory-title-row"><div className="dept-directory-icon"><Icon name="building" size={22} /></div><div><h2>Departments</h2><p>{departmentRows.length} department{departmentRows.length === 1 ? '' : 's'} configured globally across all semesters</p></div></div></div><div className="dept-search"><Icon name="search" size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search departments..." />{search && <button onClick={() => setSearch('')} style={{ border: 0, background: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><Icon name="close" size={14} /></button>}</div></div></section>
 
       <section className="dept-grid">
         {filteredRows.length ? filteredRows.map(row => {
@@ -225,8 +217,7 @@ export default function AcademicStructureV2() {
                 <Field label="DEPARTMENT NAME"><input autoFocus value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Computer Science & Engineering" /></Field>
                 <Field label="SHORT CODE (OPTIONAL)"><input value={shortCode} onChange={e => setShortCode(e.target.value.toUpperCase())} placeholder="e.g. CSE" maxLength={4} /></Field>
                 <div className="field-help">A short code is used on department cards and timetable labels.</div>
-                <div className="modal-card-divider" />
-                <div className="academic-year-block"><div className="modal-card-icon purple"><Icon name="calendar" size={18} /></div><div className="academic-year-content"><b>Academic year</b>{!showAcademicYear ? <button type="button" onClick={() => setShowAcademicYear(true)}>Current academic year <span>{academicYear}</span> · Change</button> : <input value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="2026-27" />}</div></div>
+
               </section>
               <section className="modal-form-card divisions-card">
                 <div className="modal-card-heading"><div className="modal-card-icon purple"><Icon name="grid" size={19} /></div><div><h3>Years &amp; divisions</h3><p>Enable the years this department offers and set the number of divisions.</p></div></div>

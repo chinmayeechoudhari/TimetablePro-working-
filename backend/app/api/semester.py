@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_db
 from app.models.calendar import AcademicTerm, CalendarEvent
@@ -201,6 +201,7 @@ def _serialize_session(item):
         "session_id": item.session_id,
         "version_id": item.version_id,
         "date": item.session_date.isoformat(),
+        "session_date": item.session_date.isoformat(),
         "weekday": item.weekday,
         "period_number": item.period_number,
         "slot_id": item.slot_id,
@@ -238,8 +239,8 @@ def _serialize_version(item, include_sessions=False):
 @router.get("/terms/{term_id}/versions")
 def list_versions(term_id: int, db: Session = Depends(get_db)):
     _term(db, term_id)
-    rows = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
-    return [_serialize_version(row) for row in rows]
+    rows = db.query(TimetableVersion).options(selectinload(TimetableVersion.sessions)).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).all()
+    return [_serialize_version(row, include_sessions=True) for row in rows]
 
 
 @router.post("/terms/{term_id}/versions/draft", status_code=201)
@@ -378,6 +379,15 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
     version = _version(db, version_id)
     if version.status == "archived":
         raise HTTPException(status_code=409, detail="Archived versions cannot be published.")
+    pending_events = db.query(CalendarEvent).filter(
+        CalendarEvent.term_id == version.term_id,
+        CalendarEvent.approval_status == "pending",
+    ).count()
+    if pending_events:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Resolve {pending_events} pending calendar event review(s) before publishing.",
+        )
     sessions = db.query(ScheduledSession).filter(ScheduledSession.version_id == version_id).all()
     if not sessions:
         raise HTTPException(status_code=409, detail="An empty timetable cannot be published.")
@@ -404,6 +414,22 @@ def publish_version(version_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(version)
     return _serialize_version(version)
+
+
+@router.delete("/versions/{version_id}")
+def delete_version(version_id: int, db: Session = Depends(get_db)):
+    """Discard an unapproved draft version and delete its scheduled sessions."""
+    version = _version(db, version_id)
+    if version.status != "draft":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only draft versions can be discarded. Version {version.version_number} is {version.status}."
+        )
+    term_id = version.term_id
+    db.query(ScheduledSession).filter(ScheduledSession.version_id == version_id).delete(synchronize_session=False)
+    db.delete(version)
+    db.commit()
+    return {"message": f"Draft version {version.version_number} has been discarded.", "term_id": term_id}
 
 
 @router.patch("/sessions/{session_id}/lock")
@@ -565,14 +591,22 @@ def approve_replacement(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/terms/{term_id}/dashboard")
-def term_dashboard(term_id: int, db: Session = Depends(get_db)):
+def term_dashboard(term_id: int, version_id: int | None = None, db: Session = Depends(get_db)):
     term = _term(db, term_id)
-    version = db.query(TimetableVersion).filter(
-        TimetableVersion.term_id == term_id,
-        TimetableVersion.status == "published",
-    ).order_by(TimetableVersion.version_number.desc()).first()
-    if not version:
-        version = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).first()
+    if version_id is not None:
+        version = db.query(TimetableVersion).filter(
+            TimetableVersion.version_id == version_id,
+            TimetableVersion.term_id == term_id,
+        ).first()
+        if version is None:
+            raise HTTPException(status_code=404, detail="Timetable version not found for this semester.")
+    else:
+        version = db.query(TimetableVersion).filter(
+            TimetableVersion.term_id == term_id,
+            TimetableVersion.status == "published",
+        ).order_by(TimetableVersion.version_number.desc()).first()
+        if not version:
+            version = db.query(TimetableVersion).filter(TimetableVersion.term_id == term_id).order_by(TimetableVersion.version_number.desc()).first()
     if not version:
         return {"term": {"term_id": term.term_id, "term_name": term.term_name}, "version": None, "summary": {"required_periods": 0, "scheduled": 0, "completed": 0, "cancelled": 0, "rescheduled": 0, "outstanding": 0, "unresolved_locked_conflicts": 0}, "subject_loads": [], "incomplete": True}
 

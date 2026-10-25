@@ -99,9 +99,51 @@ def delete_timeslot(slot_id: int, db: Session = Depends(get_db)) -> TimeSlotRead
 
     # Clear timetable and availability rows that reference this slot
     from app.models.models import Timetable, TeacherAvailability
+    from app.models.semester import ScheduledSession
     db.query(Timetable).filter(Timetable.slot_id == slot_id).delete()
     db.query(TeacherAvailability).filter(TeacherAvailability.slot_id == slot_id).delete()
+    db.query(ScheduledSession).filter(ScheduledSession.slot_id == slot_id).update(
+        {ScheduledSession.slot_id: None}, synchronize_session=False
+    )
 
     db.delete(timeslot)
     db.commit()
     return deleted
+
+
+class TimeSlotBatchCreate(TimeSlotCreate.__base__ if hasattr(TimeSlotCreate, '__base__') else object):
+    pass
+
+from pydantic import BaseModel
+
+class TimeSlotBatchRequest(BaseModel):
+    days: List[str]
+    periods_per_day: int
+
+
+@router.post("/batch", response_model=List[TimeSlotRead], status_code=status.HTTP_201_CREATED)
+def batch_create_timeslots(payload: TimeSlotBatchRequest, db: Session = Depends(get_db)) -> List[TimeSlotRead]:
+    from app.models.models import Timetable, TeacherAvailability
+    from app.models.semester import ScheduledSession
+
+    # Clean up dependent records before replacing slots
+    db.query(Timetable).delete()
+    db.query(TeacherAvailability).delete()
+    db.query(ScheduledSession).update({ScheduledSession.slot_id: None}, synchronize_session=False)
+    db.query(TimeSlot).delete()
+
+    new_slots = []
+    for day in payload.days:
+        for p in range(1, int(payload.periods_per_day) + 1):
+            slot = TimeSlot(day=day, period_number=p)
+            db.add(slot)
+            new_slots.append(slot)
+
+    db.commit()
+    for s in new_slots:
+        db.refresh(s)
+
+    return [
+        TimeSlotRead(slot_id=s.slot_id, day=s.day, period_number=s.period_number)
+        for s in new_slots
+    ]

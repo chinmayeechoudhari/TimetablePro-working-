@@ -155,3 +155,27 @@ def test_schedule_conflicts_ignore_cancelled_sessions():
         session(2, date(2026, 7, 1), 2, 11, 7, 4),
     ]
     assert _schedule_conflicts(rows) == []
+
+def test_overlapping_calendar_events_require_review():
+    from app.api.calendar import _overlapping_events
+
+    existing = SimpleNamespace(
+        event_id=1,
+        start_date=date(2026, 8, 10),
+        end_date=date(2026, 8, 12),
+        approval_status="approved",
+    )
+    assert _overlapping_events([existing], date(2026, 8, 12), date(2026, 8, 13)) == [existing]
+    assert _overlapping_events([existing], date(2026, 8, 13), date(2026, 8, 14)) == []
+
+
+def test_rejected_calendar_events_do_not_trigger_overlap_review():
+    from app.api.calendar import _overlapping_events
+
+    rejected = SimpleNamespace(
+        event_id=1,
+        start_date=date(2026, 8, 10),
+        end_date=date(2026, 8, 12),
+        approval_status="rejected",
+    )
+    assert _overlapping_events([rejected], date(2026, 8, 11), date(2026, 8, 11)) == []
