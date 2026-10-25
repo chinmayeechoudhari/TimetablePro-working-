@@ -53,8 +53,6 @@ const EditIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="non
 const RefreshIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
 const TemplateIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
 const TrashIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-const CheckCircleIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10" fill="#10b981"/><path d="m8.5 12 2.5 2.5 5-5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
-const AlertTriangleIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="#f59e0b"><path d="m10.29 3.86-8.6 15A2 2 0 0 0 3.43 22h17.14a2 2 0 0 0 1.74-3.14l-8.6-15a2 2 0 0 0-3.42 0z" fill="#f59e0b"/><line x1="12" y1="9" x2="12" y2="13" stroke="#fff" strokeWidth="2" strokeLinecap="round"/><circle cx="12" cy="17" r="1" fill="#fff"/></svg>
 const ArrowRightIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 
 /* ─── Field Input Helper ─── */
@@ -1054,29 +1052,6 @@ export default function CalendarPage() {
           text-decoration: underline;
         }
 
-        /* Readiness Progress Section */
-        .cal-readiness-box {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          margin-bottom: 16px;
-          padding-bottom: 14px;
-          border-bottom: 1px solid #f1f5f9;
-        }
-        .cal-checklist {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .cal-check-item {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          font-size: 12.5px;
-          font-weight: 500;
-          color: #334155;
-        }
-
         /* Upcoming events list */
         .cal-upcoming-item {
           display: flex;
@@ -1193,7 +1168,6 @@ export default function CalendarPage() {
         html[data-theme="dark"] .cal-dropzone { background: #1e293b; border-color: #3b82f6; }
         html[data-theme="dark"] .cal-btn-choose { background: #0f172a; border-color: #475569; color: #f1f5f9; }
         html[data-theme="dark"] .cal-upcoming-item { border-color: #1e293b; }
-        html[data-theme="dark"] .cal-readiness-box { border-color: #1e293b; }
         html[data-theme="dark"] .cal-date-num { color: #f1f5f9; }
         html[data-theme="dark"] .cal-upcoming-day { color: #f8fafc; }
       `}</style>
@@ -1694,64 +1668,7 @@ export default function CalendarPage() {
 
           {/* Right Column: Sidebar */}
           <div className="cal-sidebar">
-            {/* 1. Scheduling Readiness */}
-            <div className="cal-side-card">
-              <div className="cal-side-header">
-                <div className="cal-side-title">Scheduling readiness</div>
-              </div>
-
-              <div className="cal-readiness-box">
-                {/* 75% Circular Ring */}
-                <div style={{ width: 62, height: 62, flexShrink: 0, position: 'relative' }}>
-                  <svg width="62" height="62" viewBox="0 0 62 62">
-                    <circle cx="31" cy="31" r="24" stroke="#e2e8f0" strokeWidth="5.5" fill="none" />
-                    <circle
-                      cx="31"
-                      cy="31"
-                      r="24"
-                      stroke="#0d9488"
-                      strokeWidth="5.5"
-                      fill="none"
-                      strokeDasharray={2 * Math.PI * 24}
-                      strokeDashoffset={2 * Math.PI * 24 * (1 - 0.75)}
-                      strokeLinecap="round"
-                      transform="rotate(-90 31 31)"
-                    />
-                    <text x="31" y="36" textAnchor="middle" fontSize="13" fontWeight="800" fill="#0f766e">
-                      75%
-                    </text>
-                  </svg>
-                </div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 750, color: '#d97706' }}>Almost ready</div>
-                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3, lineHeight: 1.35 }}>
-                    Complete the remaining items to generate the timetable.
-                  </div>
-                </div>
-              </div>
-
-              {/* Checklist */}
-              <div className="cal-checklist">
-                <div className="cal-check-item">
-                  <CheckCircleIcon />
-                  <span>Calendar synced</span>
-                </div>
-                <div className="cal-check-item">
-                  <CheckCircleIcon />
-                  <span>Faculty availability configured</span>
-                </div>
-                <div className="cal-check-item">
-                  <CheckCircleIcon />
-                  <span>Rooms configured</span>
-                </div>
-                <div className="cal-check-item">
-                  <AlertTriangleIcon />
-                  <span style={{ color: '#b45309', fontWeight: 600 }}>Constraints active</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Upcoming events */}
+            {/* Upcoming events */}
             <div className="cal-side-card">
               <div className="cal-side-header">
                 <div className="cal-side-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
