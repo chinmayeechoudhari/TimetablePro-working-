@@ -37,7 +37,7 @@ class ScheduledSession(Base):
     session_date = Column(Date, nullable=False, index=True)
     weekday = Column(String(12), nullable=False)
     period_number = Column(Integer, nullable=False)
-    slot_id = Column(Integer, ForeignKey("timeslot.slot_id"), nullable=True)
+    slot_id = Column(Integer, ForeignKey("timeslot.slot_id", ondelete="SET NULL"), nullable=True)
     class_id = Column(Integer, ForeignKey("class.class_id"), nullable=False, index=True)
     subject_id = Column(Integer, ForeignKey("subject.subject_id"), nullable=False, index=True)
     teacher_id = Column(Integer, ForeignKey("teacher.teacher_id"), nullable=False, index=True)
