@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 
 import { API_BASE } from '../lib/config'
@@ -114,15 +114,22 @@ export default function TimeSlotForm() {
     setError('')
 
     try {
-      for (const slot of slots) {
-        await axios.delete(`${BASE}/timeslots/${slot.slot_id}`)
-      }
-
       const orderedDays = ALL_DAYS.filter(d => selectedDays.includes(d))
 
-      for (const day of orderedDays) {
-        for (let p = 1; p <= parseInt(periodsPerDay); p++) {
-          await axios.post(`${BASE}/timeslots`, { day, period_number: p })
+      try {
+        await axios.post(`${BASE}/timeslots/batch`, {
+          days: orderedDays,
+          periods_per_day: parseInt(periodsPerDay),
+        })
+      } catch (batchErr) {
+        // Fallback for legacy individual requests
+        for (const slot of slots) {
+          await axios.delete(`${BASE}/timeslots/${slot.slot_id}`)
+        }
+        for (const day of orderedDays) {
+          for (let p = 1; p <= parseInt(periodsPerDay); p++) {
+            await axios.post(`${BASE}/timeslots`, { day, period_number: p })
+          }
         }
       }
 
