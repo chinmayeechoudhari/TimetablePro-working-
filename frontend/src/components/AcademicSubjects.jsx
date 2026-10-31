@@ -23,6 +23,7 @@ function SubjectsWatermark() { return <svg className="academic-hero-watermark" v
 export default function AcademicSubjects() {
   const [groups, setGroups] = useState([]), [subjects, setSubjects] = useState([])
   const [terms, setTerms] = useState([]), [selectedTermId, setSelectedTermId] = useState('')
+  const [termEvents, setTermEvents] = useState([])
   const [shortCodes] = useState(loadShortCodes)
   const [loadError, setLoadError] = useState('')
   const [selectedDepartment, setSelectedDepartment] = useState(''), [selectedGroupId, setSelectedGroupId] = useState('')
@@ -45,34 +46,76 @@ export default function AcademicSubjects() {
       setTerms(termList)
       const resolvedTermId = String(termId || termList.find(t => t.status === 'active')?.term_id || termList[0]?.term_id || '')
       if (resolvedTermId !== selectedTermId) setSelectedTermId(resolvedTermId)
-      const sr = resolvedTermId
-        ? await axios.get(`${BASE}/academic-subjects`, { params: { term_id: Number(resolvedTermId) } })
-        : { data: [] }
+
+      const [sr, er] = await Promise.all([
+        resolvedTermId
+          ? axios.get(`${BASE}/academic-subjects`, { params: { term_id: Number(resolvedTermId) } })
+          : Promise.resolve({ data: [] }),
+        resolvedTermId
+          ? axios.get(`${BASE}/calendar/terms/${resolvedTermId}/events`)
+          : Promise.resolve({ data: [] }),
+      ])
+
       const rawGroups = Array.isArray(gr.data) ? gr.data : (gr.data?.groups || [])
       setGroups(rawGroups.map(g => ({ ...g, divisions: (g.divisions || []).map(d => typeof d === 'string' ? d : d?.division_name).filter(Boolean) })))
       setSubjects(Array.isArray(sr.data) ? sr.data : [])
+      setTermEvents(Array.isArray(er.data) ? er.data : [])
       setLoadError('')
-    } catch (err) { console.error(err); setLoadError('Could not load semester subjects or global academic structure. Is the backend running?') }
+    } catch (err) {
+      console.error(err)
+      setLoadError('Could not load semester subjects or global academic structure. Is the backend running?')
+    }
   }
-  useEffect(() => { load() }, [])
-  useEffect(() => { if (selectedTermId) loadSubjects(selectedTermId) }, [selectedTermId])
 
-  async function loadSubjects(termId) {
+  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedTermId) loadSubjectsAndEvents(selectedTermId) }, [selectedTermId])
+
+  async function loadSubjectsAndEvents(termId) {
     try {
-      const response = await axios.get(`${BASE}/academic-subjects`, { params: { term_id: Number(termId) } })
-      setSubjects(Array.isArray(response.data) ? response.data : [])
-    } catch (err) { console.error(err); setLoadError('Could not load subjects for this semester.') }
+      const [sr, er] = await Promise.all([
+        axios.get(`${BASE}/academic-subjects`, { params: { term_id: Number(termId) } }),
+        axios.get(`${BASE}/calendar/terms/${termId}/events`),
+      ])
+      setSubjects(Array.isArray(sr.data) ? sr.data : [])
+      setTermEvents(Array.isArray(er.data) ? er.data : [])
+    } catch (err) {
+      console.error(err)
+      setLoadError('Could not load subjects or calendar events for this semester.')
+    }
   }
 
   const selectedTerm = useMemo(() => terms.find(t => String(t.term_id) === String(selectedTermId)), [terms, selectedTermId])
 
-  const semesterWeeks = useMemo(() => {
-    if (!selectedTerm?.start_date || !selectedTerm?.end_date) return 15
+  // Active Teaching Weeks calculation:
+  // Total calendar weeks minus exam/assessment weeks (holidays are NOT subtracted because holiday lectures will be rescheduled!)
+  const { totalWeeks, examWeeks, teachingWeeks } = useMemo(() => {
+    if (!selectedTerm?.start_date || !selectedTerm?.end_date) {
+      return { totalWeeks: 15, examWeeks: 0, teachingWeeks: 15 }
+    }
     const d1 = new Date(selectedTerm.start_date + 'T12:00:00')
     const d2 = new Date(selectedTerm.end_date + 'T12:00:00')
-    const diffDays = Math.max(7, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)))
-    return Math.max(1, Math.round(diffDays / 7))
-  }, [selectedTerm])
+    const totalDays = Math.max(7, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)))
+    const totalW = Math.max(1, Math.round(totalDays / 7))
+
+    // Count weekday exam / assessment days (event_type === 'exam' or suppresses_lectures and not is_closure)
+    const examDaysSet = new Set()
+    termEvents.forEach(e => {
+      const isExam = e.event_type === 'exam' || (e.suppresses_lectures && !e.is_closure)
+      if (!isExam) return
+      const start = new Date(e.start_date + 'T12:00:00')
+      const end = new Date(e.end_date + 'T12:00:00')
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dayOfWeek = d.getDay()
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Weekdays Monday-Friday
+          examDaysSet.add(d.toISOString().slice(0, 10))
+        }
+      }
+    })
+
+    const examW = Math.round((examDaysSet.size / 5) * 10) / 10
+    const teachW = Math.max(1, Math.round(totalW - examW))
+    return { totalWeeks: totalW, examWeeks: examW, teachingWeeks: teachW }
+  }, [selectedTerm, termEvents])
 
   useEffect(() => {
     const locked = Boolean(formModal || deleteTarget); if (!locked) return undefined
@@ -91,7 +134,7 @@ export default function AcademicSubjects() {
   const selectedDivisionNames = divisionNames(selectedGroup)
   useEffect(() => { if (!activeDeptRow) return; if (!activeDeptRow.groups.some(g => String(g.group_id) === String(selectedGroupId))) setSelectedGroupId(activeDeptRow.groups[0] ? String(activeDeptRow.groups[0].group_id) : '') }, [activeDeptRow, selectedGroupId])
 
-  // Option C: Display custom syllabus hours when explicitly set, otherwise calculate dynamically from semester weeks
+  // Option C: Custom syllabus teaching hours (minus exam days; holidays will be rescheduled)
   const directory = useMemo(() => {
     if (!selectedGroup) return []
     const map = new Map()
@@ -117,17 +160,17 @@ export default function AcademicSubjects() {
       if (s.subject_type === 'theory') {
         item.theory_duration = s.lecture_duration || 1
         item.theory_is_custom = s.total_hours != null
-        item.theory_hours = s.total_hours != null ? s.total_hours : ((s.periods_per_week || 3) * semesterWeeks)
+        item.theory_hours = s.total_hours != null ? s.total_hours : ((s.periods_per_week || 3) * teachingWeeks)
       } else if (s.subject_type === 'lab') {
         item.lab_duration = s.lecture_duration || 2
         item.lab_is_custom = s.total_hours != null
-        item.lab_hours = s.total_hours != null ? s.total_hours : ((s.periods_per_week || 1) * (s.lecture_duration || 2) * semesterWeeks)
+        item.lab_hours = s.total_hours != null ? s.total_hours : ((s.periods_per_week || 1) * (s.lecture_duration || 2) * teachingWeeks)
       }
       if (item.total_hours == null && s.total_hours != null) item.total_hours = s.total_hours
       if (item.lecture_duration == null && s.lecture_duration != null) item.lecture_duration = s.lecture_duration
     })
     return [...map.values()].map(r => ({ ...r, type: r.theory!=null&&r.lab!=null?'theory+lab':r.lab!=null?'lab':'theory' })).sort((a,b)=>a.name.localeCompare(b.name))
-  }, [subjects, selectedGroup, semesterWeeks])
+  }, [subjects, selectedGroup, teachingWeeks])
 
   const filterCounts = useMemo(() => ({ all:directory.length, theory:directory.filter(r=>r.theory!=null).length, lab:directory.filter(r=>r.lab!=null).length }), [directory])
   const filteredDirectory = useMemo(() => { const q=search.trim().toLowerCase(); return directory.filter(r => (!q || r.name.toLowerCase().includes(q)) && (typeFilter==='all' || (typeFilter==='theory'&&r.theory!=null) || (typeFilter==='lab'&&r.lab!=null))) }, [directory,search,typeFilter])
@@ -139,11 +182,11 @@ export default function AcademicSubjects() {
   function resetForm() {
     setFormName('')
     setFormType('theory')
-    setFormTotalHours(3 * semesterWeeks)
+    setFormTotalHours(3 * teachingWeeks)
     setFormDuration(1)
-    setFormTheoryHours(3 * semesterWeeks)
+    setFormTheoryHours(3 * teachingWeeks)
     setFormTheoryDuration(1)
-    setFormLabHours(2 * semesterWeeks)
+    setFormLabHours(2 * teachingWeeks)
     setFormLabDuration(2)
     setFormError('')
   }
@@ -158,15 +201,15 @@ export default function AcademicSubjects() {
     setFormName(row.name)
     setFormType(row.type)
     if (row.type === 'theory+lab') {
-      setFormTheoryHours(row.theory_hours ?? (3 * semesterWeeks))
+      setFormTheoryHours(row.theory_hours ?? (3 * teachingWeeks))
       setFormTheoryDuration(row.theory_duration ?? 1)
-      setFormLabHours(row.lab_hours ?? (2 * semesterWeeks))
+      setFormLabHours(row.lab_hours ?? (2 * teachingWeeks))
       setFormLabDuration(row.lab_duration ?? 2)
     } else if (row.type === 'lab') {
-      setFormTotalHours(row.lab_hours ?? (2 * semesterWeeks))
+      setFormTotalHours(row.lab_hours ?? (2 * teachingWeeks))
       setFormDuration(row.lab_duration ?? row.lecture_duration ?? 2)
     } else {
-      setFormTotalHours(row.theory_hours ?? (3 * semesterWeeks))
+      setFormTotalHours(row.theory_hours ?? (3 * teachingWeeks))
       setFormDuration(row.theory_duration ?? row.lecture_duration ?? 1)
     }
     setFormModal({ type: 'edit', originalName: row.name })
@@ -197,8 +240,8 @@ export default function AcademicSubjects() {
       }
     }
 
-    // Auto-calculate weekly periods based on semester duration
-    const derivedPeriods = Math.max(1, Math.round(Number(formTotalHours) / semesterWeeks))
+    // Auto-calculate weekly periods based on active teaching weeks
+    const derivedPeriods = Math.max(1, Math.round(Number(formTotalHours) / teachingWeeks))
     const payload = {
       subject_name: formName.trim(),
       subject_type: formType,
@@ -206,8 +249,8 @@ export default function AcademicSubjects() {
       total_hours: Number(formTotalHours),
       lecture_duration: Number(formDuration),
       ...(formType === 'theory+lab' ? {
-        theory_periods_per_week: Math.max(1, Math.round(Number(formTheoryHours) / semesterWeeks)),
-        lab_periods_per_week: Math.max(1, Math.round(Number(formLabHours) / (Number(formLabDuration || 2) * semesterWeeks))),
+        theory_periods_per_week: Math.max(1, Math.round(Number(formTheoryHours) / teachingWeeks)),
+        lab_periods_per_week: Math.max(1, Math.round(Number(formLabHours) / (Number(formLabDuration || 2) * teachingWeeks))),
         theory_total_hours: Number(formTheoryHours),
         theory_lecture_duration: Number(formTheoryDuration),
         lab_total_hours: Number(formLabHours),
@@ -218,10 +261,10 @@ export default function AcademicSubjects() {
     try {
       if (formModal?.type === 'edit') {
         await axios.put(`${BASE}/academic-subjects/${selectedGroup.group_id}/${encodeURIComponent(formModal.originalName)}?term_id=${selectedTermId}`, payload);
-        setMessage(`${payload.subject_name} was updated with ${payload.total_hours} semester hours.`)
+        setMessage(`${payload.subject_name} was updated with ${payload.total_hours} semester teaching hours.`)
       } else {
         const r = await axios.post(`${BASE}/academic-subjects`, { group_id: selectedGroup.group_id, term_id: Number(selectedTermId), ...payload });
-        setMessage(`${r.data.subject_name} added with ${payload.total_hours} semester hours.`)
+        setMessage(`${r.data.subject_name} added with ${payload.total_hours} semester teaching hours.`)
       }
       closeFormModal();
       await load()
@@ -278,7 +321,7 @@ export default function AcademicSubjects() {
                 <div>
                   <div className="academic-eyebrow">{formModal.type === 'edit' ? 'EDIT SUBJECT' : 'NEW SUBJECT'}</div>
                   <h2>{formModal.type === 'edit' ? 'Edit subject' : 'Add a new subject'}</h2>
-                  <p>Configure custom semester teaching hours and lecture session block lengths.</p>
+                  <p>Configure required teaching hours (excluding exams; holiday lectures are rescheduled automatically).</p>
                 </div>
               </div>
             </div>
@@ -319,7 +362,7 @@ export default function AcademicSubjects() {
                   <div className="modal-card-icon purple"><Icon name="calendar" size={20} /></div>
                   <div>
                     <h3>Semester Teaching Hours &amp; Duration</h3>
-                    <p>Enter the exact syllabus requirement, or use the quick buttons to fill based on the calendar.</p>
+                    <p>Enter the syllabus teaching hours needed. Exams are excluded; holiday closures are automatically made up.</p>
                   </div>
                 </div>
 
@@ -327,7 +370,7 @@ export default function AcademicSubjects() {
                   <>
                     <div className="subject-period-grid">
                       <div>
-                        <Field label="TOTAL SEMESTER HOURS">
+                        <Field label="TOTAL TEACHING HOURS">
                           <input type="number" min="1" max="500" value={formTotalHours} onChange={e => setFormTotalHours(e.target.value)} />
                         </Field>
                         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
@@ -340,10 +383,11 @@ export default function AcademicSubjects() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setFormTotalHours(formType === 'lab' ? (2 * semesterWeeks) : (3 * semesterWeeks))}
-                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: Number(formTotalHours) === (formType === 'lab' ? (2 * semesterWeeks) : (3 * semesterWeeks)) ? '#e0e7ff' : '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 600 }}
+                            onClick={() => setFormTotalHours(formType === 'lab' ? (2 * teachingWeeks) : (3 * teachingWeeks))}
+                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: Number(formTotalHours) === (formType === 'lab' ? (2 * teachingWeeks) : (3 * teachingWeeks)) ? '#e0e7ff' : '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 600 }}
+                            title={`Calculated across ${teachingWeeks} active teaching weeks (excluding ${examWeeks} weeks of exams)`}
                           >
-                            📅 Full Calendar ({semesterWeeks} wks = {formType === 'lab' ? (2 * semesterWeeks) : (3 * semesterWeeks)}h)
+                            📅 {teachingWeeks} Teaching Wks ({formType === 'lab' ? (2 * teachingWeeks) : (3 * teachingWeeks)}h)
                           </button>
                         </div>
                       </div>
@@ -363,7 +407,7 @@ export default function AcademicSubjects() {
                     <div style={{ marginTop: 12, padding: '9px 13px', borderRadius: 8, background: 'rgba(99,102,241,0.08)', color: '#4338ca', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 7 }}>
                       <span>ℹ️</span>
                       <span>
-                        <b>{calculatedSessions} sessions</b> required ({formDuration}h each) to fulfill {formTotalHours} semester hours (~{Number(formTotalHours && semesterWeeks ? (formTotalHours / semesterWeeks).toFixed(1) : 0)} periods/week across {semesterWeeks} weeks).
+                        <b>{calculatedSessions} sessions</b> required ({formDuration}h each) to fulfill {formTotalHours} teaching hours (~{Number(formTotalHours && teachingWeeks ? (formTotalHours / teachingWeeks).toFixed(1) : 0)} periods/week across {teachingWeeks} teaching weeks).
                       </span>
                     </div>
 
@@ -378,12 +422,12 @@ export default function AcademicSubjects() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                       <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--border,#e2e8f0)', background: 'var(--surface,#f8fafc)' }}>
                         <strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#3b82f6' }}>Theory Component</strong>
-                        <Field label="TOTAL HOURS">
+                        <Field label="TEACHING HOURS">
                           <input type="number" min="1" max="500" value={formTheoryHours} onChange={e => setFormTheoryHours(e.target.value)} />
                         </Field>
                         <div style={{ display: 'flex', gap: 4, marginTop: 4, marginBottom: 8, flexWrap: 'wrap' }}>
                           <button type="button" onClick={() => setFormTheoryHours(45)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>45h standard</button>
-                          <button type="button" onClick={() => setFormTheoryHours(3 * semesterWeeks)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>{3 * semesterWeeks}h ({semesterWeeks} wks)</button>
+                          <button type="button" onClick={() => setFormTheoryHours(3 * teachingWeeks)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>{3 * teachingWeeks}h ({teachingWeeks} wks)</button>
                         </div>
                         <Field label="DURATION">
                           <select style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', font: 'inherit' }} value={formTheoryDuration} onChange={e => setFormTheoryDuration(Number(e.target.value))}>
@@ -392,18 +436,18 @@ export default function AcademicSubjects() {
                           </select>
                         </Field>
                         <small style={{ color: '#64748b', display: 'block', marginTop: 4 }}>
-                          {formTheoryDuration ? Math.floor(formTheoryHours / formTheoryDuration) : 0} sessions (~{Number(formTheoryHours && semesterWeeks ? (formTheoryHours / semesterWeeks).toFixed(1) : 0)} / wk)
+                          {formTheoryDuration ? Math.floor(formTheoryHours / formTheoryDuration) : 0} sessions (~{Number(formTheoryHours && teachingWeeks ? (formTheoryHours / teachingWeeks).toFixed(1) : 0)} / wk)
                         </small>
                       </div>
 
                       <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--border,#e2e8f0)', background: 'var(--surface,#f8fafc)' }}>
                         <strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#10b981' }}>Lab Component</strong>
-                        <Field label="TOTAL HOURS">
+                        <Field label="TEACHING HOURS">
                           <input type="number" min="1" max="500" value={formLabHours} onChange={e => setFormLabHours(e.target.value)} />
                         </Field>
                         <div style={{ display: 'flex', gap: 4, marginTop: 4, marginBottom: 8, flexWrap: 'wrap' }}>
                           <button type="button" onClick={() => setFormLabHours(30)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>30h standard</button>
-                          <button type="button" onClick={() => setFormLabHours(2 * semesterWeeks)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>{2 * semesterWeeks}h ({semesterWeeks} wks)</button>
+                          <button type="button" onClick={() => setFormLabHours(2 * teachingWeeks)} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}>{2 * teachingWeeks}h ({teachingWeeks} wks)</button>
                         </div>
                         <Field label="DURATION">
                           <select style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', font: 'inherit' }} value={formLabDuration} onChange={e => setFormLabDuration(Number(e.target.value))}>
@@ -412,7 +456,7 @@ export default function AcademicSubjects() {
                           </select>
                         </Field>
                         <small style={{ color: '#64748b', display: 'block', marginTop: 4 }}>
-                          {formLabDuration ? Math.floor(formLabHours / formLabDuration) : 0} sessions (~{Number(formLabHours && semesterWeeks ? (formLabHours / semesterWeeks).toFixed(1) : 0)} / wk)
+                          {formLabDuration ? Math.floor(formLabHours / formLabDuration) : 0} sessions (~{Number(formLabHours && teachingWeeks ? (formLabHours / teachingWeeks).toFixed(1) : 0)} / wk)
                         </small>
                       </div>
                     </div>
@@ -445,7 +489,12 @@ export default function AcademicSubjects() {
         <div>
           <strong style={{ display: 'block', fontSize: 14 }}>Selected semester</strong>
           <span style={{ fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
-            {selectedTerm ? `${selectedTerm.academic_year} · ${selectedTerm.term_name} (${selectedTerm.start_date} to ${selectedTerm.end_date} · ${semesterWeeks} weeks)` : 'Subjects are saved per semester.'}
+            {selectedTerm ? (
+              <>
+                <b>{selectedTerm.academic_year} · {selectedTerm.term_name}</b> ({selectedTerm.start_date} to {selectedTerm.end_date}) &nbsp;•&nbsp;{' '}
+                <span style={{ color: '#0f766e', fontWeight: 600 }}>{teachingWeeks} Teaching Weeks</span> (excluding {examWeeks} weeks of exams; holidays made up automatically)
+              </>
+            ) : 'Subjects are saved per semester.'}
           </span>
         </div>
         <select aria-label="Selected semester" value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)} style={{ minWidth: 230, maxWidth: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border, #cbd5e1)', background: 'var(--surface, #fff)', color: 'var(--text-main, #0f172a)', font: 'inherit' }} disabled={!terms.length}>
@@ -465,7 +514,7 @@ export default function AcademicSubjects() {
             <div className="academic-eyebrow">ACADEMIC STRUCTURE</div>
             <h1>Subjects</h1>
             <div className="hero-subtitle">Manage Subjects &amp; Course Components</div>
-            <p>Configure subjects for each department and year. Customize total teaching hours per syllabus requirements or calculate from semester duration.</p>
+            <p>Configure required teaching hours. Examination periods are suppressed without lectures; any lectures falling on college holidays will be automatically rescheduled.</p>
           </div>
         </div>
         <SubjectsWatermark />
@@ -620,7 +669,7 @@ export default function AcademicSubjects() {
                 <span>#</span>
                 <span>SUBJECT</span>
                 <span>TYPE</span>
-                <span>SEMESTER &amp; WEEKLY LOAD</span>
+                <span>TEACHING &amp; WEEKLY LOAD</span>
                 <span>DIVISIONS</span>
                 <span>ACTIONS</span>
               </div>
@@ -644,7 +693,7 @@ export default function AcademicSubjects() {
                           {row.theory_is_custom ? (
                             <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#e0e7ff', color: '#3730a3', fontWeight: 700 }}>Custom Target</span>
                           ) : (
-                            <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>{semesterWeeks} wks</span>
+                            <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>{teachingWeeks} teach wks</span>
                           )}
                           {' '}({row.theory_duration || 1}h blocks)
                         </div>
@@ -656,7 +705,7 @@ export default function AcademicSubjects() {
                           {row.lab_is_custom ? (
                             <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontWeight: 700 }}>Custom Target</span>
                           ) : (
-                            <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>{semesterWeeks} wks</span>
+                            <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>{teachingWeeks} teach wks</span>
                           )}
                           {' '}({row.lab_duration || 2}h blocks)
                         </div>
