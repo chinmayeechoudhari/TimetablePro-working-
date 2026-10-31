@@ -118,6 +118,10 @@ export default function ConfirmModal({
         .confirm-modal-overlay {
           position: fixed !important;
           inset: 0 !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
           width: 100vw !important;
           height: 100vh !important;
           background-color: rgba(15, 23, 42, 0.55) !important;
@@ -135,6 +139,7 @@ export default function ConfirmModal({
 
         .confirm-modal-box {
           position: relative !important;
+          margin: auto !important;
           background: var(--bg-card, #ffffff) !important;
           border: 1px solid var(--border-color, #e2e8f0) !important;
           border-radius: 20px !important;
