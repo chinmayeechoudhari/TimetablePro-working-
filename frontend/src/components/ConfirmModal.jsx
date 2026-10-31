@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 export default function ConfirmModal({
   isOpen,
@@ -23,7 +24,7 @@ export default function ConfirmModal({
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div className="confirm-modal-overlay" onClick={onCancel}>
       <div className="confirm-modal-box" onClick={e => e.stopPropagation()}>
         {/* Close 'X' Button */}
@@ -298,6 +299,7 @@ export default function ConfirmModal({
           to { opacity: 1; transform: scale(1) translateY(0); }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   )
 }

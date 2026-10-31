@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import axios from 'axios'
 import './AcademicStructureModern.css'
 import './AcademicSubjectsBase.css'
@@ -262,7 +263,7 @@ export default function AcademicSubjects() {
     return 0
   }, [formType, formTotalHours, formDuration])
 
-  const formModalContent = formModal && selectedGroup ? (
+  const formModalContent = formModal && selectedGroup ? createPortal(
     <div className="subjects-modal-root">
       <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && closeFormModal()}>
         <div className="academic-modal subject-form-modal" role="dialog" aria-modal="true">
@@ -415,7 +416,8 @@ export default function AcademicSubjects() {
           </form>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   ) : null
 
   return (
