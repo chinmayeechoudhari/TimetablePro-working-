@@ -546,7 +546,10 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
                 "subjects": [{
                     "subject_id": s.subject_id,
                     "class_id": s.class_id,
+                    "subject_name": getattr(s, "subject_name", f"Subject {s.subject_id}"),
                     "periods_per_week": s.periods_per_week,
+                    "total_hours": getattr(s, "total_hours", None),
+                    "lecture_duration": getattr(s, "lecture_duration", 1) or 1,
                     "subject_type": s.subject_type,
                 } for s in subjects],
                 "teachers": [{
@@ -621,6 +624,7 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
         "draft_only": True,
         "session_count": len(all_final_sessions),
         "calendar_reschedule_report": reschedule_report,
+        "hour_accounting": result.get("hour_accounting", []) if "result" in locals() and isinstance(result, dict) else [],
         "sessions": [{
             "session_id": getattr(s, "session_id", None) if hasattr(s, "session_id") else s.get("session_id"),
             "date": s.session_date.isoformat() if hasattr(s, "session_date") and hasattr(s.session_date, "isoformat") else (s["session_date"].isoformat() if hasattr(s.get("session_date"), "isoformat") else str(getattr(s, "session_date", s.get("session_date")))),

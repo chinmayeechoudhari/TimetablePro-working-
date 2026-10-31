@@ -57,7 +57,9 @@ class SubjectDefinition(Base):
     term_id = Column(Integer, ForeignKey('academic_term.term_id', ondelete='CASCADE'), nullable=True)
     subject_name = Column(String, nullable=False)
     subject_type = Column(String, nullable=False, default='theory')
-    periods_per_week = Column(Integer, nullable=False)
+    periods_per_week = Column(Integer, nullable=False, default=3)
+    total_hours = Column(Integer, nullable=True)
+    lecture_duration = Column(Integer, nullable=False, default=1)
     academic_group = relationship('AcademicGroup', back_populates='subject_definitions')
     assignments = relationship('TeachingAssignment', back_populates='subject_definition', cascade='all, delete-orphan')
 
@@ -78,7 +80,9 @@ class Subject(Base):
     # Nullable only to keep older weekly-template rows readable.
     term_id          = Column(Integer, ForeignKey('academic_term.term_id', ondelete='CASCADE'), nullable=True)
     subject_name     = Column(String, nullable=False)
-    periods_per_week = Column(Integer, nullable=False)
+    periods_per_week = Column(Integer, nullable=False, default=3)
+    total_hours      = Column(Integer, nullable=True)
+    lecture_duration = Column(Integer, nullable=False, default=1)
     subject_type     = Column(String, default='theory')
     class_id         = Column(Integer, ForeignKey('class.class_id'), nullable=False)
     class_           = relationship('Class', back_populates='subjects')

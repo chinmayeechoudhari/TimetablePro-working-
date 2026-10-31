@@ -29,6 +29,8 @@ def get_subjects(db: Session = Depends(get_db)) -> List[SubjectRead]:
             periods_per_week=s.periods_per_week,
             subject_type=s.subject_type,
             class_id=s.class_id,
+            total_hours=s.total_hours,
+            lecture_duration=s.lecture_duration or 1,
         )
         for s in subjects
     ]
@@ -48,6 +50,8 @@ def get_subject(subject_id: int, db: Session = Depends(get_db)) -> SubjectRead:
         periods_per_week=subject.periods_per_week,
         subject_type=subject.subject_type,
         class_id=subject.class_id,
+        total_hours=subject.total_hours,
+        lecture_duration=subject.lecture_duration or 1,
     )
 
 
@@ -64,6 +68,8 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)) -> Sub
         periods_per_week=subject.periods_per_week,
         subject_type=subject.subject_type,
         class_id=subject.class_id,
+        total_hours=subject.total_hours,
+        lecture_duration=subject.lecture_duration or 1,
     )
 
 
@@ -91,6 +97,8 @@ def update_subject(
         periods_per_week=subject.periods_per_week,
         subject_type=subject.subject_type,
         class_id=subject.class_id,
+        total_hours=subject.total_hours,
+        lecture_duration=subject.lecture_duration or 1,
     )
 
 
@@ -109,6 +117,8 @@ def delete_subject(subject_id: int, db: Session = Depends(get_db)) -> SubjectRea
         periods_per_week=subject.periods_per_week,
         subject_type=subject.subject_type,
         class_id=subject.class_id,
+        total_hours=subject.total_hours,
+        lecture_duration=subject.lecture_duration or 1,
     )
 
     from app.models.models import TeacherSubject, Timetable

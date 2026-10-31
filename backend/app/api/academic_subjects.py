@@ -16,6 +16,12 @@ class SubjectCreate(BaseModel):
     periods_per_week: int = Field(default=3, ge=1, le=30)
     theory_periods_per_week: int | None = Field(default=None, ge=1, le=30)
     lab_periods_per_week: int | None = Field(default=None, ge=1, le=30)
+    total_hours: int | None = Field(default=None, ge=1, le=500)
+    theory_total_hours: int | None = Field(default=None, ge=1, le=500)
+    lab_total_hours: int | None = Field(default=None, ge=1, le=500)
+    lecture_duration: int = Field(default=1, ge=1, le=4)
+    theory_lecture_duration: int | None = Field(default=None, ge=1, le=4)
+    lab_lecture_duration: int | None = Field(default=None, ge=1, le=4)
 
 
 class SubjectUpdate(BaseModel):
@@ -24,23 +30,74 @@ class SubjectUpdate(BaseModel):
     periods_per_week: int = Field(default=3, ge=1, le=30)
     theory_periods_per_week: int | None = Field(default=None, ge=1, le=30)
     lab_periods_per_week: int | None = Field(default=None, ge=1, le=30)
+    total_hours: int | None = Field(default=None, ge=1, le=500)
+    theory_total_hours: int | None = Field(default=None, ge=1, le=500)
+    lab_total_hours: int | None = Field(default=None, ge=1, le=500)
+    lecture_duration: int = Field(default=1, ge=1, le=4)
+    theory_lecture_duration: int | None = Field(default=None, ge=1, le=4)
+    lab_lecture_duration: int | None = Field(default=None, ge=1, le=4)
 
 
-def _components_for(subject_type: str, periods_per_week: int, theory_periods_per_week, lab_periods_per_week):
-    """Mirror the component-splitting logic used on create, kept in one place
-    so update behaves identically for theory / lab / theory+lab."""
+def _components_for(
+    subject_type: str,
+    periods_per_week: int,
+    theory_periods_per_week,
+    lab_periods_per_week,
+    total_hours: int | None = None,
+    theory_total_hours: int | None = None,
+    lab_total_hours: int | None = None,
+    lecture_duration: int = 1,
+    theory_lecture_duration: int | None = None,
+    lab_lecture_duration: int | None = None,
+):
+    """Component-splitting logic with exact total_hours and lecture_duration validation."""
+    components = {}
     if subject_type == "theory+lab":
-        return {
-            "theory": theory_periods_per_week or periods_per_week,
-            "lab": lab_periods_per_week or periods_per_week,
+        t_duration = theory_lecture_duration or lecture_duration or 1
+        t_hours = theory_total_hours or total_hours
+        t_periods = theory_periods_per_week or periods_per_week
+
+        l_duration = lab_lecture_duration or (2 if subject_type == "theory+lab" else lecture_duration) or 2
+        l_hours = lab_total_hours or total_hours
+        l_periods = lab_periods_per_week or periods_per_week
+
+        components["theory"] = {
+            "periods_per_week": t_periods,
+            "total_hours": t_hours,
+            "lecture_duration": t_duration,
         }
-    return {subject_type: periods_per_week}
+        components["lab"] = {
+            "periods_per_week": l_periods,
+            "total_hours": l_hours,
+            "lecture_duration": l_duration,
+        }
+    else:
+        duration = lecture_duration or (2 if subject_type == "lab" else 1)
+        components[subject_type] = {
+            "periods_per_week": periods_per_week,
+            "total_hours": total_hours,
+            "lecture_duration": duration,
+        }
+
+    for c_type, info in components.items():
+        dur = info["lecture_duration"]
+        hrs = info["total_hours"]
+        if hrs is not None:
+            if hrs <= 0:
+                raise HTTPException(status_code=400, detail=f"Total hours for {c_type} must be greater than zero.")
+            if hrs % dur != 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Total hours ({hrs}h) for {c_type} must be evenly divisible by session duration ({dur}h).",
+                )
+            info["required_sessions"] = hrs // dur
+        else:
+            info["required_sessions"] = None
+
+    return components
 
 
 def _delete_subject_rows(db, class_ids, subject_name, subject_type, term_id: int | None = None):
-    """Delete the per-division Subject rows (and any Timetable rows that
-    reference them — Subject->Timetable has no cascade at the DB layer, so
-    this must be explicit, mirroring api/subjects.py's delete_subject)."""
     query = db.query(Subject).filter(
         Subject.class_id.in_(class_ids),
         Subject.subject_name.ilike(subject_name),
@@ -55,6 +112,9 @@ def _delete_subject_rows(db, class_ids, subject_name, subject_type, term_id: int
 
 
 def _definition_payload(r):
+    dur = getattr(r, "lecture_duration", 1) or 1
+    total = getattr(r, "total_hours", None)
+    sessions = (total // dur) if total else None
     return {
         "definition_id": r.definition_id,
         "group_id": r.group_id,
@@ -62,6 +122,9 @@ def _definition_payload(r):
         "subject_name": r.subject_name,
         "subject_type": r.subject_type,
         "periods_per_week": r.periods_per_week,
+        "total_hours": total,
+        "lecture_duration": dur,
+        "required_sessions": sessions,
     }
 
 
@@ -90,15 +153,20 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Subject name is required.")
 
     subject_type = payload.subject_type.lower()
-    if subject_type == "theory+lab":
-        components = [
-            ("theory", payload.theory_periods_per_week or payload.periods_per_week),
-            ("lab", payload.lab_periods_per_week or payload.periods_per_week),
-        ]
-    else:
-        components = [(subject_type, payload.periods_per_week)]
+    components = _components_for(
+        subject_type,
+        payload.periods_per_week,
+        payload.theory_periods_per_week,
+        payload.lab_periods_per_week,
+        payload.total_hours,
+        payload.theory_total_hours,
+        payload.lab_total_hours,
+        payload.lecture_duration,
+        payload.theory_lecture_duration,
+        payload.lab_lecture_duration,
+    )
 
-    for component_type, _periods in components:
+    for component_type in components:
         duplicate = (
             db.query(SubjectDefinition)
             .filter(
@@ -121,13 +189,15 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
 
     created = []
     try:
-        for component_type, component_periods in components:
+        for component_type, c_info in components.items():
             definition = SubjectDefinition(
                 group_id=group.group_id,
                 term_id=payload.term_id,
                 subject_name=name,
                 subject_type=component_type,
-                periods_per_week=component_periods,
+                periods_per_week=c_info["periods_per_week"],
+                total_hours=c_info["total_hours"],
+                lecture_duration=c_info["lecture_duration"],
             )
             db.add(definition)
             db.flush()
@@ -138,7 +208,9 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
                     Subject(
                         term_id=payload.term_id,
                         subject_name=name,
-                        periods_per_week=component_periods,
+                        periods_per_week=c_info["periods_per_week"],
+                        total_hours=c_info["total_hours"],
+                        lecture_duration=c_info["lecture_duration"],
                         subject_type=component_type,
                         class_id=division.class_id,
                     )
@@ -155,7 +227,12 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
         "subject_name": name,
         "subject_type": subject_type,
         "components": [
-            {"type": d.subject_type, "periods_per_week": d.periods_per_week}
+            {
+                "type": d.subject_type,
+                "periods_per_week": d.periods_per_week,
+                "total_hours": d.total_hours,
+                "lecture_duration": d.lecture_duration,
+            }
             for d in created
         ],
         "assigned_to_divisions": [d.division_name for d in divisions],
@@ -164,10 +241,7 @@ def create_subject(payload: SubjectCreate, db: Session = Depends(get_db)):
 
 @router.put("/{group_id}/{subject_name}")
 def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, term_id: int, db: Session = Depends(get_db)):
-    """Update a subject that may span one or two SubjectDefinition rows
-    (theory / lab components). Handles switching between theory-only,
-    lab-only and theory+lab, renaming, and period changes, keeping the
-    per-division Subject rows (used by the timetable) in sync."""
+    """Update a subject that may span one or two SubjectDefinition rows."""
     group = db.query(AcademicGroup).filter(AcademicGroup.group_id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Academic group not found.")
@@ -191,10 +265,18 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
 
     new_subject_type = payload.subject_type.lower()
     new_components = _components_for(
-        new_subject_type, payload.periods_per_week, payload.theory_periods_per_week, payload.lab_periods_per_week
+        new_subject_type,
+        payload.periods_per_week,
+        payload.theory_periods_per_week,
+        payload.lab_periods_per_week,
+        payload.total_hours,
+        payload.theory_total_hours,
+        payload.lab_total_hours,
+        payload.lecture_duration,
+        payload.theory_lecture_duration,
+        payload.lab_lecture_duration,
     )
 
-    # Guard against colliding with a *different* existing subject when renaming.
     if new_name.lower() != old_name.lower():
         for component_type in new_components:
             duplicate = (
@@ -215,11 +297,10 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
 
     divisions = db.query(Division).filter(Division.group_id == group_id).all()
     class_ids = [d.class_id for d in divisions]
-
     old_by_type = {d.subject_type: d for d in existing_defs}
     removed_assignments = 0
 
-    # 1) Drop component types that no longer apply (e.g. theory+lab -> theory).
+    # 1) Drop component types that no longer apply
     for old_type, definition in old_by_type.items():
         if old_type not in new_components:
             removed_assignments += (
@@ -228,14 +309,17 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
                 .count()
             )
             _delete_subject_rows(db, class_ids, old_name, old_type, term_id)
-            db.delete(definition)  # cascades to TeachingAssignment
+            db.delete(definition)
 
-    # 2) Update surviving components / create newly-added ones.
-    for component_type, component_periods in new_components.items():
+    # 2) Update surviving components / create newly-added ones
+    for component_type, c_info in new_components.items():
         definition = old_by_type.get(component_type)
         if definition:
             definition.subject_name = new_name
-            definition.periods_per_week = component_periods
+            definition.periods_per_week = c_info["periods_per_week"]
+            definition.total_hours = c_info["total_hours"]
+            definition.lecture_duration = c_info["lecture_duration"]
+
             subject_query = db.query(Subject).filter(
                 Subject.class_id.in_(class_ids),
                 Subject.subject_name.ilike(old_name),
@@ -245,14 +329,18 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
             rows = subject_query.all()
             for row in rows:
                 row.subject_name = new_name
-                row.periods_per_week = component_periods
+                row.periods_per_week = c_info["periods_per_week"]
+                row.total_hours = c_info["total_hours"]
+                row.lecture_duration = c_info["lecture_duration"]
         else:
             new_definition = SubjectDefinition(
                 group_id=group_id,
                 term_id=term_id,
                 subject_name=new_name,
                 subject_type=component_type,
-                periods_per_week=component_periods,
+                periods_per_week=c_info["periods_per_week"],
+                total_hours=c_info["total_hours"],
+                lecture_duration=c_info["lecture_duration"],
             )
             db.add(new_definition)
             for division in divisions:
@@ -260,7 +348,9 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
                     Subject(
                         term_id=term_id,
                         subject_name=new_name,
-                        periods_per_week=component_periods,
+                        periods_per_week=c_info["periods_per_week"],
+                        total_hours=c_info["total_hours"],
+                        lecture_duration=c_info["lecture_duration"],
                         subject_type=component_type,
                         class_id=division.class_id,
                     )
@@ -272,7 +362,15 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
         "group_id": group_id,
         "subject_name": new_name,
         "subject_type": new_subject_type,
-        "components": [{"type": t, "periods_per_week": p} for t, p in new_components.items()],
+        "components": [
+            {
+                "type": t,
+                "periods_per_week": info["periods_per_week"],
+                "total_hours": info["total_hours"],
+                "lecture_duration": info["lecture_duration"],
+            }
+            for t, info in new_components.items()
+        ],
         "assigned_to_divisions": [d.division_name for d in divisions],
         "removed_teaching_assignments": removed_assignments,
     }
@@ -280,8 +378,6 @@ def update_subject(group_id: int, subject_name: str, payload: SubjectUpdate, ter
 
 @router.delete("/{group_id}/{subject_name}")
 def delete_subject(group_id: int, subject_name: str, term_id: int, db: Session = Depends(get_db)):
-    """Delete a subject (all of its theory/lab components) from every
-    division of the academic group."""
     group = db.query(AcademicGroup).filter(AcademicGroup.group_id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Academic group not found.")
@@ -308,7 +404,7 @@ def delete_subject(group_id: int, subject_name: str, term_id: int, db: Session =
 
     for definition in definitions:
         _delete_subject_rows(db, class_ids, name, definition.subject_type, term_id)
-        db.delete(definition)  # cascades to TeachingAssignment
+        db.delete(definition)
 
     db.commit()
     return {
