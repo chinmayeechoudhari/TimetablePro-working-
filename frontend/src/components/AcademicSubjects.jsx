@@ -362,7 +362,7 @@ export default function AcademicSubjects() {
                   </>
                 ) : (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div className="subject-period-grid subject-theory-lab-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                       <div style={{ padding: 12, borderRadius: 8, border: '1px solid var(--border,#e2e8f0)', background: 'var(--surface,#f8fafc)' }}>
                         <strong style={{ fontSize: 12, display: 'block', marginBottom: 8, color: '#3b82f6' }}>Theory Component</strong>
                         <Field label="NUMBER OF HOURS">
