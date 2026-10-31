@@ -118,13 +118,24 @@
   border-top:1px solid #dfe6ef!important;
 }
 
-/* Lock the real app scroller while the modal is open. */
-body:has(.subjects-modal-root) .app-main-scroll{
+/* Lock the real app scroller while any modal is open. */
+body:has(.subjects-modal-root) .app-main-scroll,
+body:has(.confirm-modal-overlay) .app-main-scroll,
+body.confirm-modal-open .app-main-scroll {
   overflow:hidden!important;
   scrollbar-width:none!important;
 }
-body:has(.subjects-modal-root) .app-main-scroll::-webkit-scrollbar{display:none!important}
-html:has(.subjects-modal-root),body:has(.subjects-modal-root){overflow:hidden!important}
+body:has(.subjects-modal-root) .app-main-scroll::-webkit-scrollbar,
+body:has(.confirm-modal-overlay) .app-main-scroll::-webkit-scrollbar,
+body.confirm-modal-open .app-main-scroll::-webkit-scrollbar {
+  display:none!important;
+  width:0!important;
+}
+html:has(.subjects-modal-root),body:has(.subjects-modal-root),
+html:has(.confirm-modal-overlay),body:has(.confirm-modal-overlay),
+html.confirm-modal-open,body.confirm-modal-open {
+  overflow:hidden!important;
+}
 
 @media(max-width:700px){
  .subjects-page:has(.subjects-modal-root) .modal-backdrop{padding:12px!important}

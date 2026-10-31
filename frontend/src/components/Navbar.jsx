@@ -151,6 +151,16 @@ export default function Navbar() {
           border-left: 3px solid var(--nav-active-border) !important;
           font-weight: 600;
         }
+
+        .nav-sidebar-scroll {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        .nav-sidebar-scroll::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
         .nav-section-label {
           font-size: 10px;
           font-weight: 700;
@@ -196,7 +206,7 @@ export default function Navbar() {
           </div>
         </div>
 
-        <div style={{ flex: 1, padding: '14px 10px', overflowY: 'auto' }}>
+        <div className="nav-sidebar-scroll" style={{ flex: 1, padding: '14px 10px', overflowY: 'auto' }}>
           {groups.map((g) => (
             <div key={g.section} style={{ marginBottom: 18 }}>
               <div className="nav-section-label">{g.section}</div>

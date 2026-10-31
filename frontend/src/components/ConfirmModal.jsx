@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 
 export default function ConfirmModal({
   isOpen,
@@ -11,6 +11,16 @@ export default function ConfirmModal({
   confirmText = 'Yes, Delete',
   isDeletingText = 'Deleting...',
 }) {
+  useEffect(() => {
+    if (!isOpen) return
+    document.body.classList.add('confirm-modal-open')
+    document.documentElement.classList.add('confirm-modal-open')
+    return () => {
+      document.body.classList.remove('confirm-modal-open')
+      document.documentElement.classList.remove('confirm-modal-open')
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   return (
@@ -89,9 +99,26 @@ export default function ConfirmModal({
       </div>
 
       <style>{`
+        body.confirm-modal-open,
+        html.confirm-modal-open {
+          overflow: hidden !important;
+        }
+
+        body.confirm-modal-open .app-main-scroll {
+          overflow: hidden !important;
+          scrollbar-width: none !important;
+        }
+
+        body.confirm-modal-open .app-main-scroll::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+        }
+
         .confirm-modal-overlay {
           position: fixed !important;
           inset: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
           background-color: rgba(15, 23, 42, 0.55) !important;
           backdrop-filter: blur(6px) !important;
           -webkit-backdrop-filter: blur(6px) !important;
@@ -102,6 +129,7 @@ export default function ConfirmModal({
           animation: confirmModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
           padding: 16px !important;
           box-sizing: border-box !important;
+          overflow: hidden !important;
         }
 
         .confirm-modal-box {
