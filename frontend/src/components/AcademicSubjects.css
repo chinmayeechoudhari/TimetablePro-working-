@@ -56,9 +56,9 @@
   box-sizing:border-box!important;
   width:min(940px,calc(100vw - 32px))!important;
   max-width:940px!important;
-  height:auto!important;
-  min-height:0!important;
-  max-height:min(90vh,820px)!important;
+  height:min(88vh,760px)!important;
+  max-height:calc(100vh - 32px)!important;
+  min-height:360px!important;
   margin:auto!important;
   padding:0!important;
   overflow:hidden!important;
@@ -78,8 +78,9 @@
   flex-direction:column!important;
   width:100%!important;
   height:100%!important;
-  max-height:min(90vh,820px)!important;
+  flex:1 1 0%!important;
   min-height:0!important;
+  max-height:100%!important;
   margin:0!important;
   padding:0!important;
   overflow:hidden!important;
@@ -202,4 +203,21 @@
  .subjects-modal-root .subject-form-body{padding:16px 18px!important;max-height:none!important}
  .subjects-modal-root .subject-form-footer{padding:10px 18px!important}
  .subjects-modal-root .subject-form-footer .primary-button{min-width:0!important;flex:1!important}
+}
+
+@media (max-height: 720px) {
+  .subjects-modal-root .academic-modal.subject-form-modal {
+    height: calc(100vh - 20px) !important;
+    max-height: calc(100vh - 20px) !important;
+  }
+  .subjects-modal-root .subject-modal-header {
+    padding: 12px 20px !important;
+  }
+  .subjects-modal-root .subject-form-body {
+    padding: 14px 20px !important;
+  }
+  .subjects-modal-root .subject-form-footer {
+    padding: 10px 20px !important;
+    min-height: 52px !important;
+  }
 }

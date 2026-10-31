@@ -102,7 +102,8 @@ export default function ConfirmModal({
       <style>{`
         body.confirm-modal-open,
         html.confirm-modal-open {
-          overflow: hidden !important;
+          overflow-y: auto !important;
+          pointer-events: auto !important;
         }
 
         body.confirm-modal-open .app-main-scroll {
@@ -146,6 +147,8 @@ export default function ConfirmModal({
           padding: 30px 24px 24px !important;
           max-width: 440px !important;
           width: 100% !important;
+          max-height: calc(100vh - 32px) !important;
+          overflow-y: auto !important;
           box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
           display: flex !important;
           flex-direction: column !important;

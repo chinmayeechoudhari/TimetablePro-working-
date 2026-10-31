@@ -152,6 +152,7 @@ export default function TimetableGrid() {
   const [timetable, setTimetable] = useState([])
   const [legacyTimetable, setLegacyTimetable] = useState([])
   const [semesterVersion, setSemesterVersion] = useState(null)
+  const [versionsList, setVersionsList] = useState([])
   const [teachers, setTeachers] = useState({})
   const [subjects, setSubjects] = useState({})
   const [rooms, setRooms] = useState({})
@@ -217,7 +218,11 @@ export default function TimetableGrid() {
       .then(response => {
         if (!alive) return
         const versions = response.data || []
-        const chosen = versions[0] || null
+        setVersionsList(versions)
+        // Prefer version with makeups, or published version, or latest version
+        const withMakeups = versions.find(v => (v.sessions || []).some(s => s.outcome_note || s.original_session_id || s.is_makeup))
+        const publishedVer = versions.find(v => v.status === 'published')
+        const chosen = withMakeups || publishedVer || versions[0] || null
         if (chosen) {
           setSemesterVersion(chosen)
           setTimetable((chosen.sessions || []).map(session => ({
@@ -238,6 +243,17 @@ export default function TimetableGrid() {
       })
     return () => { alive = false }
   }, [activeTerm?.term_id, legacyTimetable])
+
+  function handleSelectVersion(versionId) {
+    const targetVer = versionsList.find(v => v.version_id === versionId)
+    if (targetVer) {
+      setSemesterVersion(targetVer)
+      setTimetable((targetVer.sessions || []).map(session => ({
+        ...session,
+        session_date: session.date || session.session_date,
+      })))
+    }
+  }
 
   async function handlePublishVersion() {
     if (!semesterVersion?.version_id) return
@@ -335,8 +351,11 @@ export default function TimetableGrid() {
           ])
           approvedEvents = (eventsRes.data || []).filter(item => item.approval_status === 'approved')
           const versList = versRes.data || []
+          setVersionsList(versList)
           if (versList.length > 0) {
-            activeVersion = versList[0]
+            const withMakeups = versList.find(v => (v.sessions || []).some(s => s.outcome_note || s.original_session_id || s.is_makeup))
+            const publishedVer = versList.find(v => v.status === 'published')
+            activeVersion = withMakeups || publishedVer || versList[0]
             activeSessions = (activeVersion.sessions || []).map(session => ({
               ...session,
               session_date: session.date || session.session_date,
@@ -564,10 +583,37 @@ export default function TimetableGrid() {
                         animationDelay: `${(di * activePeriods.length + pi) * 18}ms`,
                       }}
                     >
-                      <SubjectTypeBadge
-                        name={subjects[entry.subject_id] || `S${entry.subject_id}`}
-                        type={subjectsList.find(s => s.subject_id === entry.subject_id)?.subject_type}
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, flexWrap: 'wrap' }}>
+                        <SubjectTypeBadge
+                          name={subjects[entry.subject_id] || `S${entry.subject_id}`}
+                          type={subjectsList.find(s => s.subject_id === entry.subject_id)?.subject_type}
+                        />
+                        {(() => {
+                          const subj = subjectsList.find(s => s.subject_id === entry.subject_id)
+                          const isDouble = entry.lecture_duration === 2 || entry.duration === 2 || subj?.lecture_duration === 2 || (subj?.subject_type && String(subj.subject_type).toLowerCase().includes('lab'))
+                          return (
+                            <span
+                              className="tt-block-tag"
+                              style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                color: isDouble ? '#6d28d9' : '#1d4ed8',
+                                background: isDouble ? '#f5f3ff' : '#eff6ff',
+                                border: `1px solid ${isDouble ? '#ddd6fe' : '#bfdbfe'}`,
+                                borderRadius: 4,
+                                padding: '1px 5px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={isDouble ? '2-hour consecutive double block' : '1-hour standard period block'}
+                            >
+                              {isDouble ? '2 hr block' : '1 hr block'}
+                            </span>
+                          )
+                        })()}
+                      </div>
+
                       {showTeacher && (
                         <div className="tt-meta">
                           <Icon name="user" size={11} />
@@ -586,24 +632,27 @@ export default function TimetableGrid() {
                           {rooms[entry.room_id] || `R${entry.room_id}`}
                         </div>
                       )}
-                      {(entry.original_session_id || entry.outcome_note || entry.is_makeup) && (
+
+                      {(Boolean(entry.original_session_id) || Boolean(entry.outcome_note) || Boolean(entry.is_makeup) || (entry.outcome_note && String(entry.outcome_note).toLowerCase().includes('makeup'))) && (
                         <div
+                          className="tt-makeup-tag"
                           style={{
                             fontSize: 9.5,
-                            fontWeight: 750,
-                            color: '#92400e',
+                            fontWeight: 800,
+                            color: '#78350f',
                             background: '#fef3c7',
-                            border: '1px solid #fde68a',
+                            border: '1px solid #f59e0b',
                             borderRadius: 4,
-                            padding: '1px 5px',
-                            marginTop: 3,
+                            padding: '2px 6px',
+                            marginTop: 4,
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 3,
+                            boxShadow: '0 1px 2px rgba(245, 158, 11, 0.2)',
                           }}
-                          title={entry.outcome_note || 'Rescheduled makeup lecture'}
+                          title={entry.outcome_note || 'Rescheduled holiday makeup lecture'}
                         >
-                          ⚡ Makeup
+                          <span style={{ color: '#d97706', fontSize: 11 }}>⚡</span> Makeup
                         </div>
                       )}
                     </div>
@@ -785,11 +834,19 @@ export default function TimetableGrid() {
                 minWidth: 240,
               }}
             >
-              {semesterWeeks.map((w, idx) => (
-                <option key={w.mondayKey} value={idx}>
-                  {w.label} {todayWeekIdx === idx ? ' • (Current Week)' : ''}
-                </option>
-              ))}
+              {semesterWeeks.map((w, idx) => {
+                const weekDates = [0, 1, 2, 3, 4, 5].map(d => {
+                  const dt = new Date(w.monday)
+                  dt.setDate(dt.getDate() + d)
+                  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+                })
+                const weekMakeups = timetable.filter(t => weekDates.includes(t.session_date) && (Boolean(t.outcome_note) || Boolean(t.original_session_id) || Boolean(t.is_makeup))).length
+                return (
+                  <option key={w.mondayKey} value={idx}>
+                    {w.label} {todayWeekIdx === idx ? ' • (Current Week)' : ''} {weekMakeups > 0 ? ` • ⚡ ${weekMakeups} Makeups` : ''}
+                  </option>
+                )
+              })}
             </select>
 
             <button
@@ -840,8 +897,36 @@ export default function TimetableGrid() {
                     border: semesterVersion.status === 'published' ? '1px solid #bbf7d0' : '1px solid #fde68a',
                   }}
                 >
-                  Version {semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
+                  Active: v{semesterVersion.version_number} · {semesterVersion.status.toUpperCase()}
                 </span>
+
+                {versionsList.length > 1 && (
+                  <select
+                    aria-label="Switch Timetable Version"
+                    value={semesterVersion.version_id}
+                    onChange={e => handleSelectVersion(Number(e.target.value))}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                    }}
+                    title="Switch between timetable versions"
+                  >
+                    {versionsList.map(v => {
+                      const mkCount = (v.sessions || []).filter(s => Boolean(s.outcome_note) || Boolean(s.original_session_id) || Boolean(s.is_makeup)).length
+                      return (
+                        <option key={v.version_id} value={v.version_id}>
+                          v{v.version_number} · {v.status.toUpperCase()} ({v.sessions?.length || 0} sessions{mkCount > 0 ? ` • ⚡ ${mkCount} Makeups` : ''})
+                        </option>
+                      )
+                    })}
+                  </select>
+                )}
 
                 {semesterVersion.status === 'draft' && (
                   <>
