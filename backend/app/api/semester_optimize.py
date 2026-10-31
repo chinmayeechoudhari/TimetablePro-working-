@@ -158,6 +158,7 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
         "end_date": event.end_date,
         "is_closure": event.is_closure,
         "is_working_day_override": event.is_working_day_override,
+        "suppresses_lectures": bool(getattr(event, "suppresses_lectures", False)),
         "preferred_replacement_date": event.preferred_replacement_date,
         "preferred_replacement_period": event.preferred_replacement_period,
     } for event in events]
@@ -178,9 +179,10 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
             for s in v.sessions if s.session_status in {"scheduled", "cancelled"}
         )
 
-    published_version = db.query(TimetableVersion).options(
-        selectinload(TimetableVersion.sessions)
-    ).filter(
+    pub_q = db.query(TimetableVersion)
+    if hasattr(pub_q, "options"):
+        pub_q = pub_q.options(selectinload(TimetableVersion.sessions))
+    published_version = pub_q.filter(
         TimetableVersion.term_id == term_id,
         TimetableVersion.status == "published",
     ).order_by(TimetableVersion.version_number.desc()).first()
@@ -190,9 +192,10 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
     elif published_version:
         baseline_version = published_version
     else:
-        all_versions = db.query(TimetableVersion).options(
-            selectinload(TimetableVersion.sessions)
-        ).filter(
+        all_q = db.query(TimetableVersion)
+        if hasattr(all_q, "options"):
+            all_q = all_q.options(selectinload(TimetableVersion.sessions))
+        all_versions = all_q.filter(
             TimetableVersion.term_id == term_id,
         ).order_by(TimetableVersion.version_number.desc()).all()
         baseline_version = next((v for v in all_versions if _has_closure_sessions(v)), all_versions[0] if all_versions else None)
@@ -203,8 +206,12 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
     makeup_preferences = []
     baseline_sessions = list(baseline_version.sessions) if baseline_version else []
     if len(baseline_sessions) < 1400:
-        weekly_rows = db.query(Timetable).all()
-        slots_dict = {x.slot_id: x for x in db.query(TimeSlot).all()}
+        try:
+            weekly_rows = db.query(Timetable).all()
+            slots_dict = {x.slot_id: x for x in db.query(TimeSlot).all()}
+        except Exception:
+            weekly_rows = []
+            slots_dict = {}
         if weekly_rows and slots_dict:
             synthetic_sessions = []
             for day_offset in range((term.end_date - term.start_date).days + 1):
@@ -272,8 +279,14 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
         closure_events = [event for event in events if event.is_closure]
         closure_ranges = [(event.start_date, event.end_date) for event in closure_events]
 
+        suppressed_events = [event for event in events if getattr(event, "suppresses_lectures", False) and not event.is_closure]
+        suppressed_ranges = [(event.start_date, event.end_date) for event in suppressed_events]
+
         def is_closed_day(day):
             return any(start_date <= day <= end_date for start_date, end_date in closure_ranges)
+
+        def is_suppressed_day(day):
+            return any(start_date <= day <= end_date for start_date, end_date in suppressed_ranges)
 
         affected_sessions = []
         for old_session in baseline_sessions:
@@ -293,12 +306,35 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
 
         # 1. Unaffected regular sessions from baseline
         unaffected_records = []
+        suppressed_records = []
         busy_class = set()
         busy_teacher = set()
         busy_room = set()
 
         for old in baseline_sessions:
-            if old.session_status == "scheduled" and not is_closed_day(old.session_date):
+            if is_closed_day(old.session_date):
+                continue
+            if is_suppressed_day(old.session_date):
+                matching_event = next((e for e in suppressed_events if e.start_date <= old.session_date <= e.end_date), None)
+                event_title = matching_event.title if matching_event else "Exam/IA"
+                suppressed_records.append({
+                    "session_date": old.session_date,
+                    "weekday": old.weekday,
+                    "period_number": old.period_number,
+                    "slot_id": old.slot_id,
+                    "class_id": old.class_id,
+                    "subject_id": old.subject_id,
+                    "teacher_id": old.teacher_id,
+                    "room_id": old.room_id,
+                    "session_status": "cancelled",
+                    "is_locked": False,
+                    "closure_conflict": False,
+                    "original_session_id": None,
+                    "source_event_id": matching_event.event_id if matching_event else None,
+                    "outcome_note": f"Suppressed due to {event_title} (Assessment/Exam — no regular lectures scheduled).",
+                    "replacement_approved": False,
+                })
+            elif old.session_status == "scheduled":
                 unaffected_records.append({
                     "session_date": old.session_date,
                     "weekday": old.weekday,
@@ -341,7 +377,7 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
             # Priority 1: Admin preferred replacement date / period
             if event.preferred_replacement_date and (term.start_date <= event.preferred_replacement_date <= term.end_date):
                 pref_date = event.preferred_replacement_date
-                if not is_closed_day(pref_date):
+                if not is_closed_day(pref_date) and not is_suppressed_day(pref_date):
                     pref_weekday = pref_date.strftime("%A")
                     cand_slots = slots_by_day.get(pref_weekday, [])
                     if event.preferred_replacement_period:
@@ -395,7 +431,7 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
                 for day_diff in range(0, 36):
                     for sign in [1, -1] if day_diff > 0 else [1]:
                         candidate_date = orig_date + timedelta(days=sign * day_diff)
-                        if candidate_date < term.start_date or candidate_date > term.end_date or is_closed_day(candidate_date):
+                        if candidate_date < term.start_date or candidate_date > term.end_date or is_closed_day(candidate_date) or is_suppressed_day(candidate_date):
                             continue
                         weekday = candidate_date.strftime("%A")
                         day_slots = slots_by_day.get(weekday, [])
@@ -484,7 +520,7 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
                 "replacement_approved": False,
             })
 
-        all_final_sessions = unaffected_records + replacement_records + cancelled_records
+        all_final_sessions = unaffected_records + replacement_records + cancelled_records + suppressed_records
         solver_status = "optimal"
 
     else:
@@ -566,7 +602,8 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
         ScheduledSession(version_id=version.version_id, **item)
         for item in all_final_sessions
     ]
-    db.add_all(session_records)
+    for rec in session_records:
+        db.add(rec)
 
     try:
         db.commit()
@@ -585,25 +622,25 @@ def optimize_semester(term_id: int, payload: OptimizeSemesterRequest | None = No
         "session_count": len(all_final_sessions),
         "calendar_reschedule_report": reschedule_report,
         "sessions": [{
-            "session_id": s.get("session_id"),
-            "date": s["session_date"].isoformat() if hasattr(s["session_date"], "isoformat") else str(s["session_date"]),
-            "session_date": s["session_date"].isoformat() if hasattr(s["session_date"], "isoformat") else str(s["session_date"]),
-            "weekday": s["weekday"],
-            "period_number": s["period_number"],
-            "slot_id": s.get("slot_id"),
-            "class_id": s["class_id"],
-            "subject_id": s["subject_id"],
-            "teacher_id": s["teacher_id"],
-            "room_id": s["room_id"],
-            "session_status": s["session_status"],
-            "is_locked": s.get("is_locked", False),
-            "lock_reason": s.get("lock_reason"),
-            "closure_conflict": s.get("closure_conflict", False),
-            "original_session_id": s.get("original_session_id"),
-            "source_event_id": s.get("source_event_id"),
-            "outcome_note": s.get("outcome_note"),
-            "replacement_approved": s.get("replacement_approved", False),
-        } for s in sorted(all_final_sessions, key=lambda x: (x["session_date"], x["period_number"], x["class_id"]))],
+            "session_id": getattr(s, "session_id", None) if hasattr(s, "session_id") else s.get("session_id"),
+            "date": s.session_date.isoformat() if hasattr(s, "session_date") and hasattr(s.session_date, "isoformat") else (s["session_date"].isoformat() if hasattr(s.get("session_date"), "isoformat") else str(getattr(s, "session_date", s.get("session_date")))),
+            "session_date": s.session_date.isoformat() if hasattr(s, "session_date") and hasattr(s.session_date, "isoformat") else (s["session_date"].isoformat() if hasattr(s.get("session_date"), "isoformat") else str(getattr(s, "session_date", s.get("session_date")))),
+            "weekday": s.weekday if hasattr(s, "weekday") else s["weekday"],
+            "period_number": s.period_number if hasattr(s, "period_number") else s["period_number"],
+            "slot_id": getattr(s, "slot_id", None) if hasattr(s, "slot_id") else s.get("slot_id"),
+            "class_id": s.class_id if hasattr(s, "class_id") else s["class_id"],
+            "subject_id": s.subject_id if hasattr(s, "subject_id") else s["subject_id"],
+            "teacher_id": s.teacher_id if hasattr(s, "teacher_id") else s["teacher_id"],
+            "room_id": s.room_id if hasattr(s, "room_id") else s["room_id"],
+            "session_status": s.session_status if hasattr(s, "session_status") else s.get("session_status", "scheduled"),
+            "is_locked": bool(s.is_locked) if hasattr(s, "is_locked") else s.get("is_locked", False),
+            "lock_reason": s.lock_reason if hasattr(s, "lock_reason") else s.get("lock_reason"),
+            "closure_conflict": bool(s.closure_conflict) if hasattr(s, "closure_conflict") else s.get("closure_conflict", False),
+            "original_session_id": s.original_session_id if hasattr(s, "original_session_id") else s.get("original_session_id"),
+            "source_event_id": s.source_event_id if hasattr(s, "source_event_id") else s.get("source_event_id"),
+            "outcome_note": s.outcome_note if hasattr(s, "outcome_note") else s.get("outcome_note"),
+            "replacement_approved": bool(s.replacement_approved) if hasattr(s, "replacement_approved") else s.get("replacement_approved", False),
+        } for s in sorted(version.sessions or session_records, key=lambda x: (x.session_date if hasattr(x, "session_date") else x["session_date"], x.period_number if hasattr(x, "period_number") else x["period_number"], x.class_id if hasattr(x, "class_id") else x["class_id"]))],
         "message": "Draft saved. Review it before publishing.",
     }
 

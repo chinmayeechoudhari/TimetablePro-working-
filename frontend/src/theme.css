@@ -1,5 +1,6 @@
 :root{
   --bg-page:#f7f9fc;
+  --bg-card:#ffffff;
   --text-main:#172554;
   --text-muted:#64748b;
   --sidebar-bg:#ffffff;
@@ -32,6 +33,7 @@
 
 html[data-theme="dark"]{
   --bg-page:#080f1c;
+  --bg-card:#0d1625;
   --text-main:#eef2ff;
   --text-muted:#9aa8c2;
   --sidebar-bg:#0d1625;

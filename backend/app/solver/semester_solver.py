@@ -19,7 +19,8 @@ def _event_state(day: date, events: list[dict], working_days: set[str]) -> tuple
     active = [e for e in events if e["start_date"] <= day <= e["end_date"]]
     override = any(e.get("is_working_day_override") is True for e in active)
     closed = any(e.get("is_closure", False) for e in active) and not override
-    return (override or day.strftime("%A") in working_days) and not closed, closed
+    suppressed = any(e.get("suppresses_lectures", False) for e in active) and not override
+    return (override or day.strftime("%A") in working_days) and not closed and not suppressed, closed
 
 
 def solve_semester_schedule(data: dict, max_time_seconds: float = 30.0) -> dict:

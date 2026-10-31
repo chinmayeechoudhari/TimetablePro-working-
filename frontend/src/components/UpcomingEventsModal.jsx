@@ -29,9 +29,9 @@ function getEventTypeConfig(evt) {
       icon: '🏖️',
     }
   }
-  if (evt.event_type === 'exam') {
+  if (evt.event_type === 'exam' || evt.suppresses_lectures) {
     return {
-      label: 'Examination',
+      label: evt.suppresses_lectures ? 'Assessment / Exam (No Lectures)' : 'Examination',
       pillBg: '#fffbeb',
       pillBorder: '#fde68a',
       pillColor: '#b45309',

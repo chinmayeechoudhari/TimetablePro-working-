@@ -463,7 +463,9 @@ export default function TimetableGrid() {
   const dayCalendarState = (date) => {
     const events = eventsForDate(date)
     const workingOverride = events.some(event => event.is_working_day_override === true)
-    return { events, workingOverride, closures: workingOverride ? [] : events.filter(event => event.is_closure) }
+    const closures = workingOverride ? [] : events.filter(event => event.is_closure)
+    const suppressed = workingOverride ? [] : events.filter(event => !event.is_closure && event.suppresses_lectures)
+    return { events, workingOverride, closures, suppressed }
   }
 
     const activeDays = DAYS.filter(day => slots.some(s => s.day === day))
@@ -537,13 +539,16 @@ export default function TimetableGrid() {
                 {dateKey(dateForWeekday(day)) === todayKey ? ' · TODAY' : ''}
               </div>
               {dayCalendarState(dateForWeekday(day)).closures.map(event => <div key={event.event_id} title={event.title} style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#ffe4e6', color: '#9f1239' }}>{event.title} · NO CLASSES</div>)}
+              {dayCalendarState(dateForWeekday(day)).suppressed.map(event => <div key={event.event_id} title={event.title} style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>{event.title} · NO LECTURES</div>)}
               {dayCalendarState(dateForWeekday(day)).workingOverride && <div style={{ fontSize: 9, marginTop: 4, padding: '3px 4px', borderRadius: 4, background: '#dcfce7', color: '#166534' }}>Approved working day</div>}
             </td>
 
             {/* PERIOD CELLS */}
             {activePeriods.map((period, pi) => {
-              const closureEvents = dayCalendarState(dateForWeekday(day)).closures
-              const entry = closureEvents.length ? null : getCell(fKey, fVal, day, period)
+              const calState = dayCalendarState(dateForWeekday(day))
+              const closureEvents = calState.closures
+              const suppressedEvents = calState.suppressed
+              const entry = (closureEvents.length || suppressedEvents.length) ? null : getCell(fKey, fVal, day, period)
               const color = entry
                 ? (subjectColors[entry.subject_id] || COLORS[0])
                 : null
@@ -604,6 +609,8 @@ export default function TimetableGrid() {
                     </div>
                   ) : closureEvents.length ? (
                     <div className="tt-empty-cell" style={{ background: '#fff1f2', color: '#9f1239', fontSize: 11, fontWeight: 650, padding: 6, borderRadius: 6 }}>{closureEvents[0].title}</div>
+                  ) : suppressedEvents.length ? (
+                    <div className="tt-empty-cell" style={{ background: '#fefce8', color: '#92400e', fontSize: 11, fontWeight: 650, padding: 6, borderRadius: 6, border: '1px dashed #fde047' }}>{suppressedEvents[0].title} (No Lectures)</div>
                   ) : (
                     <div className="tt-empty-cell">—</div>
                   )}
@@ -812,6 +819,11 @@ export default function TimetableGrid() {
             {activeDays.some(day => dayCalendarState(dateForWeekday(day)).closures.length > 0) && (
               <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: '#fee2e2', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span>●</span> Holiday / Closure in this week
+              </span>
+            )}
+            {activeDays.some(day => dayCalendarState(dateForWeekday(day)).suppressed.length > 0) && (
+              <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>●</span> Assessment / Exam in this week (No lectures)
               </span>
             )}
 

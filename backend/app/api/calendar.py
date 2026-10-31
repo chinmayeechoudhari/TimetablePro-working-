@@ -62,6 +62,7 @@ class EventCreate(BaseModel):
     end_date: date
     is_closure: bool = True
     is_working_day_override: bool | None = None
+    suppresses_lectures: bool = False
     preferred_replacement_date: date | None = None
     preferred_replacement_period: int | None = Field(default=None, ge=1, le=20)
     source: str = Field(default="manual", max_length=200)
@@ -75,6 +76,13 @@ class EventCreate(BaseModel):
         if self.event_type == "working_day":
             self.is_closure = False
             self.is_working_day_override = True
+        # Auto-enable lecture suppression for exam and assessment types
+        # Exams do not close the institution, but regular lectures are suppressed
+        if self.event_type in {"exam"} or "assessment" in self.title.lower() or "exam" in self.title.lower():
+            if not self.suppresses_lectures:
+                self.suppresses_lectures = True
+            if self.event_type == "exam":
+                self.is_closure = False
         return self
 
 
@@ -103,6 +111,7 @@ def serialize_event(event: CalendarEvent):
         "end_date": event.end_date.isoformat(),
         "is_closure": event.is_closure,
         "is_working_day_override": event.is_working_day_override,
+        "suppresses_lectures": event.suppresses_lectures if event.suppresses_lectures is not None else False,
         "preferred_replacement_date": event.preferred_replacement_date.isoformat() if event.preferred_replacement_date else None,
         "preferred_replacement_period": event.preferred_replacement_period,
         "source": event.source,
@@ -336,14 +345,16 @@ def import_public_holidays(term_id: int, db: Session = Depends(get_db)):
             skipped += 1
             continue
         needs_review = bool(overlapping)
+        is_exam = event_type == "exam" or "assessment" in title.lower() or "examination" in title.lower()
         db.add(CalendarEvent(
             term_id=term_id,
             title=title,
             event_type=event_type,
             start_date=event_date,
             end_date=event_date,
-            is_closure=is_closure,
+            is_closure=False if is_exam else is_closure,
             is_working_day_override=False,
+            suppresses_lectures=True if is_exam else False,
             source="College Academic Activity Calendar AY 2026-27 Sem I",
             approval_status="pending",
             notes=(
@@ -559,6 +570,7 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
         is_closure = event_type == "working_day" or raw_closure in {"yes", "true", "1", "y"} if closure_index is not None else event_type in {"holiday", "vacation", "closure", "working_day"}
         if event_type in {"exam", "event"} and closure_index is None:
             is_closure = False
+        suppresses_lectures = (event_type == "exam" or "assessment" in title.lower() or "exam" in title.lower())
         overlapping = db.query(CalendarEvent).filter(
             CalendarEvent.term_id == term_id,
             CalendarEvent.start_date <= end_date,
@@ -570,7 +582,7 @@ async def upload_institution_calendar(term_id: int, file: UploadFile = File(...)
             continue
         for item in overlapping:
             overlaps.append({"imported_title": title, "start_date": start_date.isoformat(), "existing_title": item.title, "existing_start_date": item.start_date.isoformat(), "existing_source": item.source, "existing_approval_status": item.approval_status})
-        db.add(CalendarEvent(term_id=term_id, title=title, event_type=event_type, start_date=start_date, end_date=end_date, is_closure=is_closure, is_working_day_override=event_type == "working_day", source=f"Uploaded institution calendar: {file.filename}", approval_status="pending", notes="Imported from institution file. Review and approve this entry in the calendar."))
+        db.add(CalendarEvent(term_id=term_id, title=title, event_type=event_type, start_date=start_date, end_date=end_date, is_closure=is_closure, is_working_day_override=event_type == "working_day", suppresses_lectures=suppresses_lectures, source=f"Uploaded institution calendar: {file.filename}", approval_status="pending", notes="Imported from institution file. Review and approve this entry in the calendar."))
         imported += 1
     db.commit()
     return {"imported": imported, "skipped": skipped, "problems": problems[:20], "overlaps": overlaps[:100], "source": file.filename, "message": f"Imported {imported} entries as pending review; {skipped} duplicates skipped. {len(overlaps)} overlapping date pairs need administrator review."}
@@ -702,19 +714,20 @@ def get_term_schedule(term_id: int, version_id: int | None = Query(default=None)
         day_events = events_for(day)
         force_working = any(event.is_working_day_override is True for event in day_events)
         closed = any(event.is_closure for event in day_events) and not force_working
-        working = force_working or day.strftime("%A") in working_days
-        return working and not closed, day_events, closed
+        suppressed = any(getattr(event, "suppresses_lectures", False) for event in day_events) and not force_working
+        working = (force_working or day.strftime("%A") in working_days) and not closed and not suppressed
+        return working, day_events, closed, suppressed
     results = []
     day = term.start_date
     while day <= term.end_date:
-        is_working, day_events, is_closed = day_state(day)
+        is_working, day_events, is_closed, is_suppressed = day_state(day)
         matching = [(row, slots.get(row.slot_id)) for row in weekly_rows
                     if slots.get(row.slot_id) and slots[row.slot_id].day == day.strftime("%A")]
-        if is_working or is_closed:
+        if is_working or is_closed or is_suppressed:
             for row, slot in matching:
                 results.append({
                     "date": day.isoformat(), "weekday": day.strftime("%A"),
-                    "status": "scheduled" if is_working else "cancelled_holiday",
+                    "status": "scheduled" if is_working else ("cancelled_suppressed" if is_suppressed else "cancelled_holiday"),
                     "class_id": row.class_id, "subject_id": row.subject_id,
                     "teacher_id": row.teacher_id, "room_id": row.room_id,
                     "slot_id": row.slot_id, "period_number": slot.period_number,

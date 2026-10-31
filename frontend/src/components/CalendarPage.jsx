@@ -83,7 +83,7 @@ export default function CalendarPage() {
   const [termForm, setTermForm] = useState(DEFAULT_TERM)
   const [eventForm, setEventForm] = useState({
     title: '', event_type: 'holiday', start_date: '', end_date: '',
-    is_closure: true, approval_status: 'pending', source: 'manual', notes: '',
+    is_closure: true, suppresses_lectures: false, approval_status: 'pending', source: 'manual', notes: '',
     preferred_replacement_date: '', preferred_replacement_period: ''
   })
   const [events, setEvents] = useState([])
@@ -368,6 +368,7 @@ export default function CalendarPage() {
       const savedEvent = await axios.patch(`${API}/calendar/events/${event.event_id}`, {
         title: event.title, event_type: event.event_type, start_date: event.start_date,
         end_date: event.end_date, is_closure: event.is_closure,
+        suppresses_lectures: Boolean(event.suppresses_lectures),
         is_working_day_override: event.is_working_day_override,
         preferred_replacement_date: event.preferred_replacement_date || null,
         preferred_replacement_period: event.preferred_replacement_period || null,
@@ -379,7 +380,7 @@ export default function CalendarPage() {
         return
       }
       setNotice(`Approved "${event.title}".`)
-      if (savedEvent.data.is_closure) await optimizeAfterCalendarApproval(event.title)
+      if (savedEvent.data.is_closure || savedEvent.data.suppresses_lectures) await optimizeAfterCalendarApproval(event.title)
     } catch (err) {
       const detail = err.response?.data?.detail
       setError(typeof detail === 'string' ? detail : detail?.message || 'Could not approve this event. Resolve any overlapping calendar entries and try again.')
@@ -391,13 +392,19 @@ export default function CalendarPage() {
     if (!selectedTerm) return
     setError(''); setNotice(''); setSavingEvent(true)
     try {
-      const payload = { ...eventForm, preferred_replacement_date: eventForm.preferred_replacement_date || null, preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null, is_working_day_override: eventForm.event_type === 'working_day' ? true : null }
+      const payload = {
+        ...eventForm,
+        suppresses_lectures: Boolean(eventForm.suppresses_lectures),
+        preferred_replacement_date: eventForm.preferred_replacement_date || null,
+        preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null,
+        is_working_day_override: eventForm.event_type === 'working_day' ? true : null
+      }
       const createdEvent = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
       await loadEvents(selectedTerm.term_id)
-      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
+      setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, suppresses_lectures: false, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
       setShowEventForm(false)
       setNotice(createdEvent.data.approval_status === 'pending' ? 'Calendar event saved for review. Approve a closure to start date-aware rescheduling.' : 'Calendar event saved.')
-      if (createdEvent.data.approval_status === 'approved' && createdEvent.data.is_closure) {
+      if (createdEvent.data.approval_status === 'approved' && (createdEvent.data.is_closure || createdEvent.data.suppresses_lectures)) {
         await optimizeAfterCalendarApproval(createdEvent.data.title || payload.title)
       }
     } catch (err) {
@@ -1720,7 +1727,7 @@ export default function CalendarPage() {
                         <div className="cal-upcoming-info">
                           <div className="cal-upcoming-name" title={evt.title}>{evt.title}</div>
                           <div className={`cal-upcoming-meta ${isClosure ? 'closure' : ''}`}>
-                            {isClosure ? 'Holiday / closure' : (EVENT_TYPES.find(t => t.value === evt.event_type)?.label || 'College event')}
+                            {isClosure ? 'Holiday / closure' : evt.suppresses_lectures ? 'Assessment / Exam (No lectures)' : (EVENT_TYPES.find(t => t.value === evt.event_type)?.label || 'College event')}
                           </div>
                         </div>
                         <span className={`cal-badge-status ${evt.approval_status}`}>
@@ -1797,8 +1804,12 @@ export default function CalendarPage() {
                     style={inputCls}
                     value={eventForm.event_type}
                     onChange={e => {
-                      setEventField('event_type', e.target.value)
-                      setEventField('is_closure', e.target.value !== 'exam' && e.target.value !== 'event' && e.target.value !== 'working_day')
+                      const val = e.target.value
+                      setEventField('event_type', val)
+                      setEventField('is_closure', val !== 'exam' && val !== 'event' && val !== 'working_day')
+                      if (val === 'exam') {
+                        setEventField('suppresses_lectures', true)
+                      }
                     }}
                   >
                     {EVENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -1926,16 +1937,29 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 14, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={eventForm.is_closure}
-                  disabled={eventForm.event_type === 'working_day'}
-                  onChange={e => setEventField('is_closure', e.target.checked)}
-                  style={{ accentColor: '#2563eb' }}
-                />
-                <span>No regular classes on these dates (Closure)</span>
-              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={eventForm.is_closure}
+                    disabled={eventForm.event_type === 'working_day'}
+                    onChange={e => setEventField('is_closure', e.target.checked)}
+                    style={{ accentColor: '#2563eb' }}
+                  />
+                  <span>No regular classes on these dates (Full Closure — Triggers makeup scheduling)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={eventForm.suppresses_lectures}
+                    disabled={eventForm.event_type === 'working_day'}
+                    onChange={e => setEventField('suppresses_lectures', e.target.checked)}
+                    style={{ accentColor: '#f59e0b' }}
+                  />
+                  <span>Suppress regular lectures (Exam / Assessment — College remains open, no lectures conducted, no makeups)</span>
+                </label>
+              </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
                 <button

@@ -39,6 +39,7 @@ class CalendarEvent(Base):
     end_date = Column(Date, nullable=False)
     is_closure = Column(Boolean, nullable=False, default=True)
     is_working_day_override = Column(Boolean, nullable=True)
+    suppresses_lectures = Column(Boolean, nullable=False, default=False)
     preferred_replacement_date = Column(Date, nullable=True)
     preferred_replacement_period = Column(Integer, nullable=True)
     source = Column(String(200), nullable=False, default="manual")
