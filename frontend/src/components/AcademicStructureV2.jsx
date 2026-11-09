@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import './AcademicStructureModern.css'
 import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/AcademicShortCodes'
