@@ -3,6 +3,7 @@ import axios from 'axios'
 import './AcademicStructureModern.css'
 import { loadShortCodes, saveShortCode, deriveShortCode, accentIndex } from '../lib/AcademicShortCodes'
 import Icon from './AcademicIcon'
+import ConfirmModal from './ConfirmModal'
 
 import { API_BASE } from '../lib/config'
 const BASE = API_BASE
@@ -25,6 +26,7 @@ export default function AcademicStructureV2() {
   const [counts, setCounts] = useState(emptyYearConfig)
   const [existingYears, setExistingYears] = useState({})
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const [legacyOpen, setLegacyOpen] = useState(false)
   const [legacyTarget, setLegacyTarget] = useState(null)
@@ -103,6 +105,8 @@ export default function AcademicStructureV2() {
   }
   async function deleteLegacyIds(ids) {
     if (!ids.length) return
+    setIsDeleting(true)
+    setError('')
     try {
       for (const id of ids) await axios.delete(`${BASE}/classes/${id}`)
       const removed = new Set(ids)
@@ -112,6 +116,8 @@ export default function AcademicStructureV2() {
       await load()
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not delete the selected legacy classes.')
+    } finally {
+      setIsDeleting(false)
     }
   }
   async function deleteLegacy() {
@@ -157,10 +163,20 @@ export default function AcademicStructureV2() {
   }
   async function confirmDeleteDepartment() {
     if (!deleteTarget) return
+    setIsDeleting(true)
+    setError('')
     try {
       const res = await axios.delete(`${BASE}/academic-structure/department`, { params: { department: deleteTarget.name } })
-      saveShortCode(deleteTarget.name, ''); setShortCodes(loadShortCodes()); setMessage(res.data.message); setDeleteTarget(null); await load()
-    } catch (err) { setError(err.response?.data?.detail || 'Could not remove the department.') }
+      saveShortCode(deleteTarget.name, '')
+      setShortCodes(loadShortCodes())
+      setMessage(res.data.message)
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not remove the department.')
+    } finally {
+      setIsDeleting(false)
+    }
   }
   const isEdit = modal && modal.type === 'edit'
 
@@ -285,11 +301,45 @@ export default function AcademicStructureV2() {
         </div>
       </div>}
 
-      {deleteTarget && <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDeleteTarget(null)}><div className="danger-modal"><div className="danger-modal-icon"><Icon name="trash" size={20} /></div><div className="academic-eyebrow danger-eyebrow">DELETE DEPARTMENT</div><h2>Delete {deleteTarget.name}?</h2><p>This will remove the department and its associated years and divisions. This action cannot be undone. (Existing class/subject/timetable records already tied to those divisions are preserved, not deleted.)</p>{error && <div className="notice error">{error}</div>}<div className="modal-actions"><button className="secondary-button" onClick={() => { setDeleteTarget(null); setError('') }}>Cancel</button><button className="delete-confirm" onClick={confirmDeleteDepartment}><Icon name="trash" size={16} /> Delete Department</button></div></div></div>}
+      {/* Modern Delete Department Confirmation Modal (matching Subjects deletion popup style) */}
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title="Remove Department?"
+        itemName={deleteTarget?.name}
+        message={`Are you sure you want to delete "${deleteTarget?.name}"? This will remove the department and its associated years and divisions. This action cannot be undone.`}
+        onConfirm={confirmDeleteDepartment}
+        onCancel={() => { setDeleteTarget(null); setError('') }}
+        isDeleting={isDeleting}
+        confirmText="Yes, Delete"
+        isDeletingText="Deleting..."
+        error={error}
+      />
 
-      {legacyTarget && <div className="modal-backdrop"><div className="danger-modal"><div className="danger-modal-icon"><Icon name="trash" size={20} /></div><div className="academic-eyebrow danger-eyebrow">PERMANENT DELETE</div><h2>Remove {legacyTarget.class_name}?</h2><p>This permanently removes the legacy class and its associated subjects, teacher assignments and timetable records. This action cannot be undone.</p>{error && <div className="notice error">{error}</div>}<div className="modal-actions"><button className="secondary-button" onClick={() => { setLegacyTarget(null); setError('') }}>Cancel</button><button className="delete-confirm" onClick={deleteLegacy}><Icon name="trash" size={16} /> Remove permanently</button></div></div></div>}
+      <ConfirmModal
+        isOpen={Boolean(legacyTarget)}
+        title="Permanently Delete Legacy Class?"
+        itemName={legacyTarget?.class_name}
+        message={`Are you sure you want to permanently remove "${legacyTarget?.class_name}"? This removes the legacy class and its associated subjects, teacher assignments and timetable records.`}
+        onConfirm={deleteLegacy}
+        onCancel={() => { setLegacyTarget(null); setError('') }}
+        isDeleting={isDeleting}
+        confirmText="Yes, Delete"
+        isDeletingText="Deleting..."
+        error={error}
+      />
 
-      {legacyBulkTarget && <div className="modal-backdrop"><div className="danger-modal"><div className="danger-modal-icon"><Icon name="trash" size={20} /></div><div className="academic-eyebrow danger-eyebrow">REMOVE SELECTED</div><h2>Remove {selectedLegacyIds.length} legacy classes?</h2><p>This will permanently remove the selected legacy class records and their associated subjects, teacher assignments and timetable records. This action cannot be undone.</p>{error && <div className="notice error">{error}</div>}<div className="modal-actions"><button className="secondary-button" onClick={() => { setLegacyBulkTarget(false); setError('') }}>Cancel</button><button className="delete-confirm" onClick={() => deleteLegacyIds(selectedLegacyIds)}><Icon name="trash" size={16} /> Remove selected</button></div></div></div>}
+      <ConfirmModal
+        isOpen={Boolean(legacyBulkTarget)}
+        title={`Remove ${selectedLegacyIds.length} Legacy Classes?`}
+        itemName={`${selectedLegacyIds.length} classes selected`}
+        message={`Are you sure you want to permanently remove the ${selectedLegacyIds.length} selected legacy class records? This removes their associated subjects, teacher assignments and timetable records.`}
+        onConfirm={() => deleteLegacyIds(selectedLegacyIds)}
+        onCancel={() => { setLegacyBulkTarget(false); setError('') }}
+        isDeleting={isDeleting}
+        confirmText="Yes, Delete Selected"
+        isDeletingText="Deleting..."
+        error={error}
+      />
     </div>
   )
 }

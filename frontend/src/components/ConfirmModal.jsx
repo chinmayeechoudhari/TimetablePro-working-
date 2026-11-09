@@ -11,6 +11,7 @@ export default function ConfirmModal({
   isDeleting = false,
   confirmText = 'Yes, Delete',
   isDeletingText = 'Deleting...',
+  error = '',
 }) {
   useEffect(() => {
     if (!isOpen) return
@@ -68,6 +69,25 @@ export default function ConfirmModal({
         <p className="confirm-modal-message">
           {message || 'Are you sure you want to delete this item? This action cannot be undone.'}
         </p>
+
+        {/* Error notification if deletion failed */}
+        {error && (
+          <div style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            color: '#b91c1c',
+            fontSize: '12px',
+            fontWeight: 600,
+            marginBottom: '18px',
+            boxSizing: 'border-box',
+            textAlign: 'center'
+          }}>
+            {error}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="confirm-modal-actions">
