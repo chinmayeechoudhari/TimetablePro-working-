@@ -1,4 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import axios from 'axios'
+import ConfirmModal from './ConfirmModal'
+import { API_BASE } from '../lib/config'
 
 function toDate(value) {
   return new Date(value + 'T12:00:00')
@@ -77,6 +81,7 @@ export default function UpcomingEventsModal({
   onApproveEvent,
   onDeleteEvent,
   onOpenAddEvent,
+  onEventUpdated,
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedMonth, setSelectedMonth] = useState('all')
@@ -84,6 +89,113 @@ export default function UpcomingEventsModal({
   const [timeHorizon, setTimeHorizon] = useState('all') // 'all' | 'upcoming' | 'pending'
   const [layoutMode, setLayoutMode] = useState('grid') // 'grid' | 'list'
   const [collapsedMonths, setCollapsedMonths] = useState(new Set())
+
+  // Edit event state (supports editing both before approval and after approval)
+  const [editingEvent, setEditingEvent] = useState(null)
+  const [editForm, setEditForm] = useState({
+    title: '',
+    event_type: 'holiday',
+    start_date: '',
+    end_date: '',
+    is_closure: true,
+    suppresses_lectures: false,
+    approval_status: 'pending',
+    preferred_replacement_date: '',
+    preferred_replacement_period: '',
+    notes: '',
+  })
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [toastMessage, setToastMessage] = useState('')
+
+  // Delete event confirmation popup state
+  const [eventToDelete, setEventToDelete] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toastMessage) return
+    const timer = setTimeout(() => setToastMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [toastMessage])
+
+  function handleStartEdit(evt) {
+    setEditError('')
+    setEditingEvent(evt)
+    setEditForm({
+      title: evt.title || '',
+      event_type: evt.event_type || 'holiday',
+      start_date: evt.start_date || '',
+      end_date: evt.end_date || evt.start_date || '',
+      is_closure: evt.is_closure !== undefined ? Boolean(evt.is_closure) : true,
+      suppresses_lectures: Boolean(evt.suppresses_lectures),
+      approval_status: evt.approval_status || 'pending',
+      preferred_replacement_date: evt.preferred_replacement_date || '',
+      preferred_replacement_period: evt.preferred_replacement_period || '',
+      notes: evt.notes || '',
+    })
+  }
+
+  async function handleSaveEdit(e) {
+    e.preventDefault()
+    if (!editingEvent) return
+    setEditError('')
+    setIsSavingEdit(true)
+    try {
+      const payload = {
+        title: editForm.title.trim(),
+        event_type: editForm.event_type,
+        start_date: editForm.start_date,
+        end_date: editForm.end_date,
+        is_closure: Boolean(editForm.is_closure),
+        suppresses_lectures: Boolean(editForm.suppresses_lectures),
+        is_working_day_override: editForm.event_type === 'working_day' ? true : null,
+        preferred_replacement_date: editForm.preferred_replacement_date || null,
+        preferred_replacement_period: editForm.preferred_replacement_period ? Number(editForm.preferred_replacement_period) : null,
+        approval_status: editForm.approval_status,
+        source: editingEvent.source || 'manual',
+        notes: editForm.notes?.trim() || null,
+      }
+      const response = await axios.patch(`${API_BASE}/calendar/events/${editingEvent.event_id}`, payload)
+      if (onEventUpdated) {
+        await onEventUpdated(response.data)
+      }
+      setToastMessage(`Saved changes to "${payload.title}".`)
+      setEditingEvent(null)
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      if (typeof detail === 'object' && detail?.message) {
+        setEditError(detail.message)
+      } else if (typeof detail === 'string') {
+        setEditError(detail)
+      } else {
+        setEditError('Could not save event changes. Please verify dates and details.')
+      }
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!eventToDelete) return
+    setIsDeleting(true)
+    try {
+      if (onDeleteEvent) {
+        await onDeleteEvent(eventToDelete.event_id)
+      } else {
+        await axios.delete(`${API_BASE}/calendar/events/${eventToDelete.event_id}`)
+        if (onEventUpdated) await onEventUpdated()
+      }
+      setToastMessage(`Deleted "${eventToDelete.title}".`)
+      setEventToDelete(null)
+    } catch (err) {
+      console.error('Failed to delete event:', err)
+      const detail = err.response?.data?.detail
+      alert(typeof detail === 'string' ? detail : 'Could not delete this event.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   // Close on Escape key
   useEffect(() => {
@@ -788,23 +900,36 @@ export default function UpcomingEventsModal({
                                 </button>
                               )}
 
-                              {onDeleteEvent && (
-                                <button
-                                  type="button"
-                                  className="cal-em-action-btn-delete"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    onDeleteEvent(evt.event_id)
-                                  }}
-                                  title="Delete this event"
-                                >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="3 6 5 6 21 6" />
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                  </svg>
-                                  <span>Delete</span>
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                className="cal-em-action-btn-edit"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleStartEdit(evt)
+                                }}
+                                title="Edit event details (dates, type, closure, approval status)"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                </svg>
+                                <span>Edit</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                className="cal-em-action-btn-delete"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEventToDelete(evt)
+                                }}
+                                title="Delete this event"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                                <span>Delete</span>
+                              </button>
                             </div>
                           </div>
                         )
@@ -839,6 +964,244 @@ export default function UpcomingEventsModal({
           </div>
         </div>
       </div>
+
+      {/* ─── Confirm Delete Dialog ─── */}
+      <ConfirmModal
+        isOpen={Boolean(eventToDelete)}
+        title="Delete Calendar Event?"
+        itemName={eventToDelete?.title}
+        message={`Are you sure you want to delete "${eventToDelete?.title}" (${eventToDelete?.start_date}${eventToDelete?.end_date && eventToDelete.end_date !== eventToDelete.start_date ? ` to ${eventToDelete.end_date}` : ''})? This will permanently remove the event from the academic schedule.`}
+        confirmText="Yes, Delete Event"
+        isDeletingText="Deleting event..."
+        isDeleting={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setEventToDelete(null)}
+      />
+
+      {/* ─── Edit Event Submodal (Supports editing before or after approval) ─── */}
+      {editingEvent && createPortal(
+        <div className="cal-em-submodal-overlay" onClick={() => setEditingEvent(null)}>
+          <div className="cal-em-submodal-dialog" onClick={e => e.stopPropagation()}>
+            <div className="cal-em-submodal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                <div className="cal-em-submodal-icon">✏️</div>
+                <div>
+                  <h3 className="cal-em-submodal-title">Edit Calendar Event</h3>
+                  <div className="cal-em-submodal-subtitle">
+                    Update details for this event • Edit before or after approval
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="cal-em-submodal-close"
+                onClick={() => setEditingEvent(null)}
+                aria-label="Close edit modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="cal-em-submodal-body">
+              {editError && (
+                <div className="cal-em-submodal-error">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div className="cal-em-form-grid">
+                <div className="cal-em-form-field full-width">
+                  <label className="cal-em-form-label">Event Title *</label>
+                  <input
+                    type="text"
+                    className="cal-em-form-input"
+                    value={editForm.title}
+                    onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="e.g. Independence Day, Final Semester Exam"
+                    required
+                  />
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">Event Type</label>
+                  <select
+                    className="cal-em-form-select"
+                    value={editForm.event_type}
+                    onChange={e => {
+                      const val = e.target.value
+                      setEditForm(prev => ({
+                        ...prev,
+                        event_type: val,
+                        is_closure: val !== 'exam' && val !== 'event' && val !== 'working_day',
+                        suppresses_lectures: val === 'exam' ? true : prev.suppresses_lectures
+                      }))
+                    }}
+                  >
+                    <option value="holiday">Public / College Holiday</option>
+                    <option value="vacation">Vacation / Break</option>
+                    <option value="exam">Examination</option>
+                    <option value="event">College Event</option>
+                    <option value="closure">Institution Closure</option>
+                    <option value="working_day">Special Working Day</option>
+                  </select>
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">Approval Status</label>
+                  <select
+                    className="cal-em-form-select"
+                    value={editForm.approval_status}
+                    onChange={e => setEditForm(prev => ({ ...prev, approval_status: e.target.value }))}
+                  >
+                    <option value="pending">⏳ Pending Review (Unapproved)</option>
+                    <option value="approved">✓ Approved (Active in Schedule)</option>
+                    <option value="rejected">✕ Rejected</option>
+                  </select>
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">Start Date *</label>
+                  <input
+                    type="date"
+                    className="cal-em-form-input"
+                    value={editForm.start_date}
+                    min={selectedTerm?.start_date}
+                    max={selectedTerm?.end_date}
+                    onChange={e => {
+                      const val = e.target.value
+                      setEditForm(prev => ({
+                        ...prev,
+                        start_date: val,
+                        end_date: (!prev.end_date || prev.end_date < val) ? val : prev.end_date
+                      }))
+                    }}
+                    required
+                  />
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">End Date *</label>
+                  <input
+                    type="date"
+                    className="cal-em-form-input"
+                    value={editForm.end_date}
+                    min={editForm.start_date || selectedTerm?.start_date}
+                    max={selectedTerm?.end_date}
+                    onChange={e => setEditForm(prev => ({ ...prev, end_date: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">Preferred Replacement Date (Optional)</label>
+                  <input
+                    type="date"
+                    className="cal-em-form-input"
+                    value={editForm.preferred_replacement_date || ''}
+                    min={selectedTerm?.start_date}
+                    max={selectedTerm?.end_date}
+                    onChange={e => setEditForm(prev => ({ ...prev, preferred_replacement_date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="cal-em-form-field">
+                  <label className="cal-em-form-label">Preferred Period (Optional)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    placeholder="e.g. 3"
+                    className="cal-em-form-input"
+                    value={editForm.preferred_replacement_period || ''}
+                    onChange={e => setEditForm(prev => ({ ...prev, preferred_replacement_period: e.target.value }))}
+                  />
+                </div>
+
+                <div className="cal-em-form-field full-width">
+                  <label className="cal-em-form-label">Notes / Description (Optional)</label>
+                  <input
+                    type="text"
+                    className="cal-em-form-input"
+                    value={editForm.notes || ''}
+                    placeholder="e.g. Mandatory attendance for faculty, national observance..."
+                    onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Checkboxes */}
+              <div className="cal-em-checkbox-group">
+                <label className="cal-em-checkbox-item">
+                  <input
+                    type="checkbox"
+                    checked={editForm.is_closure}
+                    disabled={editForm.event_type === 'working_day'}
+                    onChange={e => setEditForm(prev => ({ ...prev, is_closure: e.target.checked }))}
+                  />
+                  <div>
+                    <span className="cal-em-checkbox-title">No regular classes on these dates (Full Campus Closure)</span>
+                    <span className="cal-em-checkbox-desc">Triggers automatic semester makeup rescheduling for displaced lectures</span>
+                  </div>
+                </label>
+
+                <label className="cal-em-checkbox-item">
+                  <input
+                    type="checkbox"
+                    checked={editForm.suppresses_lectures}
+                    disabled={editForm.event_type === 'working_day'}
+                    onChange={e => setEditForm(prev => ({ ...prev, suppresses_lectures: e.target.checked }))}
+                  />
+                  <div>
+                    <span className="cal-em-checkbox-title">Suppress regular lectures (Assessment / Examination)</span>
+                    <span className="cal-em-checkbox-desc">Campus remains open for exams; regular lectures are held in suspension without makeup creation</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="cal-em-submodal-footer">
+                <button
+                  type="button"
+                  className="cal-em-btn-secondary"
+                  onClick={() => setEditingEvent(null)}
+                  disabled={isSavingEdit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="cal-em-btn-primary"
+                  disabled={isSavingEdit || !editForm.title || !editForm.start_date || !editForm.end_date}
+                >
+                  {isSavingEdit ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="confirm-modal-spin">
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                      Saving Changes...
+                    </span>
+                  ) : (
+                    'Save Event Changes'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── Floating Toast Notification ─── */}
+      {toastMessage && (
+        <div className="cal-em-toast">
+          <span>✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Embedded CSS Styling for Wide Rectangular Modal */}
       <style>{`
@@ -1611,6 +1974,25 @@ export default function UpcomingEventsModal({
           color: #ffffff;
           border-color: #16a34a;
         }
+        .cal-em-action-btn-edit {
+          border: 1px solid #bfdbfe;
+          background: #eff6ff;
+          color: #1d4ed8;
+          border-radius: 7px;
+          padding: 5px 9px;
+          font-size: 11.5px;
+          font-weight: 650;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          transition: all 0.15s;
+        }
+        .cal-em-action-btn-edit:hover {
+          background: #2563eb;
+          color: #ffffff;
+          border-color: #2563eb;
+        }
         .cal-em-action-btn-delete {
           border: 1px solid #fecaca;
           background: #fef2f2;
@@ -1744,6 +2126,227 @@ export default function UpcomingEventsModal({
         html[data-theme="dark"] .cal-em-empty-title { color: #f8fafc; }
         html[data-theme="dark"] .cal-em-empty-desc { color: #94a3b8; }
         html[data-theme="dark"] .cal-em-footer { background: #0f172a; border-color: #1e293b; color: #94a3b8; }
+        /* Submodal Edit Dialog */
+        .cal-em-submodal-overlay {
+          position: fixed !important;
+          inset: 0 !important;
+          background: rgba(15, 23, 42, 0.65) !important;
+          backdrop-filter: blur(8px) !important;
+          -webkit-backdrop-filter: blur(8px) !important;
+          z-index: 2147483640 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          padding: 16px !important;
+          animation: calModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .cal-em-submodal-dialog {
+          background: #ffffff !important;
+          border-radius: 20px !important;
+          width: 100% !important;
+          max-width: 620px !important;
+          max-height: 90vh !important;
+          overflow-y: auto !important;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(226, 232, 240, 0.8) !important;
+          display: flex !important;
+          flex-direction: column !important;
+          animation: calModalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .cal-em-submodal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 20px 24px;
+          border-bottom: 1px solid #e2e8f0;
+          background: #f8fafc;
+        }
+        .cal-em-submodal-icon {
+          font-size: 22px;
+        }
+        .cal-em-submodal-title {
+          font-size: 17px;
+          font-weight: 750;
+          color: #0f172a;
+          margin: 0;
+        }
+        .cal-em-submodal-subtitle {
+          font-size: 12px;
+          color: #64748b;
+          margin-top: 2px;
+        }
+        .cal-em-submodal-close {
+          background: transparent;
+          border: none;
+          font-size: 18px;
+          color: #64748b;
+          cursor: pointer;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .cal-em-submodal-close:hover {
+          background: #e2e8f0;
+          color: #0f172a;
+        }
+        .cal-em-submodal-body {
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .cal-em-submodal-error {
+          padding: 10px 14px;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #b91c1c;
+          border-radius: 10px;
+          font-size: 13px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 600;
+        }
+        .cal-em-form-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+        .cal-em-form-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .cal-em-form-field.full-width {
+          grid-column: 1 / -1;
+        }
+        .cal-em-form-label {
+          font-size: 11.5px;
+          font-weight: 700;
+          color: #475569;
+          letter-spacing: 0.02em;
+        }
+        .cal-em-form-input, .cal-em-form-select {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid #cbd5e1;
+          border-radius: 9px;
+          padding: 9px 12px;
+          background: #ffffff;
+          color: #0f172a;
+          font-size: 13.5px;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .cal-em-form-input:focus, .cal-em-form-select:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        .cal-em-checkbox-group {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-top: 4px;
+          padding: 12px 14px;
+          background: #f8fafc;
+          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+        }
+        .cal-em-checkbox-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          cursor: pointer;
+        }
+        .cal-em-checkbox-item input[type="checkbox"] {
+          margin-top: 3px;
+          accent-color: #2563eb;
+        }
+        .cal-em-checkbox-title {
+          display: block;
+          font-size: 12.5px;
+          font-weight: 650;
+          color: #1e293b;
+        }
+        .cal-em-checkbox-desc {
+          display: block;
+          font-size: 11px;
+          color: #64748b;
+          margin-top: 2px;
+        }
+        .cal-em-submodal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 10px;
+          padding-top: 16px;
+          border-top: 1px solid #e2e8f0;
+        }
+        .cal-em-btn-secondary {
+          padding: 9px 18px;
+          border-radius: 9px;
+          border: 1px solid #cbd5e1;
+          background: #ffffff;
+          color: #334155;
+          font-size: 13px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .cal-em-btn-secondary:hover {
+          background: #f1f5f9;
+        }
+        .cal-em-btn-primary {
+          padding: 9px 20px;
+          border-radius: 9px;
+          border: none;
+          background: #2563eb;
+          color: #ffffff;
+          font-size: 13px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: all 0.15s;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+        }
+        .cal-em-btn-primary:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+        .cal-em-btn-primary:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .cal-em-toast {
+          position: fixed;
+          bottom: 28px;
+          right: 32px;
+          background: #0f172a;
+          color: #f8fafc;
+          padding: 12px 20px;
+          border-radius: 10px;
+          font-size: 13.5px;
+          font-weight: 600;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          z-index: 2147483647;
+          animation: calModalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        html[data-theme="dark"] .cal-em-action-btn-edit { background: #1e293b; border-color: #3b82f6; color: #93c5fd; }
+        html[data-theme="dark"] .cal-em-action-btn-edit:hover { background: #2563eb; color: #ffffff; }
+        html[data-theme="dark"] .cal-em-submodal-dialog { background: #0f172a !important; border-color: #1e293b !important; }
+        html[data-theme="dark"] .cal-em-submodal-header { background: #1e293b; border-color: #334155; }
+        html[data-theme="dark"] .cal-em-submodal-title { color: #f8fafc; }
+        html[data-theme="dark"] .cal-em-form-input, html[data-theme="dark"] .cal-em-form-select { background: #1e293b; border-color: #334155; color: #f8fafc; }
+        html[data-theme="dark"] .cal-em-checkbox-group { background: #1e293b; border-color: #334155; }
+        html[data-theme="dark"] .cal-em-checkbox-title { color: #f8fafc; }
+        html[data-theme="dark"] .cal-em-submodal-footer { border-color: #1e293b; }
+        html[data-theme="dark"] .cal-em-btn-secondary { background: #1e293b; border-color: #334155; color: #cbd5e1; }
         html[data-theme="dark"] .cal-em-footer-btn-close { background: #1e293b; color: #f8fafc; }
         html[data-theme="dark"] .cal-em-footer-btn-close:hover { background: #334155; }
       `}</style>

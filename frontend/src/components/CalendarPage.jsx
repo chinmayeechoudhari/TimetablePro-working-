@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import axios from 'axios'
 import UpcomingEventsModal from './UpcomingEventsModal'
+import ConfirmModal from './ConfirmModal'
 import { API_BASE } from '../lib/config'
 
 const API = API_BASE
@@ -100,6 +101,9 @@ export default function CalendarPage() {
   const [showTermForm, setShowTermForm] = useState(false)
   const [editingTerm, setEditingTerm] = useState(false)
   const [showEventForm, setShowEventForm] = useState(false)
+  const [editingEvent, setEditingEvent] = useState(null)
+  const [eventToDeleteInPage, setEventToDeleteInPage] = useState(null)
+  const [isDeletingInPage, setIsDeletingInPage] = useState(false)
   const [showAllEventsModal, setShowAllEventsModal] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -387,6 +391,24 @@ export default function CalendarPage() {
     }
   }
 
+  function openEditEvent(evt) {
+    setEditingEvent(evt)
+    setEventForm({
+      title: evt.title || '',
+      event_type: evt.event_type || 'holiday',
+      start_date: evt.start_date || '',
+      end_date: evt.end_date || evt.start_date || '',
+      is_closure: evt.is_closure !== undefined ? Boolean(evt.is_closure) : true,
+      suppresses_lectures: Boolean(evt.suppresses_lectures),
+      approval_status: evt.approval_status || 'pending',
+      source: evt.source || 'manual',
+      notes: evt.notes || '',
+      preferred_replacement_date: evt.preferred_replacement_date || '',
+      preferred_replacement_period: evt.preferred_replacement_period || '',
+    })
+    setShowEventForm(true)
+  }
+
   async function saveEvent(event) {
     event.preventDefault()
     if (!selectedTerm) return
@@ -399,13 +421,20 @@ export default function CalendarPage() {
         preferred_replacement_period: eventForm.preferred_replacement_period ? Number(eventForm.preferred_replacement_period) : null,
         is_working_day_override: eventForm.event_type === 'working_day' ? true : null
       }
-      const createdEvent = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
+      let savedEvent
+      if (editingEvent) {
+        savedEvent = await axios.patch(`${API}/calendar/events/${editingEvent.event_id}`, payload)
+        setNotice(`Calendar event "${savedEvent.data.title}" updated.`)
+      } else {
+        savedEvent = await axios.post(`${API}/calendar/terms/${selectedTerm.term_id}/events`, payload)
+        setNotice(savedEvent.data.approval_status === 'pending' ? 'Calendar event saved for review. Approve a closure to start date-aware rescheduling.' : 'Calendar event saved.')
+      }
       await loadEvents(selectedTerm.term_id)
       setEventForm({ title: '', event_type: 'holiday', start_date: '', end_date: '', is_closure: true, suppresses_lectures: false, approval_status: 'pending', source: 'manual', notes: '', preferred_replacement_date: '', preferred_replacement_period: '' })
+      setEditingEvent(null)
       setShowEventForm(false)
-      setNotice(createdEvent.data.approval_status === 'pending' ? 'Calendar event saved for review. Approve a closure to start date-aware rescheduling.' : 'Calendar event saved.')
-      if (createdEvent.data.approval_status === 'approved' && (createdEvent.data.is_closure || createdEvent.data.suppresses_lectures)) {
-        await optimizeAfterCalendarApproval(createdEvent.data.title || payload.title)
+      if (savedEvent.data.approval_status === 'approved' && (savedEvent.data.is_closure || savedEvent.data.suppresses_lectures)) {
+        await optimizeAfterCalendarApproval(savedEvent.data.title || payload.title)
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Could not save this calendar event.')
@@ -444,13 +473,23 @@ export default function CalendarPage() {
   }
 
   async function removeEvent(eventId) {
-    if (!window.confirm('Delete this calendar event?')) return
     setError(''); setNotice('')
     try {
       await axios.delete(`${API}/calendar/events/${eventId}`)
-      await loadEvents()
+      await loadEvents(selectedTerm?.term_id)
       setNotice('Calendar event deleted.')
     } catch (err) { setError(err.response?.data?.detail || 'Could not delete this event.') }
+  }
+
+  async function handleConfirmDeleteInPage() {
+    if (!eventToDeleteInPage) return
+    setIsDeletingInPage(true)
+    try {
+      await removeEvent(eventToDeleteInPage.event_id)
+      setEventToDeleteInPage(null)
+    } finally {
+      setIsDeletingInPage(false)
+    }
   }
 
 
@@ -1659,7 +1698,14 @@ export default function CalendarPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => removeEvent(evt.event_id)}
+                            onClick={() => openEditEvent(evt)}
+                            style={{ border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', borderRadius: 6, padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEventToDeleteInPage(evt)}
                             style={{ border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', borderRadius: 6, padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
                           >
                             Delete
@@ -1777,7 +1823,9 @@ export default function CalendarPage() {
         <div className="cal-modal-overlay" onClick={() => setShowEventForm(false)}>
           <div className="cal-modal-content" onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Add Calendar Event</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+                {editingEvent ? 'Edit Calendar Event' : 'Add Calendar Event'}
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowEventForm(false)}
@@ -1974,7 +2022,7 @@ export default function CalendarPage() {
                   className="cal-btn-upload"
                   disabled={savingEvent || !eventForm.start_date || !eventForm.end_date}
                 >
-                  {savingEvent ? 'Saving…' : 'Save event'}
+                  {savingEvent ? 'Saving…' : editingEvent ? 'Save changes' : 'Save event'}
                 </button>
               </div>
             </form>
@@ -2066,7 +2114,31 @@ export default function CalendarPage() {
         selectedTerm={selectedTerm}
         onApproveEvent={approveImportedEvent}
         onDeleteEvent={removeEvent}
-        onOpenAddEvent={() => setShowEventForm(true)}
+        onEventUpdated={async () => {
+          await loadEvents(selectedTerm?.term_id)
+        }}
+        onOpenAddEvent={() => {
+          setEditingEvent(null)
+          setEventForm({
+            title: '', event_type: 'holiday', start_date: '', end_date: '',
+            is_closure: true, suppresses_lectures: false, approval_status: 'pending', source: 'manual', notes: '',
+            preferred_replacement_date: '', preferred_replacement_period: ''
+          })
+          setShowEventForm(true)
+        }}
+      />
+
+      {/* ─── Confirmation Modal for Deleting Events on Calendar Page ─── */}
+      <ConfirmModal
+        isOpen={Boolean(eventToDeleteInPage)}
+        title="Delete Calendar Event?"
+        itemName={eventToDeleteInPage?.title}
+        message={`Are you sure you want to delete "${eventToDeleteInPage?.title}" (${eventToDeleteInPage?.start_date}${eventToDeleteInPage?.end_date && eventToDeleteInPage.end_date !== eventToDeleteInPage.start_date ? ` to ${eventToDeleteInPage.end_date}` : ''})? This will permanently remove the event from the academic schedule.`}
+        confirmText="Yes, Delete Event"
+        isDeletingText="Deleting event..."
+        isDeleting={isDeletingInPage}
+        onConfirm={handleConfirmDeleteInPage}
+        onCancel={() => setEventToDeleteInPage(null)}
       />
     </>
   )
