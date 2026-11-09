@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import ThemeToggle from "./ThemeToggle";
@@ -135,7 +135,7 @@ export default function StatusDashboard() {
       setLoading(true);
       setError("");
 
-      const [teacherRes, roomRes, classRes, subjectRes, validationRes] = await Promise.all([
+      const results = await Promise.allSettled([
         apiGet(`${BASE}/teachers`, { forceRefresh }),
         apiGet(`${BASE}/rooms`, { forceRefresh }),
         apiGet(`${BASE}/classes`, { forceRefresh }),
@@ -143,11 +143,19 @@ export default function StatusDashboard() {
         apiGet(`${BASE}/validate`, { forceRefresh, ttl: 30000 }),
       ]);
 
-      setTeachers(teacherRes.data || []);
-      setRooms(roomRes.data || []);
-      setClasses(classRes.data || []);
-      setSubjects(subjectRes.data || []);
-      setValidation(validationRes.data || null);
+      const [teacherRes, roomRes, classRes, subjectRes, validationRes] = results;
+
+      const anySuccess = results.some(r => r.status === 'fulfilled');
+      if (!anySuccess) {
+        setError(`Unable to connect to backend server at ${BASE}. Please make sure the backend is running.`);
+        return;
+      }
+
+      if (teacherRes.status === 'fulfilled') setTeachers(teacherRes.value.data || []);
+      if (roomRes.status === 'fulfilled') setRooms(roomRes.value.data || []);
+      if (classRes.status === 'fulfilled') setClasses(classRes.value.data || []);
+      if (subjectRes.status === 'fulfilled') setSubjects(subjectRes.value.data || []);
+      if (validationRes.status === 'fulfilled') setValidation(validationRes.value.data || null);
     } catch (err) {
       console.error(err);
       setError("Unable to load dashboard.");

@@ -38,6 +38,7 @@ class AcademicStructureCreate(BaseModel):
 class DepartmentRename(BaseModel):
     old_department: str
     new_department: str
+    years: List[YearConfig] | None = None
 
 
 class AdoptClassRequest(BaseModel):
@@ -141,7 +142,7 @@ def create_structure(payload: AcademicStructureCreate, db: Session = Depends(get
 
 
 @router.put("/department")
-def rename_department(payload: DepartmentRename, db: Session = Depends(get_db)):
+def update_department(payload: DepartmentRename, db: Session = Depends(get_db)):
     old = payload.old_department.strip()
     new = payload.new_department.strip()
     if not old or not new:
@@ -149,20 +150,86 @@ def rename_department(payload: DepartmentRename, db: Session = Depends(get_db)):
     groups = db.query(AcademicGroup).filter(func.lower(func.trim(AcademicGroup.department)) == old.lower()).all()
     if not groups:
         raise HTTPException(status_code=404, detail="Department not found.")
-    if old.lower() == new.lower():
-        return {"message": "Department name is unchanged."}
-    for group in groups:
-        duplicate = db.query(AcademicGroup).filter(
-            AcademicGroup.group_id != group.group_id,
-            func.lower(func.trim(AcademicGroup.department)) == new.lower(),
-            AcademicGroup.year_of_study == group.year_of_study,
-        ).first()
-        if duplicate:
-            raise HTTPException(status_code=409, detail=f"{new} already exists for {group.academic_year} {year_label(group.year_of_study)}.")
-    for group in groups:
-        group.department = new
+
+    # 1. Department rename check
+    if old.lower() != new.lower():
+        for group in groups:
+            duplicate = db.query(AcademicGroup).filter(
+                AcademicGroup.group_id != group.group_id,
+                func.lower(func.trim(AcademicGroup.department)) == new.lower(),
+                AcademicGroup.year_of_study == group.year_of_study,
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=409, detail=f"{new} already exists for {group.academic_year} {year_label(group.year_of_study)}.")
+        for group in groups:
+            group.department = new
+            for div in group.divisions:
+                if div.class_:
+                    div.class_.class_name = f"{new} {year_label(group.year_of_study)} - {div.division_name}"
+
+    # 2. Update years and divisions if provided
+    if payload.years is not None:
+        target_years = {item.year_of_study: item.division_count for item in payload.years if item.division_count > 0}
+        if not target_years:
+            raise HTTPException(status_code=400, detail="Department must have at least one year configured.")
+
+        active_term = db.query(AcademicTerm).filter(AcademicTerm.status == "active").order_by(AcademicTerm.start_date.desc()).first()
+        academic_year = groups[0].academic_year if groups else _normalize_academic_year(active_term.academic_year if active_term else "Global")
+        dept_name = new
+
+        for y in range(1, 5):
+            target_count = target_years.get(y, 0)
+            existing_group = db.query(AcademicGroup).filter(
+                func.lower(func.trim(AcademicGroup.department)) == dept_name.lower(),
+                AcademicGroup.year_of_study == y,
+            ).first()
+
+            if target_count > 0:
+                if not existing_group:
+                    grp = AcademicGroup(academic_year=academic_year, department=dept_name, year_of_study=y)
+                    db.add(grp)
+                    db.flush()
+                    for index in range(target_count):
+                        division_name = chr(ord("A") + index)
+                        class_obj = Class(class_name=f"{dept_name} {year_label(y)} - {division_name}")
+                        db.add(class_obj)
+                        db.flush()
+                        db.add(Division(group_id=grp.group_id, class_id=class_obj.class_id, division_name=division_name))
+                else:
+                    existing_divs = sorted(existing_group.divisions, key=lambda d: d.division_name)
+                    current_count = len(existing_divs)
+                    if target_count > current_count:
+                        for index in range(current_count, target_count):
+                            division_name = chr(ord("A") + index)
+                            class_obj = Class(class_name=f"{dept_name} {year_label(y)} - {division_name}")
+                            db.add(class_obj)
+                            db.flush()
+                            db.add(Division(group_id=existing_group.group_id, class_id=class_obj.class_id, division_name=division_name))
+                    elif target_count < current_count:
+                        divs_to_remove = existing_divs[target_count:]
+                        from app.models.semester import ScheduledSession
+                        for div in divs_to_remove:
+                            cls = div.class_
+                            db.query(ScheduledSession).filter(ScheduledSession.class_id == div.class_id).delete(synchronize_session=False)
+                            db.delete(div)
+                            if cls:
+                                db.delete(cls)
+                    for div in existing_group.divisions:
+                        if div.class_:
+                            div.class_.class_name = f"{dept_name} {year_label(y)} - {div.division_name}"
+            else:
+                if existing_group:
+                    from app.models.semester import ScheduledSession
+                    for div in list(existing_group.divisions):
+                        cls = div.class_
+                        db.query(ScheduledSession).filter(ScheduledSession.class_id == div.class_id).delete(synchronize_session=False)
+                        db.delete(div)
+                        if cls:
+                            db.delete(cls)
+                    db.delete(existing_group)
+
     db.commit()
-    return {"message": f"Department renamed to {new}."}
+    return {"message": f"Department '{new}' and its years/divisions were updated successfully."}
 
 
 @router.delete("/department")

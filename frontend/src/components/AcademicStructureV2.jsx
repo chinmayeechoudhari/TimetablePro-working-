@@ -79,12 +79,18 @@ export default function AcademicStructureV2() {
   }
   function openEdit(row) {
     setError(''); setMessage(''); setDepartment(row.name); setShortCode(shortCodes[row.name] || '')
-    const locked = {}; row.groups.forEach(g => { locked[g.year_of_study] = g })
-    setExistingYears(locked); setCounts(emptyYearConfig()); setModal({ type: 'edit', name: row.name })
+    const newCounts = emptyYearConfig()
+    const existing = {}
+    row.groups.forEach(g => {
+      existing[g.year_of_study] = g
+      newCounts[g.year_of_study] = g.divisions.length
+    })
+    setExistingYears(existing)
+    setCounts(newCounts)
+    setModal({ type: 'edit', name: row.name })
   }
   function toggleYear(year) {
-    if (existingYears[year]) return
-    setCounts(c => ({ ...c, [year]: c[year] > 0 ? 0 : 1 }))
+    setCounts(c => ({ ...c, [year]: c[year] > 0 ? 0 : 2 }))
   }
   function addChip(year) { setCounts(c => ({ ...c, [year]: Math.min(26, (c[year] || 0) + 1) })) }
   function removeChip(year) { setCounts(c => ({ ...c, [year]: Math.max(0, (c[year] || 0) - 1) })) }
@@ -128,13 +134,26 @@ export default function AcademicStructureV2() {
     e.preventDefault()
     const originalName = modal.name; const newName = department.trim()
     if (!newName) return setError('Department name cannot be empty.')
-    const newYearConfigs = YEARS.filter(y => !existingYears[y] && counts[y] > 0).map(y => ({ year_of_study: y, division_count: Number(counts[y]) }))
+    const yearConfigs = YEARS.filter(y => counts[y] > 0).map(y => ({
+      year_of_study: y,
+      division_count: Number(counts[y]),
+    }))
+    if (!yearConfigs.length) return setError('Enable at least one year and add its divisions.')
     try {
-      if (newName !== originalName) await axios.put(`${BASE}/academic-structure/department`, { old_department: originalName, new_department: newName })
-      if (newYearConfigs.length) await axios.post(`${BASE}/academic-structure`, { department: newName, years: newYearConfigs })
-      saveShortCode(newName, shortCode.trim()); if (newName !== originalName) saveShortCode(originalName, '')
-      setShortCodes(loadShortCodes()); setMessage(`${newName} was updated.`); closeModal(); await load()
-    } catch (err) { setError(err.response?.data?.detail || 'Could not update the department.') }
+      const res = await axios.put(`${BASE}/academic-structure/department`, {
+        old_department: originalName,
+        new_department: newName,
+        years: yearConfigs,
+      })
+      saveShortCode(newName, shortCode.trim())
+      if (newName !== originalName) saveShortCode(originalName, '')
+      setShortCodes(loadShortCodes())
+      setMessage(res.data.message || `${newName} was updated.`)
+      closeModal()
+      await load()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not update the department.')
+    }
   }
   async function confirmDeleteDepartment() {
     if (!deleteTarget) return
@@ -222,10 +241,41 @@ export default function AcademicStructureV2() {
               <section className="modal-form-card divisions-card">
                 <div className="modal-card-heading"><div className="modal-card-icon purple"><Icon name="grid" size={19} /></div><div><h3>Years &amp; divisions</h3><p>Enable the years this department offers and set the number of divisions.</p></div></div>
                 <div className="year-config-list">
-                  {YEARS.map(y => { const locked = existingYears[y]; const enabled = !!locked || counts[y] > 0; return <div className={`year-config-row year-color-${y} ${enabled ? 'enabled' : ''}`} key={y}>
-                    <div className="year-config-head"><label onClick={() => !locked && toggleYear(y)}><span className="year-number">{y}</span><span><strong>{yearLabel(y)}</strong><small>{locked ? 'Already configured' : enabled ? 'Ready to configure divisions' : 'Not configured'}</small></span></label><div className="division-controls">{locked ? <span className="year-division-count">{locked.divisions.length} division{locked.divisions.length === 1 ? '' : 's'}</span> : <div className="year-controls"><span className="division-label">DIVISIONS</span><div className="division-stepper"><button type="button" disabled={!enabled || counts[y] <= 1} onClick={() => removeChip(y)}>−</button><b>{enabled ? counts[y] : 0}</b><button type="button" disabled={counts[y] >= 26} onClick={() => addChip(y)}>+</button></div></div>}</div></div>
-                    {locked ? <><div className="chip-row">{locked.divisions.map(d => <span className="division-chip locked" key={d.division_id}>{d.division_name}</span>)}</div><div className="locked-note"><Icon name="info" size={12} /> Existing divisions are locked; you can still rename the department or add a new year.</div></> : enabled && <div className="chip-row">{Array.from({ length: counts[y] }).map((_, i) => <span className="division-chip" key={i}>{letterAt(i)}</span>)}</div>}
-                  </div> })}
+                  {YEARS.map(y => {
+                    const enabled = counts[y] > 0;
+                    return (
+                      <div className={`year-config-row year-color-${y} ${enabled ? 'enabled' : ''}`} key={y}>
+                        <div className="year-config-head">
+                          <label onClick={() => toggleYear(y)}>
+                            <span className="year-number">{y}</span>
+                            <span>
+                              <strong>{yearLabel(y)}</strong>
+                              <small>{enabled ? `${counts[y]} division${counts[y] === 1 ? '' : 's'}` : 'Not configured'}</small>
+                            </span>
+                          </label>
+                          <div className="division-controls">
+                            <div className="year-controls">
+                              <span className="division-label">DIVISIONS</span>
+                              <div className="division-stepper">
+                                <button type="button" disabled={!enabled || counts[y] <= 0} onClick={() => removeChip(y)} aria-label="Decrease divisions">−</button>
+                                <b>{enabled ? counts[y] : 0}</b>
+                                <button type="button" disabled={counts[y] >= 26} onClick={() => addChip(y)} aria-label="Increase divisions">+</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {enabled && (
+                          <div className="chip-row">
+                            {Array.from({ length: counts[y] }).map((_, i) => (
+                              <span className="division-chip" key={i}>
+                                {letterAt(i)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             </div>
